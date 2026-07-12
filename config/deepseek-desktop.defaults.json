@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "projectStage": "scaffold",
+  "execution": {
+    "defaultMode": "TestSafe",
+    "liveEnabled": false,
+    "requireExplicitLiveAcknowledgement": true,
+    "automaticRestartAllowed": false
+  },
+  "desktop": {
+    "configLibraryPath": "%LOCALAPPDATA%\\Claude-3p\\configLibrary",
+    "claudeCodeSettingsPolicy": "do_not_read_or_modify",
+    "modelDiscovery": false,
+    "models": [
+      "deepseek-chat",
+      "deepseek-reasoner"
+    ],
+    "capabilities": {
+      "chat": true,
+      "code": true,
+      "cowork": true
+    }
+  },
+  "deepseek": {
+    "baseUrl": "https://api.deepseek.com",
+    "credentialInput": "secure_runtime_handle",
+    "persistCredentialInState": false,
+    "validationRequestEnabled": false
+  },
+  "claudeDesktopMsix": {
+    "sourcePolicy": "anthropic_official_only",
+    "downloadUri": null,
+    "expectedPublisher": null,
+    "packageIdentity": null,
+    "requireAuthenticodeSignature": true,
+    "requireTrustedChain": true
+  },
+  "gitForWindows": {
+    "sourcePolicy": "git_for_windows_official_only",
+    "downloadUri": null,
+    "expectedPublisher": null,
+    "silentInstallEnabled": false,
+    "modifyGlobalGitConfig": false
+  },
+  "cowork": {
+    "checkVirtualMachinePlatform": true,
+    "checkHardwareVirtualization": true,
+    "checkService": true,
+    "enableWindowsFeature": false,
+    "restartEnabled": false
+  }
+}

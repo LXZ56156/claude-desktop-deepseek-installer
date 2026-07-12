@@ -1,0 +1,31 @@
+name: Release dry run
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/build-release.ps1'
+      - 'scripts/release-manifest.psd1'
+      - 'lib/**'
+      - 'config/**'
+      - '*.cmd'
+      - 'Start-Here.ps1'
+
+permissions:
+  contents: read
+
+jobs:
+  release-contract:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap repository-local Pester
+        shell: pwsh
+        run: ./scripts/bootstrap-dev.ps1
+      - name: Run full source quality gate
+        shell: pwsh
+        run: ./scripts/check.ps1
+      - name: Validate source and exact package manifest
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -DryRun -SkipQualityGate

@@ -1,0 +1,13 @@
+.dev/
+release/
+artifacts/
+logs/
+backup/
+reports/
+*.zip
+*.sha256
+*.tmp
+*.bak
+TestResults/
+.DS_Store
+Thumbs.db
