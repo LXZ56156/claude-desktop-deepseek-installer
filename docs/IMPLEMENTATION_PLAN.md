@@ -3,6 +3,9 @@
 当前阶段完成后停止，不进入真实安装器开发。建议下一阶段按以下顺序推进，每个
 阶段都先完成 TestSafe/DryRun、故障注入和回滚测试，再申请 Live 实现授权。
 
+新任务的具体启动顺序、停止线与首个安全工作包见 `docs/HANDOFF.md`。每完成一个
+阶段，应同步更新该交接文件，确保下一任务不依赖对话历史。
+
 1. **确认外部合同**：核验 Claude Desktop configLibrary schema、固定模型 ID、
    model discovery 开关、Anthropic MSIX 官方 URL/Publisher/包身份、Git 官方签名、
    Cowork 服务与 Windows 前置条件。

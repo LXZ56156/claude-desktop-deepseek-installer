@@ -41,6 +41,7 @@
         'config/public-functions.psd1'
         'docs/ARCHITECTURE.md'
         'docs/BOOTSTRAP_REPORT.md'
+        'docs/HANDOFF.md'
         'docs/IMPLEMENTATION_PLAN.md'
         'docs/TESTING.md'
         'scripts/bootstrap-dev.ps1'

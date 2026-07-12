@@ -16,6 +16,7 @@ pwsh -NoProfile -File .\scripts\bootstrap-dev.ps1
 pwsh -NoProfile -File .\scripts\check.ps1
 pwsh -NoProfile -File .\scripts\build-release.ps1 -DryRun
 git diff --check
+git status --short --branch
 ```
 
 检查内容：
@@ -32,6 +33,7 @@ git diff --check
 - 当前脚手架禁止命令 AST；
 - Release manifest 对全部仓库文件的精确分类；
 - Release DryRun 的源扫描和白名单验证。
+- 交接文档已纳入 DevelopmentOnly Release 分类，且 README 保持可发现入口。
 
 ## 未来测试原则
 

@@ -55,5 +55,6 @@ pwsh -NoProfile -File .\scripts\build-release.ps1 -DryRun
 `bootstrap-dev.ps1` 把固定版本 Pester 保存到 `.dev/modules`，不会安装到全局或
 CurrentUser，也不会持久修改 `PSModulePath` 或 PowerShellGet 配置。
 
-更多内容见 `docs/ARCHITECTURE.md`、`docs/IMPLEMENTATION_PLAN.md`、
-`docs/TESTING.md` 和 `docs/SECURITY.md`。
+新任务接手请先阅读 `docs/HANDOFF.md`。完整设计见 `docs/ARCHITECTURE.md`、
+`docs/IMPLEMENTATION_PLAN.md`、`docs/TESTING.md`、`docs/SECURITY.md` 和
+`docs/BOOTSTRAP_REPORT.md`。
