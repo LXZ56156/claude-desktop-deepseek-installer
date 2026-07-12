@@ -191,8 +191,11 @@ Release inventory 漏检等脚手架问题。
 - Remote：无；没有创建远程仓库，也没有推送。
 - 全局 Git 配置：未修改。
 - 可用身份：`LXZ56156 <lizixuan6383828@outlook.com>`。
-- 初始提交：待脚手架首个本地提交完成后回填哈希与主题。
-- 提交后将再次确认 staged whitespace gate 与工作树状态。
+- 初始提交：`67730758955c17410c1fccdc9811d148153a1fc3`
+  （`chore: scaffold Claude Desktop DeepSeek installer`，root commit）。
+- 初始提交包含 50 个受控文件、3609 行新增；提交前
+  `git diff --cached --check` 通过，staged 集合与 manifest 精确一致。
+- 本段在 root commit 后通过独立纯文档提交回填；最终工作树再次确认 clean。
 
 ## 下一阶段建议的开发顺序
 
