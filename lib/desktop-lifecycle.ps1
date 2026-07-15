@@ -3,40 +3,49 @@
 
 function Get-CddsiClaudeDesktopProcessState {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
 
-    return New-CddsiOperationResult -Operation 'DetectClaudeDesktopProcess' -Status 'not_implemented' -Mode 'TestSafe' -MessageSafe '未查询 Claude 进程。'
+    Assert-CddsiExecutionContext -ExecutionContext $Context | Out-Null
+    return New-CddsiOperationResult -Operation 'DetectClaudeDesktopProcess' -Status 'ACTION_REQUIRED' -Mode $Context.Mode -ErrorCode 'NOT_IMPLEMENTED' -MessageSafe '未查询 Claude 进程。'
 }
 
 function Stop-CddsiClaudeDesktop {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
         [ValidateSet('TestSafe', 'DryRun', 'Live')][string]$Mode = 'TestSafe',
         [switch]$AcknowledgeRealChanges
     )
 
-    if ($Mode -eq 'Live') { Assert-CddsiMutationAllowed -Operation 'StopClaudeDesktop' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges }
-    return New-CddsiOperationResult -Operation 'StopClaudeDesktop' -Status 'planned' -Success $true -Mode $Mode -MessageSafe '不会关闭 Claude Desktop 进程。'
+    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
+    if ($Mode -eq 'Live') { Assert-CddsiMutationAllowed -ExecutionContext $Context -Operation 'StopClaudeDesktop' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges }
+    return New-CddsiOperationResult -Operation 'StopClaudeDesktop' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode 'SCAFFOLD_ONLY' -MessageSafe '不会关闭 Claude Desktop 进程。'
 }
 
 function Start-CddsiClaudeDesktop {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
         [ValidateSet('TestSafe', 'DryRun', 'Live')][string]$Mode = 'TestSafe',
         [switch]$AcknowledgeRealChanges
     )
 
-    if ($Mode -eq 'Live') { Assert-CddsiMutationAllowed -Operation 'StartClaudeDesktop' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges }
-    return New-CddsiOperationResult -Operation 'StartClaudeDesktop' -Status 'planned' -Success $true -Mode $Mode -MessageSafe '不会启动 Claude Desktop 进程。'
+    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
+    if ($Mode -eq 'Live') { Assert-CddsiMutationAllowed -ExecutionContext $Context -Operation 'StartClaudeDesktop' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges }
+    return New-CddsiOperationResult -Operation 'StartClaudeDesktop' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode 'SCAFFOLD_ONLY' -MessageSafe '不会启动 Claude Desktop 进程。'
 }
 
 function Restart-CddsiClaudeDesktop {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
         [ValidateSet('TestSafe', 'DryRun', 'Live')][string]$Mode = 'TestSafe',
         [switch]$AcknowledgeRealChanges
     )
 
-    if ($Mode -eq 'Live') { Assert-CddsiMutationAllowed -Operation 'RestartClaudeDesktop' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges }
-    return New-CddsiOperationResult -Operation 'RestartClaudeDesktop' -Status 'planned' -Success $true -Mode $Mode -MessageSafe '不会重启 Claude Desktop 进程。'
+    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
+    if ($Mode -eq 'Live') { Assert-CddsiMutationAllowed -ExecutionContext $Context -Operation 'RestartClaudeDesktop' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges }
+    return New-CddsiOperationResult -Operation 'RestartClaudeDesktop' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode 'SCAFFOLD_ONLY' -MessageSafe '不会重启 Claude Desktop 进程。'
 }

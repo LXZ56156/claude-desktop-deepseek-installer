@@ -1,60 +1,121 @@
-# Claude Desktop DeepSeek Installer（开发前脚手架）
+# Claude Desktop DeepSeek Installer
 
-这是一个面向 Windows PowerShell 的独立 Claude Desktop 安装器项目。它不要求
-预先安装 Claude Code CLI，也不会复用 Claude Code CLI 的安装或配置链路。
+这是一个面向 Windows 的中文引导式一键安装器项目：用户双击脚本后，安装器检测
+环境，从官方来源部署 Claude Desktop，确保 Git 和 Cowork 前置就绪，安全接收
+DeepSeek API Key，预置官方 Third-Party 配置并完成启动与验收。
 
-> 当前版本只有模块边界、数据结构、TODO、安全门和测试框架。所有系统操作、
-> 网络请求、配置写入和进程控制都尚未实现；入口固定运行在 TestSafe。
+“一键”表示一次双击发起完整流程，不表示绕过 UAC、API Key 输入、必要重启、
+BIOS 虚拟化或 Claude 的安全授权。
 
-## 目标能力
+## 当前状态
 
-- 从 Anthropic 官方来源下载 Claude Desktop MSIX，并在安装或升级前验证
-  Authenticode、证书链、Publisher 和包身份。
-- 检测 Git for Windows；缺失时未来只允许从官方来源静默安装，不修改全局
-  Git 配置。
-- 检测 `VirtualMachinePlatform`、硬件虚拟化与 Cowork 服务，支持显式确认后的
-  重启续跑。
-- 安全获取和验证 DeepSeek API Key；Key 不得进入日志、报告、状态、测试夹具
-  或提交历史。
-- 原子写入 Claude Desktop 的
-  `%LOCALAPPDATA%\Claude-3p\configLibrary`，并提供受保护的可恢复备份、脱敏
-  诊断快照和回滚。
-- 固定 `deepseek-chat`、`deepseek-reasoner` 模型，关闭 model discovery，启用
-  Chat、Code、Cowork。
-- 提供诊断、修复、恢复、重启续跑和中文脱敏验收报告。
+产品工作流仍是 `Scaffold`，真实安装器尚未实现。P1-P9 纯/fake 合同、P10A
+evidence/consumption 合同以及 P10B frozen facts、helper release、deterministic
+双候选和 detached sidecar 宿主机支撑合同已经实现。P10A-0A 的本地
+TestSafe/DryRun 合同切片也已实现，包括 `DirectionalRepositoryPair`、
+relay/state/hash、fake reset 与 `CLEAN_READY`、两端轮询 prompts、synthetic rehearsal，
+以及只归入 `DevelopmentOnlyFiles` 的 operator coordination plane。
 
-## 明确边界
+Fast Lane 采用一个逻辑双 outbox、两个物理单向私有 control repos。私有产品 remote
+与两个 control repos 已创建并初始化；GitHub 当前套餐拒绝 private ruleset，最小权限
+角色凭据、VM 对产品 remote 的负向写验证、真实 VM reset adapter、VM Scheduled Task
+与无人值守闭环尚未部署。宿主机分钟级 heartbeat 已创建但保持暂停。因此不能宣称
+P10A-0A 完成。Formal Lane
+才为 P10A/P11 接入 CAS、签名与外部快照。本地质量门使用不可缺省
+ExecutionContext、default-deny fake provider、owner-marked HostSandbox、双引擎
+worker evidence 和 Release Simulation。
 
-本项目不读取、不修改 `%USERPROFILE%\.claude\settings.json`，不安装、卸载或
-诊断 Claude Code CLI，不安装 Node.js/npm，不使用 npmmirror，不操作 WSL 或
-VS Code，也不修改用户 PATH。
+所有现有入口固定运行 TestSafe；系统操作、网络请求、配置写入和进程控制均未
+实现，`-Live` 无条件 fail closed。
 
-需求同时提出“Claude Code settings 前后哈希不变”。计算真实文件哈希必然读取
-文件字节，因此当前只定义了可注入的不透明完整性 token 合同，没有访问该文件。
-Live 实现前需要确认是否允许独立验收器执行“只哈希、不解析、不记录内容”；在
-确认前继续执行零读取策略。
+当前 `config/deepseek-desktop.defaults.json`、desired state、15 项 Windows
+`REG_SZ` serializer、官方 fixture 和 synthetic source precedence 已同步。配置
+writer、registry/credential I/O 和真实 Desktop 验证仍关闭；边界见
+`docs/EXTERNAL_CONTRACTS.md` 和 `docs/CONFIGURATION_DESIGN.md`。
 
-## 当前可运行入口
+## 暂定最终用户流程
+
+1. 双击 `开始安装.cmd`。
+2. 检查 Windows、架构、权限、Desktop、Git、VMP、虚拟化和 Cowork readiness。
+3. 固定采用 Chat + Code + Cowork 完整功能目标，不展示功能选择页。
+4. 自动规划 Cowork-compatible MSIX 范围、Git 和 VMP 前置，并只请求必要的安全
+   确认。
+5. 下载并严格验证 Anthropic 官方 MSIX。
+6. 确保 Git 可用：合格版本直接复用，缺失或不合格时安装/升级官方 Git。
+7. 为 Cowork 处理 VMP；必要时安全 checkpoint，人工重启后重新双击续跑。
+8. 本地安全输入 DeepSeek API Key，以 DPAPI-backed credential helper 保存。
+9. 首次启动前部署 HKCU managed configuration，固定启用三个 surface，跳过
+   Anthropic 登录和
+   Developer Mode。
+10. 产品报告配置/API/readiness、secret 和资源级补偿；Chat/Code/Cowork UI E2E
+   由后续 VM Codex 验证。
+11. 输出中文脱敏报告。
+
+完整产品规格见 `docs/PRODUCT_SPEC.md`。
+
+## 产品边界
+
+- 不安装独立 Claude Code CLI、Node.js、npm、WSL 或 VS Code。
+- 技术上 Git 由内置 Code 需要；由于本产品固定包含 Code，Git 是产品必备前置。
+  合格版本复用，缺失或不合格版本才安装/升级。
+- 首版不提供 Chat/Code/Cowork 功能开关，也不在依赖失败时静默退化成 Chat-only。
+- 不读取、Test-Path、哈希、备份、写入或删除
+  `%USERPROFILE%\.claude\settings.json`。
+- 不直接或静默修改全局 Git 配置、用户 PATH 或全局/CurrentUser PowerShell
+  模块配置；官方 Git 安装器的精确 PATH 变化只有在披露、独立确认和补偿合同
+  齐全后才可接受。
+- 不绕过或降级 MSIX/EXE 签名验证。
+- 不把 Key 写入命令行、registry/configLibrary 明文、环境变量、日志、状态、
+  报告或 Release。
+- 不修改 Claude MSIX/Electron 资源做非官方汉化。安装器和文档中文，但 Claude
+  本体当前没有官方中文 UI。
+
+## 宿主机零接触
+
+本项目开发期间，本地自动化只允许 fake/provider 驱动的 TestSafe、DryRun、
+HostSandbox 和 Release Simulation。真实 MSIX、Git、registry、VMP、API、Claude
+配置和进程首次执行只允许在专用 disposable VM：先执行 P10A 窄范围校准并冻结
+事实，再构建双候选，最后在 P11 对候选精确字节做全面验收。
+
+P1 Sandbox Foundation 已完成；后续每个工作包必须持续保持其隔离证据全绿。
+这不授权宿主机 Live，也不代表 OS 权限隔离。权威合同见
+`docs/TEST_ISOLATION.md`。
+
+## 当前入口
 
 - `开始安装.cmd` / `Start-Install.cmd`
 - `一键诊断.cmd` / `Run-Diagnostics.cmd`
 - `恢复配置.cmd` / `Restore-Config.cmd`
 - `Start-Here.ps1 -Action Install|Diagnose|Repair|Restore -TestSafe`
 
-这些入口只加载合同并报告 `scaffold_only`，不会执行真实动作。直接传入 `-Live`
-会被强制拒绝。
+这些入口当前只返回 `scaffold_only`，不会执行真实动作。
 
 ## 开发验证
 
-```powershell
-pwsh -NoProfile -File .\scripts\bootstrap-dev.ps1
-pwsh -NoProfile -File .\scripts\check.ps1
-pwsh -NoProfile -File .\scripts\build-release.ps1 -DryRun
-```
+标准验证必须显式绑定 PowerShell 7、Windows PowerShell 和 Git 的绝对路径及
+SHA-256；完整命令见 `docs/TESTING.md` 的“P1 标准检查”。`scripts/check.ps1`
+在 HostSandbox 内运行双引擎 Pester、隔离 Git inventory、working-tree/cached
+`diff --check` 并返回 machine-readable evidence。只有 clean quality evidence 后
+才能运行 `scripts/build-release.ps1 -DryRun`。
 
-`bootstrap-dev.ps1` 把固定版本 Pester 保存到 `.dev/modules`，不会安装到全局或
-CurrentUser，也不会持久修改 `PSModulePath` 或 PowerShellGet 配置。
+`scripts/bootstrap-dev.ps1` 只校验仓库固定 Pester tree，不下载、安装或修改用户
+PowerShell 配置。依赖缺失或漂移时普通质量门 fail closed；不得退回继承真实
+HOME/Git 配置的直跑命令。
 
-新任务接手请先阅读 `docs/HANDOFF.md`。完整设计见 `docs/ARCHITECTURE.md`、
-`docs/IMPLEMENTATION_PLAN.md`、`docs/TESTING.md`、`docs/SECURITY.md` 和
-`docs/BOOTSTRAP_REPORT.md`。
+## 文档入口
+
+- 未来正式包用户指南：`USER_GUIDE.md`
+- 故障处理：`TROUBLESHOOTING.md`
+- 隐私边界：`PRIVACY.md`
+- 当前任务交接：`docs/HANDOFF.md`
+- 完整文档地图：`docs/README.md`
+- 分阶段开发方案：`docs/IMPLEMENTATION_PLAN.md`
+- 宿主机隔离：`docs/TEST_ISOLATION.md`
+- 双机测试中继：`docs/VM_TEST_RELAY.md`
+- 窄范围 VM 校准：`docs/VM_CALIBRATION_PLAN.md`
+- 后续全面 VM 验收：`docs/VM_ACCEPTANCE_PLAN.md`
+
+下一对话从 `docs/HANDOFF.md` 记录的 P10A-0A 外部部署门继续：为现有私有 remotes
+补齐 protected history、最小权限凭据、真实 VM reset adapter 与 VM 分钟级任务，并
+安全启用已暂停的宿主机 heartbeat，不需要重新从零调研。宿主机
+不得执行 Live，VM 不得修改产品代码。

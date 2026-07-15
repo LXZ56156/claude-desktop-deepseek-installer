@@ -2,6 +2,10 @@
 
 日期：2026-07-12
 
+> 本文是 2026-07-12 初始脚手架的历史快照，文件数量、阶段建议和未决项按当时
+> 状态保留。当前事实请以 `docs/HANDOFF.md`、`docs/EXTERNAL_CONTRACTS.md`、
+> `docs/IMPLEMENTATION_PLAN.md` 和 `scripts/release-manifest.psd1` 为准。
+
 新项目：`D:\projects(WIN)\claude-desktop-deepseek-installer`
 
 只读参考：`D:\projects(WIN)\claude-deepseek-installer`

@@ -16,5 +16,7 @@ Describe 'entrypoint encoding contracts' {
     It 'does not change the console code page from cmd wrappers' {
         $content = @(Get-ChildItem -LiteralPath $script:RepoRoot -Filter '*.cmd' -File | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) }) -join "`n"
         $content | Should -Not -Match '(?i)\bchcp\b'
+        $content | Should -Not -Match '(?i)-ExecutionPolicy\s+Bypass'
+        $content | Should -Not -Match '(?i)-EncodedCommand'
     }
 }

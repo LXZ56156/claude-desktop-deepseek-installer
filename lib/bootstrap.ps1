@@ -7,15 +7,24 @@ $script:CddsiLibrariesImported = $false
 $script:CddsiLibraryLoadOrder = @(
     'logger.ps1',
     'common.ps1',
+    'stage-policy.ps1',
+    'vm-calibration.ps1',
+    'release-facts.ps1',
+    'release-artifact.ps1',
     'state.ps1',
+    'execution-context.ps1',
+    'fake-providers.ps1',
+    'state-store.ps1',
     'desktop-env-check.ps1',
     'desktop-msix.ps1',
     'git-for-windows.ps1',
     'cowork-readiness.ps1',
     'deepseek-api.ps1',
+    'credential-helper-release.ps1',
     'desktop-config.ps1',
     'desktop-lifecycle.ps1',
-    'desktop-acceptance.ps1'
+    'desktop-acceptance.ps1',
+    'orchestrator.ps1'
 )
 
 function Get-CddsiProjectRoot {
@@ -37,14 +46,20 @@ function Import-CddsiLibraries {
 function Initialize-CddsiScript {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)]
+        [Alias('ExecutionContext')]$Context,
+
         [string]$ScriptName = 'cddsi',
-        [string]$ArtifactRoot,
         [ValidateSet('TestSafe', 'DryRun', 'Live')][string]$Mode = 'TestSafe',
-        [switch]$EnableFileLogging
+        [switch]$EnableFileLogging,
+
+        [AllowNull()]
+        [System.Collections.IDictionary]$PathTokenValues
     )
 
     Import-CddsiLibraries
-    Initialize-CddsiLogger -ScriptName $ScriptName -ArtifactRoot $ArtifactRoot -Mode $Mode -EnableFileLogging:$EnableFileLogging | Out-Null
+    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
+    Initialize-CddsiLogger -ExecutionContext $Context -ScriptName $ScriptName -Mode $Mode -EnableFileLogging:$EnableFileLogging -PathTokenValues $PathTokenValues | Out-Null
     return $script:CddsiProjectRoot
 }
 
@@ -52,9 +67,6 @@ function Initialize-CddsiScript {
 # caller. This only defines functions and constants; it performs no workflow.
 foreach ($fileName in $script:CddsiLibraryLoadOrder) {
     $path = Join-Path $script:CddsiLibDirectory $fileName
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "缺少库文件: $path"
-    }
     . $path
 }
 $script:CddsiLibrariesImported = $true

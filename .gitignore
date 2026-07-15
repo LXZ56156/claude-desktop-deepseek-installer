@@ -1,4 +1,34 @@
-.dev/
+# Vendored development dependencies are default-deny. Only the exact locked
+# Pester 5.6.1 runtime tree below is tracked.
+.dev/*
+!.dev/modules/
+.dev/modules/*
+!.dev/modules/Pester/
+.dev/modules/Pester/*
+!.dev/modules/Pester/5.6.1/
+.dev/modules/Pester/5.6.1/**
+!.dev/modules/Pester/5.6.1/**/
+!.dev/modules/Pester/5.6.1/bin/net452/Pester.dll
+!.dev/modules/Pester/5.6.1/bin/net452/Pester.pdb
+!.dev/modules/Pester/5.6.1/bin/netstandard2.0/Pester.dll
+!.dev/modules/Pester/5.6.1/bin/netstandard2.0/Pester.pdb
+!.dev/modules/Pester/5.6.1/en-US/about_BeforeEach_AfterEach.help.txt
+!.dev/modules/Pester/5.6.1/en-US/about_Mocking.help.txt
+!.dev/modules/Pester/5.6.1/en-US/about_Pester.help.txt
+!.dev/modules/Pester/5.6.1/en-US/about_Should.help.txt
+!.dev/modules/Pester/5.6.1/en-US/about_TestDrive.help.txt
+!.dev/modules/Pester/5.6.1/Pester.Format.ps1xml
+!.dev/modules/Pester/5.6.1/Pester.ps1
+!.dev/modules/Pester/5.6.1/Pester.psd1
+!.dev/modules/Pester/5.6.1/Pester.psm1
+!.dev/modules/Pester/5.6.1/PesterConfiguration.Format.ps1xml
+!.dev/modules/Pester/5.6.1/schemas/JaCoCo/report.dtd
+!.dev/modules/Pester/5.6.1/schemas/JUnit4/junit_schema_4.xsd
+!.dev/modules/Pester/5.6.1/schemas/NUnit25/nunit_schema_2.5.xsd
+!.dev/modules/Pester/5.6.1/schemas/NUnit3/TestDefinitions.xsd
+!.dev/modules/Pester/5.6.1/schemas/NUnit3/TestFilterDefinitions.xsd
+!.dev/modules/Pester/5.6.1/schemas/NUnit3/TestResult.xsd
+.dev/modules/Pester/**/PSGetModuleInfo.xml
 release/
 artifacts/
 logs/

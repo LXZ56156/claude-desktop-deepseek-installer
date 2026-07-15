@@ -1,0 +1,279 @@
+{
+  "fixtureSchemaVersion": 1,
+  "fixtureId": "claude-desktop-3p-windows-managed-policy-v1",
+  "contractVersion": "claude-desktop-3p-managed-policy-v1",
+  "verifiedAtUtc": "2026-07-14T00:00:00Z",
+  "applicability": {
+    "platform": "Windows",
+    "minimumDesktopVersion": "1.20186.0",
+    "windowsPolicyNoMergeSince": "1.19367.0",
+    "documentationBaselineVersion": "1.20186.0",
+    "registryKey": "HKCU\\SOFTWARE\\Policies\\Claude",
+    "registryValueType": "REG_SZ",
+    "sourcePrecedence": [
+      "HKLM_MANAGED_POLICY",
+      "HKCU_MANAGED_POLICY",
+      "CONFIG_LIBRARY"
+    ]
+  },
+  "sources": [
+    {
+      "id": "claude-configuration-reference",
+      "url": "https://claude.com/docs/third-party/claude-desktop/configuration",
+      "verifiedAtUtc": "2026-07-14T00:00:00Z"
+    },
+    {
+      "id": "claude-configuration-changelog",
+      "url": "https://claude.com/docs/third-party/claude-desktop/configuration-changelog",
+      "verifiedAtUtc": "2026-07-14T00:00:00Z"
+    },
+    {
+      "id": "claude-mdm-deployment",
+      "url": "https://claude.com/docs/third-party/claude-desktop/mdm",
+      "verifiedAtUtc": "2026-07-14T00:00:00Z"
+    },
+    {
+      "id": "claude-credential-helper",
+      "url": "https://claude.com/docs/third-party/claude-desktop/credential-helper",
+      "verifiedAtUtc": "2026-07-14T00:00:00Z"
+    },
+    {
+      "id": "deepseek-anthropic-compatibility",
+      "url": "https://api-docs.deepseek.com/guides/anthropic_api",
+      "verifiedAtUtc": "2026-07-14T00:00:00Z"
+    },
+    {
+      "id": "deepseek-model-list",
+      "url": "https://api-docs.deepseek.com/api/list-models",
+      "verifiedAtUtc": "2026-07-14T00:00:00Z"
+    }
+  ],
+  "parameterBindings": {
+    "credentialHelperPathToken": "<CREDENTIAL_HELPER_PATH>"
+  },
+  "policyValues": [
+    {
+      "Name": "autoModeEnabled",
+      "Type": "REG_SZ",
+      "Data": "false"
+    },
+    {
+      "Name": "chatTabEnabled",
+      "Type": "REG_SZ",
+      "Data": "true"
+    },
+    {
+      "Name": "coworkTabEnabled",
+      "Type": "REG_SZ",
+      "Data": "true"
+    },
+    {
+      "Name": "disableDeploymentModeChooser",
+      "Type": "REG_SZ",
+      "Data": "true"
+    },
+    {
+      "Name": "inferenceCredentialHelper",
+      "Type": "REG_SZ",
+      "Data": "<CREDENTIAL_HELPER_PATH>"
+    },
+    {
+      "Name": "inferenceCredentialHelperSilentRefreshEnabled",
+      "Type": "REG_SZ",
+      "Data": "true"
+    },
+    {
+      "Name": "inferenceCredentialHelperTimeoutSec",
+      "Type": "REG_SZ",
+      "Data": "60"
+    },
+    {
+      "Name": "inferenceCredentialHelperTtlSec",
+      "Type": "REG_SZ",
+      "Data": "3600"
+    },
+    {
+      "Name": "inferenceCredentialKind",
+      "Type": "REG_SZ",
+      "Data": "helper-script"
+    },
+    {
+      "Name": "inferenceGatewayAuthScheme",
+      "Type": "REG_SZ",
+      "Data": "x-api-key"
+    },
+    {
+      "Name": "inferenceGatewayBaseUrl",
+      "Type": "REG_SZ",
+      "Data": "https://api.deepseek.com/anthropic"
+    },
+    {
+      "Name": "inferenceModels",
+      "Type": "REG_SZ",
+      "Data": "[{\"name\":\"deepseek-v4-pro\",\"labelOverride\":\"DeepSeek V4 Pro\",\"supports1m\":true},{\"name\":\"deepseek-v4-flash\",\"labelOverride\":\"DeepSeek V4 Flash\",\"supports1m\":true}]"
+    },
+    {
+      "Name": "inferenceProvider",
+      "Type": "REG_SZ",
+      "Data": "gateway"
+    },
+    {
+      "Name": "isClaudeCodeForDesktopEnabled",
+      "Type": "REG_SZ",
+      "Data": "true"
+    },
+    {
+      "Name": "modelDiscoveryEnabled",
+      "Type": "REG_SZ",
+      "Data": "false"
+    }
+  ],
+  "sourceResolutionCases": [
+    {
+      "caseId": "h0-u0-l0",
+      "hklmPresent": false,
+      "hkcuPresent": false,
+      "configLibraryPresent": false,
+      "effectiveSource": "NONE",
+      "existingSources": [],
+      "conflict": false,
+      "canProceed": true,
+      "status": "SUCCEEDED",
+      "errorCode": "",
+      "reasonCodes": [
+        "TARGET_AVAILABLE"
+      ]
+    },
+    {
+      "caseId": "h0-u0-l1",
+      "hklmPresent": false,
+      "hkcuPresent": false,
+      "configLibraryPresent": true,
+      "effectiveSource": "CONFIG_LIBRARY",
+      "existingSources": [
+        "CONFIG_LIBRARY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_CONFIG_LIBRARY"
+      ]
+    },
+    {
+      "caseId": "h0-u1-l0",
+      "hklmPresent": false,
+      "hkcuPresent": true,
+      "configLibraryPresent": false,
+      "effectiveSource": "HKCU_MANAGED_POLICY",
+      "existingSources": [
+        "HKCU_MANAGED_POLICY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_HKCU_MANAGED_POLICY"
+      ]
+    },
+    {
+      "caseId": "h0-u1-l1",
+      "hklmPresent": false,
+      "hkcuPresent": true,
+      "configLibraryPresent": true,
+      "effectiveSource": "HKCU_MANAGED_POLICY",
+      "existingSources": [
+        "HKCU_MANAGED_POLICY",
+        "CONFIG_LIBRARY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_HKCU_MANAGED_POLICY"
+      ]
+    },
+    {
+      "caseId": "h1-u0-l0",
+      "hklmPresent": true,
+      "hkcuPresent": false,
+      "configLibraryPresent": false,
+      "effectiveSource": "HKLM_MANAGED_POLICY",
+      "existingSources": [
+        "HKLM_MANAGED_POLICY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_HKLM_MANAGED_POLICY"
+      ]
+    },
+    {
+      "caseId": "h1-u0-l1",
+      "hklmPresent": true,
+      "hkcuPresent": false,
+      "configLibraryPresent": true,
+      "effectiveSource": "HKLM_MANAGED_POLICY",
+      "existingSources": [
+        "HKLM_MANAGED_POLICY",
+        "CONFIG_LIBRARY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_HKLM_MANAGED_POLICY"
+      ]
+    },
+    {
+      "caseId": "h1-u1-l0",
+      "hklmPresent": true,
+      "hkcuPresent": true,
+      "configLibraryPresent": false,
+      "effectiveSource": "HKLM_MANAGED_POLICY",
+      "existingSources": [
+        "HKLM_MANAGED_POLICY",
+        "HKCU_MANAGED_POLICY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_HKLM_MANAGED_POLICY"
+      ]
+    },
+    {
+      "caseId": "h1-u1-l1",
+      "hklmPresent": true,
+      "hkcuPresent": true,
+      "configLibraryPresent": true,
+      "effectiveSource": "HKLM_MANAGED_POLICY",
+      "existingSources": [
+        "HKLM_MANAGED_POLICY",
+        "HKCU_MANAGED_POLICY",
+        "CONFIG_LIBRARY"
+      ],
+      "conflict": true,
+      "canProceed": false,
+      "status": "ACTION_REQUIRED",
+      "errorCode": "CONFIG_SOURCE_CONFLICT",
+      "reasonCodes": [
+        "CONFIG_SOURCE_CONFLICT",
+        "EFFECTIVE_SOURCE_HKLM_MANAGED_POLICY"
+      ]
+    }
+  ]
+}
