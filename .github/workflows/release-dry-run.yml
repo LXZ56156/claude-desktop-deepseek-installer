@@ -54,7 +54,7 @@ jobs:
             return [pscustomobject]@{ Path = $item.FullName; Sha256 = $sha256 }
           }
 
-          $gitCommand = Get-Command git.exe -CommandType Application -ErrorAction Stop
+          $gitCommand = Get-Command git.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1
           $pwsh7 = Get-TrustedToolGrant -ToolId PowerShell7 -Path (Join-Path $PSHOME 'pwsh.exe') -ExpectedLeaf 'pwsh.exe'
           $windowsPowerShell = Get-TrustedToolGrant -ToolId WindowsPowerShell -Path (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ExpectedLeaf 'powershell.exe'
           $git = Get-TrustedToolGrant -ToolId Git -Path $gitCommand.Source -ExpectedLeaf 'git.exe'
