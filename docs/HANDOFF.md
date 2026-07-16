@@ -10,9 +10,10 @@
 `release-artifact`、`credential-helper-release` 和 fail-closed candidate assembler。
 
 `RunId=62ed01b0-7c51-411d-9931-206fbc28602f` 与每引擎 338 项 Pester 是本轮
-P10A-0A runtime 变更前的历史基线，不再代表当前全树。最终双引擎质量门、Release
-Simulation DryRun、`git diff --check`、commit/tree 和 onboarding bundle 标识必须由
-主代理在 clean final commit 后生成；本文不猜测这些易变值，收尾占位见下文。
+P10A-0A runtime 变更前的历史基线，不再代表当前全树。2026-07-16 最新工作树只完成了
+onboarding 定向双引擎门（每端 16/16）；最终全树双引擎质量门、Release Simulation
+DryRun、`git diff --check`、commit/tree 和 onboarding bundle 标识仍须由下一对话在
+clean final commit 流程中生成。本文不猜测这些易变值，精确暂停点见下文。
 
 这些结果只证明纯合同、fake/synthetic、deterministic Release Simulation 和
 fail-closed assembler。P10A 真实 VM evidence、实际 helper PE/签名、frozen facts、
@@ -27,9 +28,11 @@ onboarding builder、fake reset 与 VM-only reset dispatcher/provider boundary�
 
 私有产品 remote 与两个物理单向 control repos 已创建，产品 `main` 基线已推送，两个
 `outbox/` 已初始化；宿主机分钟级 heartbeat 已创建并保持暂停。宿主实现达到
-**VM bootstrap ready**：最终 immutable bundle 生成后，VM 可离线验包、生成本机密钥、
-回报 public fingerprints/tool hashes，并从 VM Codex device 创建同样先暂停的 minute task。
-bootstrap 不授权轮询、产品测试、reset Live 或修改产品代码。
+**VM bootstrap finalization**，尚未达到 ready：必须先完成最终全树门、Release DryRun、
+clean commit/push、immutable bundle 校验，并把现有暂停 heartbeat 更新为绑定最终 hash
+的 prompt。之后 VM 才可离线验包、生成本机密钥、回报 public fingerprints/tool hashes，
+并从 VM Codex device 创建同样先暂停的 minute task。bootstrap 不授权轮询、产品测试、
+reset Live 或修改产品代码。
 
 **VM integration 仍被外部门阻断**：GitHub 当前套餐以 HTTP 403 拒绝 private protected
 history，窄 HostCoordinator/VmTester credentials 尚未发放；VM 负向权限、provider/device
@@ -53,9 +56,10 @@ guest-reset provider 仅属于 DevelopmentOnly 的 VM operator plane，不能进
 - 当前版本：`0.1.0-dev`
 - 产品运行阶段：`Scaffold`
 - 实施位置：P10B 宿主机支撑合同已通过门；P10A-0A 宿主实现与私有 repository pair
-  达到 VM bootstrap ready。当前停在 protected history、最小权限凭据、VM
-  provider/device/reset evidence、VM task 与 unattended 负向权限验证的 integration 门；
-  随后还须完成 Formal Lane，才可执行首次 P10A 窄范围 disposable VM 校准
+  已实现，当前停在 VM bootstrap finalization。完成最终门、commit/push、bundle 与暂停
+  host task hash binding 后，才进入 VM bootstrap-only；protected history、最小权限凭据、
+  VM provider/device/reset evidence、VM task 与 unattended 负向权限验证仍阻断
+  integration，随后还须完成 Formal Lane，才可执行首次 P10A 窄范围 disposable VM 校准
 
 保留当前工作树继续开发。不得 reset、checkout、清理或覆盖用户与前任务的改动。
 实际 commit/clean 状态只能通过项目规定的隔离 Git 入口核验，不能把本交接中的描述
@@ -138,6 +142,113 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
 - candidate assembler 已实现外部 frozen facts/trust anchor、双 profile、两阶段构建和
   deterministic identity 合同；没有真实外部输入时不会生成可发布候选。
 
+## 2026-07-16 对话切换暂停点
+
+用户要求在 onboarding 安全修复工作包收口后暂停当前对话，更新文档，再从同一项目的
+新对话继续。因此本节是下一对话的精确入口；不要把后面的历史措辞或占位符误读为
+已经生成的 final evidence。
+
+### 当前 Git 与工作树
+
+- 分支与 remote ref 均停在
+  `c93b15fe8850fcf42188492bf2449258e9f63615`，对应 tree
+  `fe932672f31776bbf7a5f8f35929ae096822b652`；该 commit 已推送。
+- 前一实现 commit 为 `3fba4b3948a2c59d66402d9dd6aed6fdc78caec3`。
+- 工作树故意保留 8 个未提交文件：
+  `operator/fast-lane/build-vm-onboarding.ps1`、
+  `tests/HostSandbox/FastLaneOnboardingBundle.Tests.ps1`、
+  `docs/HANDOFF.md`、`docs/README.md`、`docs/IMPLEMENTATION_PLAN.md`、
+  `docs/TEST_ISOLATION.md`、`docs/VM_TEST_RELAY.md`、
+  `operator/fast-lane/README.md`。不要 reset、checkout 或丢弃它们。
+- 最新 builder 工作字节 SHA-256 为
+  `3c52dca209469b4f90faabae193c99381ba213144ecbf203a458d1cfa5965e69`；
+  最新 onboarding test 工作字节 SHA-256 为
+  `f76747c2c961de16d98a67727b8dadc1588c889545f4a65d738970e9d3650cd6`。
+- 没有新增、删除或重命名文件，因此本工作包不需要改变
+  `scripts/release-manifest.psd1`。
+
+### 本次已收口的安全修复
+
+- builder 在任何可能触发 clean filter 的 `git status` 或
+  `hash-object --path` 前，使用 `git check-attr -z --all --stdin` 按属性名拒绝
+  `filter`、`working-tree-encoding` 和 `ident`；字面值 `filter=unspecified` 不能再伪装
+  成未设置，也不能执行配置的 filter sentinel。
+- 固定 Git 的 `--stdin` NUL 输出在不同调用/引擎中可采用 `None` 或
+  `PerRecordBom`。builder 只在单次响应内冻结并验证一致模式：首 record 不得含 marker，
+  expected path 不得以 FEFF 开头，后续只允许一致的零枚或一枚 transport marker，剥离
+  后仍有 FEFF 即拒绝，最后用 ordinal membership 绑定。显式 `-- <path>` 的 SafeGit
+  使用单次 `check-attr -z --all -- <path>` 同时按属性名拒绝三类危险属性并校验
+  `text/eol`；它不复用 stdin mode，所有 path token 必须 ordinal exact。这样仍在每次
+  `hash-object --path` 前完成 TOCTOU 邻近复验，同时避免为每个文件重复启动第二个 Git
+  进程。
+- no-user-path scanner 现在以 strict UTF-8 读取；只允许无 traversal/ADS/非法 segment 的
+  固定 VM 根 `C:\ProgramData\cddsi-vm-operator\`。普通、重复、escaped、device、WSL
+  UNC，Windows root-relative user path，Unicode/特殊首字符 POSIX user roots，file URI、
+  MSYS/Cygwin roots 和超过 512 字符的 traversal 均 fail closed；普通
+  `https://example.com/home/index` 不再被误报。
+- 独立只读安全复审已放行，未发现新的明确可复现高风险项；复审未编辑文件、未运行
+  Live、未提交。
+
+### 当前有效测试证据
+
+- 上述单调用性能修复前的 `FastLaneOnboardingBundle.Tests.ps1` 回归基线：PowerShell 7 为 16/16，
+  duration `00:04:20.3556251`；Windows PowerShell 5.1 为 16/16，duration
+  `00:03:41.3006499`。两端 Failed/Skipped/NotRun 均为 0；它不能替代修复后的最终全树门。
+- 2026-07-16 第一次标准 900 秒全树门在 PowerShell 7 worker 完成后，Windows
+  PowerShell worker 被 `Trusted process timed out` 安全终止；总耗时 29:31，该轮不构成
+  PASS。根因是每个 allow-listed 文件重复执行两次 `check-attr`，在多次完整/近完整 bundle
+  build 中放大为每引擎约两百个额外 Git 进程；现已合并为上述单调用实现，最终 900 秒门
+  仍必须重新运行，不能通过增大 timeout 绕过。
+- 两个 PowerShell 文件均为 UTF-8 BOM、精确 CRLF、末尾换行；双引擎 parser error 为 0；
+  当前 `git diff --check` 通过。
+- 这只是定向证据。最新 8 文件工作树尚未运行标准 HostSandbox 全树双引擎统一门，
+  也尚未运行最终 Release Simulation DryRun。此前 426/426 与 Release DryRun PASS 都在
+  本次安全/文档修改之前，只能作旁证，不能作为 final evidence。
+
+### 下一对话必须按顺序完成
+
+1. 先重新读取 `AGENTS.md` 和本节，确认 HEAD/remote 与上述 commit 相同、工作树只含
+   上述 8 文件；不要先编辑或清理。
+2. 使用固定工具运行标准 `scripts/check.ps1 -PassThru` 全树门。当前预期每引擎发现
+   427 项；实际计数不精确一致或任何 top-level zero metric 非零都必须停机诊断。
+3. 统一门通过后运行 `scripts/build-release.ps1 -DryRun`，要求 39 个 allow-listed files、
+   四层 inventory exact、`Changed=false`，所有 forbidden/mutation/secret 指标为 0；再运行
+   `git diff --check` 和编码检查。
+4. 只 stage 上述 8 文件，检查 cached diff，再提交并非 force push 到现有
+   `codex/repair/p10a-0a-fast-lane`；不得 merge PR、发布或 promotion。
+5. 从新的 clean exact commit 生成并自校验 final Store onboarding ZIP。预期 14 个提交
+   payload + 2 个 generated runbooks + manifest/inventory，共 18 个 ZIP entries，inventory
+   entry count 16，timestamp 固定 1980；记录 ZIP/manifest/inventory/content digest 的精确
+   hash/token、长度和 retained owner-marked HostSandbox 路径。任何实际源扫描失败都修根因，
+   不得放宽或绕过。
+6. 通过 `codex_app__automation_update` 更新既有
+   `cddsi-fast-lane-hostcoordinator-minute-poll`，保留同一 id、heartbeat kind、名称、
+   一分钟 cadence、target thread `019f667f-e2ed-7c40-91fb-9bfc8367f9cf` 和 `PAUSED`；
+   prompt 必须绑定最终 commit/tree/bundle/manifest/inventory/content、工具和 repo 身份。
+   当前凭据均 `UNPROVISIONED`、protection 因
+   `PRIVATE_REPOSITORY_SERVER_PROTECTION_UNAVAILABLE_HTTP_403_CURRENT_PLAN` 为 `BLOCKED`，
+   所以误触发必须在网络/Git/代码修改前返回 `BLOCKED`。
+7. 验证 remote ref 精确等于新 commit、工作树 clean，并等待现有 draft PR #1 的新 CI；
+   不得创建重复 PR 或自动 merge。完成这些步骤后才可把
+   `CanStartVmBootstrap` 置为 true；`CanStartVmIntegration`、`P10A0AComplete` 与 Formal
+   readiness 仍保持 false。
+
+固定工具与 SHA-256：
+
+- PowerShell 7：`C:\Program Files\PowerShell\7\pwsh.exe`，
+  `99ec38d8c4910fd5f2feeeec4dedb5076ff39a08ca21e12642822bc8d989e316`；
+- Windows PowerShell：
+  `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`，
+  `0ff6f2c94bc7e2833a5f7e16de1622e5dba70396f31c7d5f56381870317e8c46`；
+- Git：`D:\Soft\Git\cmd\git.exe`，
+  `da240fe9bc24895b3e04150a4990b8a6ff329ecabcd8f19684c2cc310da5ef3f`；
+- OpenSSH：`D:\Soft\Git\usr\bin\ssh.exe`，
+  `118091cb71f2fb42e99000d62a9ffc200a6d97e776346a537e443db985bb3baa`。
+
+当前没有可交付的 final onboarding bundle。现有宿主机 heartbeat 仍为暂停但 prompt 尚未
+绑定上述未来 final 值；VM task 仍不存在且只能从 VM 设备创建。不得在完成本节步骤前
+上 VM，不得在宿主机执行产品 Live，VM 永远不得修改产品代码。
+
 ## 最终宿主机验证与 VM onboarding 标识
 
 2026-07-15 的 `RunId=62ed01b0-7c51-411d-9931-206fbc28602f`（每引擎 338 项）只是
@@ -164,8 +275,10 @@ Simulation DryRun 与 `git diff --check`；宿主机不得为验证执行产品 
 
 1. P10B 宿主机支撑合同已完成；本轮最终门结果以上述 finalization evidence 为准。
 2. P10A-0A 宿主机实现、私有产品 remote、两个 control repos、固定 outbox/onboarding/
-   readiness/reset boundary 与暂停的 host heartbeat 已落地，达到 **VM bootstrap ready**。
-3. VM bootstrap 只执行离线验包、VM-local keys、tool hashes 和创建仍暂停的 VM task；
+   readiness/reset boundary 与暂停的 host heartbeat 已落地，但最终门、commit/bundle 和
+   task hash binding 尚未完成，因此仍是 **VM bootstrap finalization**。
+3. finalization 完成后的 VM bootstrap 只执行离线验包、VM-local keys、tool hashes 和创建
+   仍暂停的 VM task；
    `CanStartVmIntegration=false`，直到 private protected history 与窄 HostCoordinator
    credential 外部门解决，并在 VM 完成 credentials/negative-permission/reset/task smoke。
 4. P10A-0A 全部退出门通过后仍须完成 Formal Lane；首次 P10A 必须绑定外部
@@ -351,11 +464,13 @@ HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，�
 > `docs/IMPLEMENTATION_PLAN.md`。P3-P4、
 > P5-P7 纯合同、P8 fake orchestrator、P9 synthetic、P10A evidence/consumption 和
 > P10A-0A 宿主机固定 outbox/readiness/onboarding/VM-only reset boundary 已实现；P10B
-> 宿主机支撑合同也已通过门，但真实候选尚未构建。最终质量与 onboarding 标识读取
-> 主代理外部收尾记录，不把本文占位当证据。
-> 私有产品 remote 与两个物理单向 control repos 已创建并初始化；宿主实现为 VM
-> bootstrap ready。先在 VM 离线验 bundle、生成 VM-local keys、回报 public/tool hashes，
-> 并从 VM device 创建仍暂停的 minute task，不轮询、不测试、不执行 reset Live。
+> 宿主机支撑合同也已通过门，但真实候选尚未构建。先按
+> “2026-07-16 对话切换暂停点”的 7 步完成全树门、Release DryRun、commit/push、final
+> bundle、暂停 host task hash binding 和 PR CI；不把本文占位当证据，也不要提前上 VM。
+> 私有产品 remote 与两个物理单向 control repos 已创建并初始化；宿主实现处于 VM
+> bootstrap finalization。完成后才在 VM 离线验 bundle、生成 VM-local keys、回报
+> public/tool hashes，并从 VM device 创建仍暂停的 minute task；仍不轮询、不测试、
+> 不执行 reset Live。
 > GitHub 当前套餐以 HTTP 403 拒绝 private protected history，窄角色 credentials 也未
 > 发放，所以 integration blocked。解决这些门后才做 VM 负向权限、reset smoke、两端
 > task 安全启用与 unattended 闭环。

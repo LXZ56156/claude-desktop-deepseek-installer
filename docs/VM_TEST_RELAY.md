@@ -24,13 +24,15 @@ Release ZIP。
 
 私有产品 remote 与两个 control repository 已创建，产品旧 `main` 基线已推送，两个
 `outbox/` 已初始化。宿主实现可从 clean exact commit 生成 immutable diagnostic onboarding
-ZIP，所以当前状态为 **VM bootstrap ready**：VM 可离线验 bundle、生成本地密钥、回报
-公钥/工具 hash 并创建仍暂停的 minute task。GitHub 当前套餐以 HTTP 403 拒绝 private
-ruleset；窄 HostCoordinator/VmTester credentials、VM 只读身份及负向写验证、VM reset
-设备信任/实测、任务安全启用和无人值守闭环仍未完成，所以 **VM integration blocked**。
-宿主机 heartbeat 已创建并保持暂停；VM task 必须从 VM 设备创建且初始也必须暂停。
-Formal Lane 的 CAS、签名和外部 snapshot supervisor 也未实现。因此当前不能宣称
-P10A-0A 完成，更不能开始真实 P10A/P11。
+ZIP。当前尚未完成最终 clean commit、统一门、实际 immutable ZIP 与暂停宿主机任务的
+hash binding，因此状态为 **VM bootstrap finalization**，`CanStartVmBootstrap=false`。
+完成这些步骤后，VM 才可离线验 bundle、生成本地密钥、回报公钥/工具 hash 并创建仍
+暂停的 minute task。GitHub 当前套餐以 HTTP 403 拒绝 private ruleset；窄
+HostCoordinator/VmTester credentials、VM 只读身份及负向写验证、VM reset 设备信任/实测、
+任务安全启用和无人值守闭环仍未完成，所以 **VM integration blocked**。宿主机 heartbeat
+已创建并保持暂停，但其最终 hash-bound prompt 仍待重绑；VM task 必须从 VM 设备创建且
+初始也必须暂停。Formal Lane 的 CAS、签名和外部 snapshot supervisor 也未实现。因此
+当前不能宣称 P10A-0A 完成，更不能开始真实 P10A/P11。
 
 ## 不可变原则
 
@@ -542,9 +544,10 @@ receipt。
 不需要用户逐轮复制请求、结果或 `FIX_READY`。两端只对已验证的新 message commit 作出
 反应。当前 canonical/schema/state validator、固定 Git outbox runner、readiness、
 deterministic onboarding、VM-only reset boundary、两端 prompt/runbook、synthetic dry
-rehearsal 与真实 private repository pair 已实现。宿主实现达到 bootstrap ready；
-protected history、最小凭据、VM device/provider evidence、VM task 安全绑定、启用 host
-heartbeat 和无人值守验收仍是外部 integration 工作，不能直接在现有宿主机进入产品 Live。
+rehearsal 与真实 private repository pair 已实现。宿主实现仍在 bootstrap finalization；
+最终 bundle 与暂停 host heartbeat 的 hash binding 完成后才 bootstrap ready。protected
+history、最小凭据、VM device/provider evidence、VM task 安全绑定、启用 host heartbeat
+和无人值守验收仍是外部 integration 工作，不能直接在现有宿主机进入产品 Live。
 
 ### Codex automation
 
@@ -657,8 +660,10 @@ unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授
 当前完成了本地合同、固定 outbox/runtime、readiness、deterministic onboarding、
 VM-only reset boundary、prompt/runbook、纯 synthetic rehearsal，以及三个 private
 repositories 与两个 `outbox/` 的 bootstrap。宿主机 minute task 已创建且暂停；宿主机
-实现可交付 immutable onboarding，因此 `CanStartVmBootstrap` 可以为 true。VM task 必须
-从 VM device 创建并先暂停。
+实现可以生成 immutable onboarding，但最终全树门、Release DryRun、clean commit/push、
+实际 immutable bundle 和暂停 host task hash binding 尚未完成，因此当前
+`CanStartVmBootstrap` 必须为 false。只有这些 finalization 门全部通过后才可置为 true；
+VM task 必须从 VM device 创建并先暂停。
 
 GitHub private ruleset 当前返回 HTTP 403，protected history 与 narrow credentials
 尚未满足，因此 `CanStartVmIntegration` 必须保持 false。remote credential 负向测试、

@@ -352,39 +352,41 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $result.SourceCommitVerified | Should -BeTrue
     }
 
-    It 'rejects a custom clean filter attribute before the filter command can execute' {
-        $fixture = New-CddsiOnboardingFixture
-        $relative = 'operator/fast-lane/invoke-git-outbox.ps1'
-        $attributesPath = Join-Path $fixture.SourceRoot '.gitattributes'
-        $attributesText = [System.IO.File]::ReadAllText($attributesPath, [System.Text.Encoding]::UTF8)
-        Write-CddsiOnboardingFixtureText -Path $attributesPath `
-            -Text ($attributesText + $relative + " filter=cddsi-onboarding-test`n")
-        [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
-            '-C', $fixture.SourceRoot, 'add', '--', '.gitattributes'
-        ))
-        [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
-            '-C', $fixture.SourceRoot, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@invalid',
-            'commit', '--quiet', '-m', 'add rejected custom clean filter'
-        ))
-        $fixture.Arguments.ProductCommitSha = ([string](Invoke-CddsiOnboardingFixtureGit -Arguments @(
-            '-C', $fixture.SourceRoot, 'rev-parse', 'HEAD'
-        ))).Trim()
+    It 'rejects custom and ambiguous clean filter attributes before either filter can execute' {
+        foreach ($filterName in @('cddsi-onboarding-test', 'unspecified')) {
+            $fixture = New-CddsiOnboardingFixture
+            $relative = 'operator/fast-lane/invoke-git-outbox.ps1'
+            $attributesPath = Join-Path $fixture.SourceRoot '.gitattributes'
+            $attributesText = [System.IO.File]::ReadAllText($attributesPath, [System.Text.Encoding]::UTF8)
+            Write-CddsiOnboardingFixtureText -Path $attributesPath `
+                -Text ($attributesText + $relative + " filter=$filterName`n")
+            [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
+                '-C', $fixture.SourceRoot, 'add', '--', '.gitattributes'
+            ))
+            [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
+                '-C', $fixture.SourceRoot, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@invalid',
+                'commit', '--quiet', '-m', 'add rejected custom clean filter'
+            ))
+            $fixture.Arguments.ProductCommitSha = ([string](Invoke-CddsiOnboardingFixtureGit -Arguments @(
+                '-C', $fixture.SourceRoot, 'rev-parse', 'HEAD'
+            ))).Trim()
 
-        $sentinel = Join-Path $fixture.Sandbox.Root 'custom-filter-executed.txt'
-        $sentinelForShell = $sentinel.Replace('\', '/')
-        $filterCommand = 'echo FILTER_EXECUTED > "' + $sentinelForShell + '"'
-        [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
-            '-C', $fixture.SourceRoot, 'config', 'filter.cddsi-onboarding-test.clean', $filterCommand
-        ))
-        [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
-            '-C', $fixture.SourceRoot, 'config', 'filter.cddsi-onboarding-test.required', 'true'
-        ))
+            $sentinel = Join-Path $fixture.Sandbox.Root ("$filterName-filter-executed.txt")
+            $sentinelForShell = $sentinel.Replace('\', '/')
+            $filterCommand = 'echo FILTER_EXECUTED > "' + $sentinelForShell + '"'
+            [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
+                '-C', $fixture.SourceRoot, 'config', ("filter.$filterName.clean"), $filterCommand
+            ))
+            [void](Invoke-CddsiOnboardingFixtureGit -Arguments @(
+                '-C', $fixture.SourceRoot, 'config', ("filter.$filterName.required"), 'true'
+            ))
 
-        $buildArguments = $fixture.Arguments
-        { New-CddsiFastLaneVmOnboardingBundle @buildArguments } |
-            Should -Throw '*unsafe Git clean attribute*'
-        [System.IO.File]::Exists($sentinel) | Should -BeFalse
-        [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
+            $buildArguments = $fixture.Arguments
+            { New-CddsiFastLaneVmOnboardingBundle @buildArguments } |
+                Should -Throw '*unsafe Git clean attribute*'
+            [System.IO.File]::Exists($sentinel) | Should -BeFalse
+            [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
+        }
     }
 
     It 'rejects source tampering after the caller freezes the expected file hash' {
@@ -394,6 +396,75 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $buildArguments = $fixture.Arguments
         { New-CddsiFastLaneVmOnboardingBundle @buildArguments } | Should -Throw '*source hash differs*'
         [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
+    }
+
+    It 'accepts reviewed URI and path-guard literals while rejecting concrete POSIX user roots' {
+        $reviewedSourcePaths = @(
+            'config/fast-lane-policy.psd1'
+            'operator/fast-lane/trust/github-known-hosts'
+            'lib/common.ps1'
+            'lib/vm-calibration.ps1'
+            'lib/vm-test-relay.ps1'
+            'operator/fast-lane/invoke-git-outbox.ps1'
+            'lib/vm-reset.ps1'
+            'operator/fast-lane/invoke-vm-reset-live.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+            'operator/fast-lane/prompts/vm-poll.md'
+            'operator/fast-lane/runbooks/negative-permissions.md'
+            'operator/fast-lane/runbooks/reset-smoke.md'
+            'operator/fast-lane/runbooks/unattended-smoke.md'
+            'operator/fast-lane/runbooks/vm-bootstrap.md'
+        )
+        foreach ($relativePath in $reviewedSourcePaths) {
+            {
+                Assert-CddsiFastLaneOnboardingNoUserPath `
+                    -Path (Join-Path $script:RepoRoot ($relativePath.Replace('/', '\'))) `
+                    -RelativePath $relativePath
+            } | Should -Not -Throw
+        }
+
+        $fixture = New-CddsiOnboardingFixture
+        $reviewedUriPath = Join-Path $fixture.Sandbox.Root 'reviewed-http-uri.txt'
+        Write-CddsiOnboardingFixtureText -Path $reviewedUriPath `
+            -Text "source=https://example.com/home/index`n"
+        {
+            Assert-CddsiFastLaneOnboardingNoUserPath `
+                -Path $reviewedUriPath -RelativePath 'reviewed-http-uri.txt'
+        } | Should -Not -Throw
+
+        $unsafeSamples = [ordered]@{
+            'concrete-posix-user-path.txt' = "workspace=/home/cddsi-user/private-worktree`n"
+            'unicode-posix-user-path.txt' = "workspace=/home/张三/private-worktree`n"
+            'parenthesized-posix-user-path.txt' = "workspace=/home/(alice)/private-worktree`n"
+            'bracketed-posix-user-path.txt' = "workspace=/Users/[alice]/private-worktree`n"
+            'file-uri-user-path.txt' = "workspace=file:///home/alice/private-worktree`n"
+            'file-uri-root-user-path.txt' = "workspace=file:///root/private-worktree`n"
+            'file-uri-msys-user-path.txt' = "workspace=file:///c/Users/alice/private-worktree`n"
+            'repeated-separator-user-path.txt' = "workspace=/home//alice/private-worktree`n"
+            'root-user-path.txt' = "workspace=/root/private-worktree`n"
+            'cygwin-user-path.txt' = "workspace=/cygdrive/c/Users/alice/private-worktree`n"
+            'root-relative-user-path.txt' = "workspace=\Users\alice\private-worktree`n"
+            'legacy-root-relative-user-path.txt' = "workspace=\Documents and Settings\alice\private-worktree`n"
+            'concrete-unc-path.txt' = "workspace=\\cddsi-host\private-share\worktree`n"
+            'repeated-backslash-unc-path.txt' = "workspace=\\\cddsi-host\private-share\worktree`n"
+            'escaped-backslash-unc-path.txt' = "workspace=\\\\cddsi-host\private-share\worktree`n"
+            'device-unc-path.txt' = "workspace=\\?\UNC\cddsi-host\private-share\worktree`n"
+            'nt-device-path.txt' = "workspace=\\??\C:\ProgramData\cddsi-vm-operator\safe`n"
+            'wsl-unc-path.txt' = "workspace=\\wsl$\Ubuntu\home\alice`n"
+            'forward-unc-path.txt' = "workspace=//cddsi-host/private-share/worktree`n"
+            'repeated-forward-unc-path.txt' = "workspace=///cddsi-host/private-share/worktree`n"
+            'operator-prefix-traversal.txt' = "workspace=C:\ProgramData\cddsi-vm-operator\..\Users\cddsi-user`n"
+            'operator-prefix-long-traversal.txt' = (
+                "workspace=C:\ProgramData\cddsi-vm-operator\" + ('a' * 520) + "\..\Users\alice`n"
+            )
+        }
+        foreach ($entry in $unsafeSamples.GetEnumerator()) {
+            $unsafePath = Join-Path $fixture.Sandbox.Root $entry.Key
+            Write-CddsiOnboardingFixtureText -Path $unsafePath -Text $entry.Value
+            {
+                Assert-CddsiFastLaneOnboardingNoUserPath -Path $unsafePath -RelativePath $entry.Key
+            } | Should -Throw '*host-specific absolute path*'
+        }
     }
 
     It 'requires the exact trusted Git executable hash and exact repository root' {

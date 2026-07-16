@@ -76,11 +76,13 @@ Current deployment state (2026-07-16):
 - VM to host: `LXZ56156/cddsi-vm-to-host` (private; repository ID
   `1301870545`, node ID `R_kgDOTZj30Q`, ref `refs/heads/main`, genesis
   `d88fe54d624bb5699751522e80e1cc4cd367ec33`).
-- The host-side diagnostic implementation is VM-bootstrap ready: the fixed Git
-  outbox runtime, readiness resolver, deterministic onboarding builder, VM-only
-  reset dispatcher/provider boundary, prompts, and runbooks can be bound into
-  one immutable, inventory-checked ZIP. This does not authorize polling or a
-  product test.
+- The host-side diagnostic implementation is feature-complete for VM-bootstrap
+  finalization: the fixed Git outbox runtime, readiness resolver, deterministic
+  onboarding builder, VM-only reset dispatcher/provider boundary, prompts, and
+  runbooks can be bound into one immutable, inventory-checked ZIP. The final
+  clean commit, full gates, actual ZIP, and paused heartbeat hash binding remain
+  pending, so VM bootstrap is not authorized yet. This never authorizes polling
+  or a product test.
 - Host Codex heartbeat: `cddsi-fast-lane-hostcoordinator-minute-poll`, paused
   until a narrow HostCoordinator credential, append-only server protection,
   and its protected authority assertion are verified.
@@ -99,10 +101,10 @@ Current deployment state (2026-07-16):
 
 The readiness states are deliberately separate:
 
-- `CanStartVmBootstrap`: yes after the final immutable bundle is validated and
-  the host heartbeat remains hash-bound and paused. Bootstrap is limited to
-  offline bundle verification, VM-local key creation, tool/hash reporting, and
-  creation of the still-paused VM task.
+- `CanStartVmBootstrap`: no until the final immutable bundle is validated and
+  the host heartbeat is hash-bound and remains paused; yes only after both are
+  evidenced. Bootstrap is limited to offline bundle verification, VM-local key
+  creation, tool/hash reporting, and creation of the still-paused VM task.
 - `CanStartVmIntegration`: no until protected history and the narrow
   HostCoordinator credential are independently evidenced. VM polling, remote
   negative-permission tests, reset smoke, and unattended smoke remain pending.

@@ -47,8 +47,10 @@ runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
 dispatcher/provider 边界、两端 prompt/runbook 和 synthetic rehearsal。它们位于独立
 OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release。宿主机侧实现
 可以生成绑定精确 commit/tree、文件/blob/tool hash、repository 数字/node identity 与
-pinned genesis 的诊断 onboarding ZIP，因此达到 **VM bootstrap ready**；这只允许 VM
-离线核验、设备本地密钥生成和创建仍暂停的 VM task。
+pinned genesis 的诊断 onboarding ZIP。当前最终 clean commit、统一门、实际 immutable
+ZIP 与暂停宿主机任务的 hash binding 尚未完成，所以仍是 **VM bootstrap finalization**，
+不是 bootstrap ready。最终化完成后也只允许 VM 离线核验、设备本地密钥生成和创建
+仍暂停的 VM task。
 
 真实 private protected history 当前被 GitHub 套餐以 HTTP 403 阻断，窄权限角色凭据、
 VM 负向权限证据、VM provider/device trust、reset smoke 与 unattended acceptance 尚未

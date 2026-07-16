@@ -140,28 +140,54 @@ function Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes {
     )
 
     if ($RelativePaths.Count -eq 0) { return }
-    $attributeNames = @('filter', 'working-tree-encoding', 'ident')
+    $unsafeAttributeNames = @('filter', 'working-tree-encoding', 'ident')
     $standardInput = ($RelativePaths -join [char]0) + [char]0
     $result = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
-        -Arguments (@('check-attr', '-z') + $attributeNames + @('--stdin')) `
+        -Arguments @('check-attr', '-z', '--all', '--stdin') `
         -StandardInput $standardInput
     $tokens = @($result.StandardOutput.Split([char]0))
-    $expectedTokenCount = ($RelativePaths.Count * $attributeNames.Count * 3) + 1
-    if ($tokens.Count -ne $expectedTokenCount -or $tokens[-1] -cne '') {
+    if ($tokens.Count -lt 1 -or $tokens[-1] -cne '' -or (($tokens.Count - 1) % 3) -ne 0) {
         throw 'VM onboarding repository Git attribute response is invalid.'
     }
 
-    $tokenIndex = 0
+    $expectedPaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($relativePath in $RelativePaths) {
-        foreach ($attributeName in $attributeNames) {
-            if ($tokens[$tokenIndex] -cne $relativePath -or
-                $tokens[$tokenIndex + 1] -cne $attributeName) {
-                throw 'VM onboarding repository Git attribute response is not path-bound.'
+        if ($relativePath.Length -gt 0 -and $relativePath[0] -eq [char]0xFEFF) {
+            throw 'VM onboarding repository path must not begin with a Unicode byte-order marker.'
+        }
+        [void]$expectedPaths.Add($relativePath)
+    }
+    $recordMarkerMode = $null
+    for ($tokenIndex = 0; $tokenIndex -lt ($tokens.Count - 1); $tokenIndex += 3) {
+        $recordIndex = [int]($tokenIndex / 3)
+        $reportedPath = $tokens[$tokenIndex]
+        $hasRecordMarker = $reportedPath.Length -gt 0 -and $reportedPath[0] -eq [char]0xFEFF
+        $relativePath = if ($recordIndex -eq 0) {
+            if ($hasRecordMarker) {
+                throw 'VM onboarding repository Git attribute response has an invalid leading record marker.'
             }
-            if ($tokens[$tokenIndex + 2] -cne 'unspecified') {
-                throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $relativePath)
+            $reportedPath
+        } else {
+            $observedMode = if ($hasRecordMarker) { 'PerRecordBom' } else { 'None' }
+            if ($null -eq $recordMarkerMode) {
+                $recordMarkerMode = $observedMode
+            } elseif ($observedMode -cne $recordMarkerMode) {
+                throw 'VM onboarding repository Git attribute response changed record-marker mode.'
             }
-            $tokenIndex += 3
+            if ($hasRecordMarker) { $reportedPath.Substring(1) } else { $reportedPath }
+        }
+        if ($relativePath.Length -gt 0 -and $relativePath[0] -eq [char]0xFEFF) {
+            throw 'VM onboarding repository Git attribute response is not path-bound.'
+        }
+        $attributeName = $tokens[$tokenIndex + 1]
+        $attributeValue = $tokens[$tokenIndex + 2]
+        if (-not $expectedPaths.Contains($relativePath) -or
+            [string]::IsNullOrEmpty($attributeName) -or
+            [string]::IsNullOrEmpty($attributeValue)) {
+            throw 'VM onboarding repository Git attribute response is not path-bound.'
+        }
+        if ($unsafeAttributeNames -ccontains $attributeName) {
+            throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $relativePath)
         }
     }
 }
@@ -173,31 +199,33 @@ function Assert-CddsiFastLaneOnboardingSafeGitAttributes {
         [Parameter(Mandatory = $true)][string]$RelativePath
     )
 
-    $attributeNames = @('text', 'eol', 'filter', 'working-tree-encoding', 'ident')
+    $unsafeAttributeNames = @('filter', 'working-tree-encoding', 'ident')
     $result = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
-        -Arguments (@('check-attr', '-z') + $attributeNames + @('--', $RelativePath))
+        -Arguments @('check-attr', '-z', '--all', '--', $RelativePath)
     $tokens = @($result.StandardOutput.Split([char]0))
-    if ($tokens.Count -ne (($attributeNames.Count * 3) + 1) -or $tokens[-1] -cne '') {
+    if ($tokens.Count -lt 1 -or $tokens[-1] -cne '' -or (($tokens.Count - 1) % 3) -ne 0) {
         throw ('VM onboarding Git attribute response is invalid: {0}' -f $RelativePath)
     }
 
     $attributes = [ordered]@{}
-    for ($index = 0; $index -lt $attributeNames.Count; $index++) {
-        $offset = $index * 3
-        $name = $attributeNames[$index]
-        if ($tokens[$offset] -cne $RelativePath -or $tokens[$offset + 1] -cne $name) {
+    for ($offset = 0; $offset -lt ($tokens.Count - 1); $offset += 3) {
+        $reportedPath = $tokens[$offset]
+        $name = $tokens[$offset + 1]
+        $value = $tokens[$offset + 2]
+        if (-not [string]::Equals($reportedPath, $RelativePath, [StringComparison]::Ordinal) -or
+            [string]::IsNullOrEmpty($name) -or [string]::IsNullOrEmpty($value) -or
+            $attributes.Contains($name)) {
             throw ('VM onboarding Git attribute response is not path-bound: {0}' -f $RelativePath)
         }
-        $attributes[$name] = $tokens[$offset + 2]
-    }
-
-    if ($attributes.text -cne 'set' -or @('lf', 'crlf') -cnotcontains $attributes.eol) {
-        throw ('VM onboarding source path must use explicit built-in text/eol conversion: {0}' -f $RelativePath)
-    }
-    foreach ($unsafeName in @('filter', 'working-tree-encoding', 'ident')) {
-        if ($attributes[$unsafeName] -cne 'unspecified') {
+        if ($unsafeAttributeNames -ccontains $name) {
             throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $RelativePath)
         }
+        $attributes[$name] = $value
+    }
+
+    if (-not $attributes.Contains('text') -or -not $attributes.Contains('eol') -or
+        $attributes.text -cne 'set' -or @('lf', 'crlf') -cnotcontains $attributes.eol) {
+        throw ('VM onboarding source path must use explicit built-in text/eol conversion: {0}' -f $RelativePath)
     }
 }
 
@@ -362,16 +390,63 @@ function Assert-CddsiFastLaneOnboardingNoUserPath {
     )
 
     $bytes = [System.IO.File]::ReadAllBytes($Path)
-    $content = [System.Text.Encoding]::GetEncoding(28591).GetString($bytes)
-    $patterns = @(
-        '(?i)(?<![A-Za-z0-9_])[A-Za-z]:[\\/]',
-        '(?<![\\])\\\\[^\\/\r\n]+[\\/]',
-        '(?m)(?<![A-Za-z0-9_:/.-])/(?!/)(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+'
+    try {
+        $content = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes)
+    } catch {
+        throw ('VM onboarding source is not valid UTF-8 text: {0}' -f $RelativePath)
+    }
+    $drivePathPattern = '(?i)(?<![A-Za-z0-9_])[A-Za-z]:[\\/]'
+    $reviewedVmOperatorPrefix = 'C:\ProgramData\cddsi-vm-operator\'
+    foreach ($match in @([regex]::Matches($content, $drivePathPattern))) {
+        $tail = $content.Substring($match.Index)
+        $terminator = [regex]::Match($tail, '[\x00-\x20''"`<>|]')
+        $candidate = if ($terminator.Success) { $tail.Substring(0, $terminator.Index) } else { $tail }
+        if ($candidate.StartsWith($reviewedVmOperatorPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $suffix = $candidate.Substring($reviewedVmOperatorPrefix.Length)
+            if ($suffix.EndsWith('\', [StringComparison]::Ordinal) -or
+                $suffix.EndsWith('/', [StringComparison]::Ordinal)) {
+                $suffix = $suffix.Substring(0, $suffix.Length - 1)
+            }
+            $segments = if ($suffix.Length -eq 0) { @() } else { @($suffix -split '[\\/]') }
+            if ($candidate.Substring(2).Contains(':') -or $candidate -match '[*?]' -or
+                @($segments | Where-Object { $_ -ceq '' -or $_ -ceq '.' -or $_ -ceq '..' }).Count -gt 0) {
+                throw ('VM onboarding source contains a host-specific absolute path: {0}' -f $RelativePath)
+            }
+            continue
+        }
+        throw ('VM onboarding source contains a host-specific absolute path: {0}' -f $RelativePath)
+    }
+
+    $networkPathPatterns = @(
+        '(?<![A-Za-z0-9_\\])\\{2,}(?=(?:[\p{L}\p{N}_-]|\?|\.))',
+        '(?<![:/A-Za-z0-9_])/{2,}(?=[\p{L}\p{N}_-])'
     )
-    foreach ($pattern in $patterns) {
+    foreach ($pattern in $networkPathPatterns) {
         if ([regex]::IsMatch($content, $pattern)) {
             throw ('VM onboarding source contains a host-specific absolute path: {0}' -f $RelativePath)
         }
+    }
+
+    $userSegmentStart = '[^\s/\\|)<]'
+    $posixUserPathPatterns = @(
+        ('(?i)(?<![A-Za-z0-9_:/.-])/(?:home|Users)/+(?={0})' -f $userSegmentStart),
+        ('(?i)(?<![A-Za-z0-9_:/.-])/(?:mnt|cygdrive)/+[A-Za-z]/+Users/+(?={0})' -f $userSegmentStart),
+        ('(?i)(?<![A-Za-z0-9_:/.-])/[A-Za-z]/+Users/+(?={0})' -f $userSegmentStart),
+        '(?i)(?<![A-Za-z0-9_:/.-])/root(?:[/\\]|$)',
+        ('(?i)(?<![A-Za-z0-9_])file:(?://[^/\r\n]*)?/+(?:home|Users)/+(?={0})' -f $userSegmentStart),
+        ('(?i)(?<![A-Za-z0-9_])file:(?://[^/\r\n]*)?/+(?:mnt|cygdrive)/+[A-Za-z]/+Users/+(?={0})' -f $userSegmentStart),
+        ('(?i)(?<![A-Za-z0-9_])file:(?://[^/\r\n]*)?/+[A-Za-z]/+Users/+(?={0})' -f $userSegmentStart),
+        '(?i)(?<![A-Za-z0-9_])file:(?://[^/\r\n]*)?/+root(?:[/\\]|$)'
+    )
+    foreach ($pattern in $posixUserPathPatterns) {
+        if ([regex]::IsMatch($content, $pattern)) {
+            throw ('VM onboarding source contains a host-specific absolute path: {0}' -f $RelativePath)
+        }
+    }
+
+    $windowsRootRelativeUserPathPattern = ('(?i)(?<![A-Za-z0-9_\\])\\+(?:Users|Documents and Settings)\\+(?={0})' -f $userSegmentStart)
+    if ([regex]::IsMatch($content, $windowsRootRelativeUserPathPattern)) {
+        throw ('VM onboarding source contains a host-specific absolute path: {0}' -f $RelativePath)
     }
 }
 

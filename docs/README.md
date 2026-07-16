@@ -70,14 +70,18 @@ P2-P10A 已把配置、环境、供应链、credential、恢复、重启、fake 
 统一门。P10A-0A 的宿主机侧 Fast Lane 实现现已包括私有产品 remote、两个物理单向
 private control repositories、固定 Git outbox runtime、readiness resolver、确定性 VM
 onboarding builder、VM-only reset 边界以及两端分钟级 prompt/runbook。宿主机 task 已
-创建且暂停；VM task 必须从 VM 设备创建并同样先保持暂停。
+创建且暂停；VM task 必须从 VM 设备创建并同样先保持暂停。当前精确收尾状态只以
+`docs/HANDOFF.md` 为准。
 
-这只达到 **VM bootstrap ready**：可在 VM 离线验 bundle、生成设备本地密钥、回报
-公钥/工具 hash 并创建暂停任务。GitHub 当前套餐以 HTTP 403 拒绝 private protected
-history，且窄权限角色凭据尚未发放，所以 **VM integration 仍阻断**；不得轮询真实
-outbox、执行产品测试或声称 P10A-0A 完成。首次 P10A 还必须经过外部 clean snapshot
-receipt、独立 CAS 与签名的 Formal Lane。精确易变状态以 `HANDOFF.md` 为准；整个
-过程不增加宿主机产品 Live，VM 也不得修改产品代码。
+当前代码能力已经进入 **VM bootstrap finalization**，但尚未生成绑定最终 clean
+commit/tree 的 immutable onboarding bundle，也尚未把暂停的宿主机 heartbeat 更新为
+最终 hash-bound prompt，因此 `CanStartVmBootstrap=false`，不能进入 VM。完成最终双引擎
+统一门、Release DryRun、提交/推送、bundle 校验和暂停任务重绑后，才允许 VM 离线验包、
+生成设备本地密钥、回报公钥/工具 hash 并创建暂停任务。GitHub 当前套餐以 HTTP 403
+拒绝 private protected history，且窄权限角色凭据尚未发放，所以即使 bootstrap ready
+后 **VM integration 仍阻断**；不得轮询真实 outbox、执行产品测试或声称 P10A-0A 完成。
+首次 P10A 还必须经过外部 clean snapshot receipt、独立 CAS 与签名的 Formal Lane。
+整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
 
 `docs/HANDOFF.md` 是易变状态的唯一权威来源。其他文档可以保留便于理解的状态
 摘要，但必须链接到交接，且摘要与交接冲突时以交接和实际 Git 状态为准。
