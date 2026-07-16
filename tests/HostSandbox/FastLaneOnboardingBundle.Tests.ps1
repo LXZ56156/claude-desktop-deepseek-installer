@@ -143,7 +143,10 @@
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\vm-reset.ps1') `
             -Text "function Invoke-CddsiVmGuestReset { param(`$Policy) return `$Policy }`r`n"
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'operator\fast-lane\invoke-git-outbox.ps1') `
-            -Text "`$contract='cddsi-fast-lane-git-outbox-v1'`r`nfunction Invoke-CddsiFastLaneGitOutbox { param([string]`$MessageId) Write-Output `$MessageId }`r`n"
+            -Text ("`$ownerContract='cddsi-fast-lane-git-outbox-owner-v1'`r`n" +
+                "`$stateContract='cddsi-fast-lane-git-outbox-state-v1'`r`n" +
+                "`$resultContract='cddsi-fast-lane-git-outbox-result-v1'`r`n" +
+                "function Invoke-CddsiFastLaneGitOutbox { param([string]`$MessageId) Write-Output `$MessageId }`r`n")
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'operator\fast-lane\invoke-vm-reset-live.ps1') `
             -Text "`$contract='cddsi-vm-reset-live-adapter-result-v1'`r`nfunction Invoke-CddsiVmResetLiveAdapter { param([string]`$CycleId) Write-Output `$CycleId }`r`n"
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'operator\fast-lane\providers\windows-vm-reset.ps1') `

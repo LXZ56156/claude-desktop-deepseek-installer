@@ -161,9 +161,9 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
   `docs/TEST_ISOLATION.md`、`docs/VM_TEST_RELAY.md`、
   `operator/fast-lane/README.md`。不要 reset、checkout 或丢弃它们。
 - 最新 builder 工作字节 SHA-256 为
-  `3c52dca209469b4f90faabae193c99381ba213144ecbf203a458d1cfa5965e69`；
+  `7f7fb843aa87100a294ff0529a2ce7864115d416487fb58f0c84232be0f32684`；
   最新 onboarding test 工作字节 SHA-256 为
-  `f76747c2c961de16d98a67727b8dadc1588c889545f4a65d738970e9d3650cd6`。
+  `161ea8933b6bf0c8f74cc76c0b0d8bb9324af063f35f9b4c8dd51eba0730bd89`。
 - 没有新增、删除或重命名文件，因此本工作包不需要改变
   `scripts/release-manifest.psd1`。
 
@@ -181,6 +181,11 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
   `text/eol`；它不复用 stdin mode，所有 path token 必须 ordinal exact。这样仍在每次
   `hash-object --path` 前完成 TOCTOU 邻近复验，同时避免为每个文件重复启动第二个 Git
   进程。
+- final clean-commit bundle 首次实建安全暴露了 synthetic fixture 与真实 runner 的
+  purpose-marker 漂移：builder 仍要求真实文件中不存在的旧泛化字符串
+  `cddsi-fast-lane-git-outbox-v1`。失败路径未交付 ZIP，并由 caller owner cleanup 成功
+  收口。builder 与 fixture 现共同冻结真实 runner 的 `owner-v1`、`state-v1`、`result-v1`
+  三个版本化合同及入口函数，禁止通过删掉 purpose 检查绕过。
 - no-user-path scanner 现在以 strict UTF-8 读取；只允许无 traversal/ADS/非法 segment 的
   固定 VM 根 `C:\ProgramData\cddsi-vm-operator\`。普通、重复、escaped、device、WSL
   UNC，Windows root-relative user path，Unicode/特殊首字符 POSIX user roots，file URI、

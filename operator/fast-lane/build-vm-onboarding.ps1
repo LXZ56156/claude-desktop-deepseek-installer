@@ -1316,7 +1316,9 @@ function New-CddsiFastLaneVmOnboardingBundle {
         'lib/vm-reset.ps1' = @('function Invoke-CddsiVmGuestReset')
         'operator/fast-lane/invoke-git-outbox.ps1' = @(
             'function Invoke-CddsiFastLaneGitOutbox',
-            'cddsi-fast-lane-git-outbox-v1'
+            'cddsi-fast-lane-git-outbox-owner-v1',
+            'cddsi-fast-lane-git-outbox-state-v1',
+            'cddsi-fast-lane-git-outbox-result-v1'
         )
         'operator/fast-lane/invoke-vm-reset-live.ps1' = @(
             'function Invoke-CddsiVmResetLiveAdapter',
