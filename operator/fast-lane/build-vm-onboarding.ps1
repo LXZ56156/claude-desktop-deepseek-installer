@@ -50,26 +50,6 @@ function Get-CddsiFastLaneOnboardingBindingToken {
     return Get-CddsiVmCalibrationCanonicalBindingToken -Value $Value
 }
 
-function Get-CddsiFastLaneOnboardingGitBlobSha {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Path)
-
-    $bytes = [System.IO.File]::ReadAllBytes($Path)
-    $header = [System.Text.Encoding]::ASCII.GetBytes(('blob {0}' -f $bytes.Length) + [char]0)
-    $stream = [System.IO.MemoryStream]::new($header.Length + $bytes.Length)
-    $sha = [System.Security.Cryptography.SHA1]::Create()
-    try {
-        $stream.Write($header, 0, $header.Length)
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Position = 0
-        return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
-    }
-    finally {
-        $sha.Dispose()
-        $stream.Dispose()
-    }
-}
-
 function New-CddsiFastLaneOnboardingSourceGitContext {
     [CmdletBinding()]
     param(
@@ -118,17 +98,22 @@ function Invoke-CddsiFastLaneOnboardingSourceGit {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][hashtable]$Context,
-        [Parameter(Mandatory = $true)][string[]]$Arguments
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [AllowNull()][string]$StandardInput = $null
     )
 
     $fixedArguments = @(
         '-c', 'core.fsmonitor=false',
         '-c', 'core.untrackedCache=false',
         '-c', 'submodule.recurse=false',
+        '-c', 'core.autocrlf=false',
+        '-c', 'core.safecrlf=true',
+        '-c', 'core.attributesFile=NUL',
         '-C', $Context.SourceRoot
     ) + @($Arguments)
     return Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments $fixedArguments `
-        -AdditionalEnvironment @{ GIT_OPTIONAL_LOCKS = '0' }
+        -StandardInput $StandardInput `
+        -AdditionalEnvironment @{ GIT_OPTIONAL_LOCKS = '0'; GIT_ATTR_NOSYSTEM = '1' }
 }
 
 function Get-CddsiFastLaneOnboardingGitScalar {
@@ -145,6 +130,75 @@ function Get-CddsiFastLaneOnboardingGitScalar {
         throw $FailureMessage
     }
     return $value
+}
+
+function Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Context,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$RelativePaths
+    )
+
+    if ($RelativePaths.Count -eq 0) { return }
+    $attributeNames = @('filter', 'working-tree-encoding', 'ident')
+    $standardInput = ($RelativePaths -join [char]0) + [char]0
+    $result = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
+        -Arguments (@('check-attr', '-z') + $attributeNames + @('--stdin')) `
+        -StandardInput $standardInput
+    $tokens = @($result.StandardOutput.Split([char]0))
+    $expectedTokenCount = ($RelativePaths.Count * $attributeNames.Count * 3) + 1
+    if ($tokens.Count -ne $expectedTokenCount -or $tokens[-1] -cne '') {
+        throw 'VM onboarding repository Git attribute response is invalid.'
+    }
+
+    $tokenIndex = 0
+    foreach ($relativePath in $RelativePaths) {
+        foreach ($attributeName in $attributeNames) {
+            if ($tokens[$tokenIndex] -cne $relativePath -or
+                $tokens[$tokenIndex + 1] -cne $attributeName) {
+                throw 'VM onboarding repository Git attribute response is not path-bound.'
+            }
+            if ($tokens[$tokenIndex + 2] -cne 'unspecified') {
+                throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $relativePath)
+            }
+            $tokenIndex += 3
+        }
+    }
+}
+
+function Assert-CddsiFastLaneOnboardingSafeGitAttributes {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Context,
+        [Parameter(Mandatory = $true)][string]$RelativePath
+    )
+
+    $attributeNames = @('text', 'eol', 'filter', 'working-tree-encoding', 'ident')
+    $result = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
+        -Arguments (@('check-attr', '-z') + $attributeNames + @('--', $RelativePath))
+    $tokens = @($result.StandardOutput.Split([char]0))
+    if ($tokens.Count -ne (($attributeNames.Count * 3) + 1) -or $tokens[-1] -cne '') {
+        throw ('VM onboarding Git attribute response is invalid: {0}' -f $RelativePath)
+    }
+
+    $attributes = [ordered]@{}
+    for ($index = 0; $index -lt $attributeNames.Count; $index++) {
+        $offset = $index * 3
+        $name = $attributeNames[$index]
+        if ($tokens[$offset] -cne $RelativePath -or $tokens[$offset + 1] -cne $name) {
+            throw ('VM onboarding Git attribute response is not path-bound: {0}' -f $RelativePath)
+        }
+        $attributes[$name] = $tokens[$offset + 2]
+    }
+
+    if ($attributes.text -cne 'set' -or @('lf', 'crlf') -cnotcontains $attributes.eol) {
+        throw ('VM onboarding source path must use explicit built-in text/eol conversion: {0}' -f $RelativePath)
+    }
+    foreach ($unsafeName in @('filter', 'working-tree-encoding', 'ident')) {
+        if ($attributes[$unsafeName] -cne 'unspecified') {
+            throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $RelativePath)
+        }
+    }
 }
 
 function Assert-CddsiFastLaneOnboardingSourceRepository {
@@ -194,6 +248,13 @@ function Assert-CddsiFastLaneOnboardingSourceRepository {
     }
     $Context.CommittedBlobs = $committedBlobs
 
+    $committedBlobPaths = [string[]]@($committedBlobs.Keys | Where-Object {
+        $committedBlobs[$_].Type -ceq 'blob'
+    })
+    [Array]::Sort($committedBlobPaths, [StringComparer]::Ordinal)
+    Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes -Context $Context `
+        -RelativePaths $committedBlobPaths
+
     $status = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
         -Arguments @('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none')
     if ($status.StandardOutput.Length -ne 0) {
@@ -221,9 +282,13 @@ function Get-CddsiFastLaneOnboardingCommittedBlob {
         throw ('VM onboarding allow-list path is not one exact committed blob: {0}' -f $RelativePath)
     }
     $blobSha = [string]$Context.CommittedBlobs[$RelativePath].Sha
-    $workingBlobSha = Get-CddsiFastLaneOnboardingGitBlobSha -Path (
-        Join-Path $Context.SourceRoot ($RelativePath.Replace('/', '\'))
-    )
+    Assert-CddsiFastLaneOnboardingSafeGitAttributes -Context $Context -RelativePath $RelativePath
+    $workingBlobSha = Get-CddsiFastLaneOnboardingGitScalar -Context $Context `
+        -Arguments @('hash-object', ('--path={0}' -f $RelativePath), '--', $RelativePath) `
+        -FailureMessage ('VM onboarding working-tree blob hash is invalid: {0}' -f $RelativePath)
+    if ($workingBlobSha -cnotmatch '^[a-f0-9]{40}$') {
+        throw ('VM onboarding working-tree blob hash is invalid: {0}' -f $RelativePath)
+    }
     if ($workingBlobSha -cne $blobSha) {
         throw ('VM onboarding working tree does not match the committed blob: {0}' -f $RelativePath)
     }
