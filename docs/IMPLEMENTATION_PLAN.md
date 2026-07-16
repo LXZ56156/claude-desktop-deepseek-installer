@@ -28,7 +28,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
-| P10A-0A | 双机 Fast Lane MVP 前置门 | 宿主实现已齐，正做 bootstrap finalization；integration 受外部门阻断 | final bundle/task binding 后 bootstrap；protected history、角色权限、真实 VM reset 与两端无人值守闭环通过 |
+| P10A-0A | 双机 Fast Lane MVP 前置门 | 宿主实现已齐；旧 finalization anchor 已完成，文档/public-visibility 工作包后须重新 finalization；integration 受外部门阻断 | 新 HEAD bundle/task binding 后 bootstrap；visibility/protected history、角色权限、真实 VM reset 与两端无人值守闭环通过 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -434,7 +434,7 @@ fake executor/orchestrator 已实现；真实 adapter 源码仍是未完成交�
 - `Success=true` 只可能对应全部三项 readiness 为 `READY` 的 `SUCCEEDED`。
 - 产品自身不内置 Desktop UI 自动化；真实 UI E2E 只在 P11。
 
-## P10A-0A：双机 Fast Lane MVP 前置门（宿主实现已齐；bootstrap finalization / integration blocked）
+## P10A-0A：双机 Fast Lane MVP 前置门（宿主实现已齐；re-finalization / integration blocked）
 
 ### 目标
 
@@ -503,14 +503,15 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
 
 ### 退出条件
 
-- 当前宿主实现已满足 VM bootstrap 的代码侧条件；最终 clean commit 生成并复验 immutable
-  onboarding bundle、且 host task 仍为 hash-bound `PAUSED` 后，可在 VM 执行离线验包、
-  设备本地 key generation、工具 hash 回报和创建仍暂停的 VM task。bootstrap 不允许
-  control polling、产品测试、reset Live 或产品代码修改。
-- VM integration 另要求三个 private repositories 的 protected history、窄
-  HostCoordinator credential 和随后 VM 侧 credential/negative-permission evidence；当前
-  GitHub private ruleset 返回 HTTP 403，因此该门保持阻断，不得降级为 public repository
-  或 bootstrap administrator credential。
+- 当前宿主实现已满足 VM bootstrap 的代码侧条件；旧 commit `3e843912...` 已完成一次
+  finalization。当前 tracked 文档/public-visibility 工作包会改变 commit/tree、policy 或
+  prompt binding，因此新 clean commit 重新生成并复验 immutable onboarding bundle、且
+  host task 仍为 hash-bound `PAUSED` 前，`CanStartVmBootstrap=false`。bootstrap 始终
+  不允许 control polling、产品测试、reset Live 或产品代码修改。
+- VM integration 另要求三个 repositories 的 protected history、窄 HostCoordinator
+  credential 和随后 VM 侧 credential/negative-permission evidence；当前 GitHub private
+  ruleset 返回 HTTP 403。用户已接受公开风险；public 三仓仍必须先完成版本化合同迁移，
+  不得先切 visibility 或复用 bootstrap administrator credential 作为降级。
 - `VM_TEST_RELAY.md` 的 Fast Lane 权限矩阵、状态机、消息 schema 与清洁合同均有
   可重放的 synthetic dry rehearsal 证据；该本地条件已满足，但不能单独完成 P10A-0A。
 - 日常 `CLEAN_READY` reset 和自动消息闭环可无人值守重复；用户或外部 supervisor
@@ -639,49 +640,52 @@ CHANGELOG、文件名内容或 ZIP metadata。
 P3-P4、P5-P7 纯合同、P8 fake orchestrator、P9 synthetic、P10A
 evidence/consumption、P10B 宿主机支撑合同和 P10A-0A 本地 TestSafe/DryRun 合同切片
 均已实现。P10A-0A 宿主机侧又完成固定 Git outbox、readiness、deterministic onboarding
-和 VM-only reset boundary。当前尚须完成最终统一门、Release DryRun、clean commit/push、
-immutable onboarding bundle 与暂停宿主机任务的 hash binding，之后才达到
-**VM bootstrap ready / VM integration blocked**。
-此前 `RunId=62ed01b0-7c51-411d-9931-206fbc28602f` 及 338 项/引擎只是一轮修改前历史
-基线，不能代表当前树。最终统一门、Release DryRun、`git diff --check`、commit/tree 与
-onboarding 标识由主代理在 clean commit 后记录：
+和 VM-only reset boundary。旧 commit `3e843912df2543c1da05b09061970faff511d016`
+曾完成双引擎 427/427、Release DryRun、18-entry bundle、暂停 task binding 与 PR CI；
+本次 tracked 文档修复使这些值成为历史 anchor，新 HEAD 必须重新 finalization。
 
-- final quality evidence：`<FINAL_HOST_QUALITY_EVIDENCE_AFTER_GATES>`
-- final product commit/tree：`<FINAL_PRODUCT_COMMIT_AND_TREE_AFTER_COMMIT>`
-- final onboarding ZIP SHA-256：`<FINAL_ONBOARDING_ZIP_SHA256_AFTER_BUILD>`
-- final onboarding manifest token：`<FINAL_ONBOARDING_MANIFEST_TOKEN_AFTER_BUILD>`
+公开可见性预检确认三个远端目前均为 private，且 private visibility 被 policy、
+readiness、outbox receipt、onboarding builder、prompts/runbooks 和测试冻结。只切换
+GitHub visibility 会 fail closed；仅公开产品仓库也无法解除两个 control repo 的 403。
+当前已获取 repair ref 可达对象的常见凭据模式扫描为零。用户已设置
+`PrivacyDecision=ACCEPTED`、`HistoryRewrite=NO` 和
+`ResidualPrivacyAudit=NOT_PERFORMED_ACCEPTED_RISK`；剩余存量隐私审计不再阻断 cutover，
+但 public visibility contract migration 与保护部署完成前远端不得变更。
 
-下一工作包严格按以下依赖顺序推进：
+本轮状态文档与公开风险决策已完成；下一工作包严格按以下依赖顺序推进：
 
-1. 先完成宿主机 finalization：当前 8 文件通过最终统一门、Release DryRun 与 diff/编码门，
-   只提交并推送既有 repair branch，从 clean exact commit 生成并复验 immutable onboarding
-   bundle，把既有宿主机 minute heartbeat 绑定到精确 commit/tree、bundle/manifest/inventory、
-   policy、两端 prompt、runner、known-hosts、工具和 repository identity/hash，保持 `PAUSED`，
-   最后核对既有 PR 与 CI。以上任一步未完成时 `CanStartVmBootstrap` 必须为 false。
-2. 只有宿主机 finalization 全部完成后，VM 才只执行 bootstrap：
+1. 升版 policy/readiness/protection receipt/outbox/onboarding/prompts/runbook/tests，明确
+   `PUBLIC` 和 public-safe envelope，不得让 public 仓库伪报 `Private=true`。
+2. 合同全绿并提交/推送后才把三个仓库一并改 public，立即对产品 `main`、repair refs 与两个
+   control `main` 配置禁止删除、禁止 force-push 和线性历史，并做真实负向验证。
+3. 记录真实 public/protection facts 后，从新的 clean exact commit 重新运行统一门、Release
+   DryRun 与 diff/编码门，提交并推送
+   既有 repair branch，生成并复验 immutable onboarding bundle，把既有宿主机 heartbeat
+   绑定到新 commit/tree、bundle/manifest/inventory、policy、prompts、runner、known-hosts、
+   工具和 repository identity/hash，保持 `PAUSED`，最后核对既有 PR 与 CI。以上任一步
+   未完成时 `CanStartVmBootstrap=false`。
+4. 只有新宿主机 finalization 全部完成后，VM 才只执行 bootstrap：
    离线验 manifest/inventory/hash、生成 VM-local keys、回报 public fingerprints/tool hash，
    并从 VM Codex 设备创建初始为 paused 的 minute task。不得轮询、测试或运行 reset Live。
-3. 为三个 private repositories 建立 private protected history（升级 GitHub plan 或采用
-   等效强制 transport）。当前 ruleset 失败为 HTTP 403，不得改 public 作为规避。
-4. 发放窄 HostCoordinator/VmTester credentials：宿主机只写 repair ref 与 host-to-VM，
+5. 发放窄 HostCoordinator/VmTester credentials：宿主机只写 repair ref 与 host-to-VM，
    VM 只读产品和 host-to-VM、只写 VM-to-host；用真实 remote 负向证明错向写、产品写、
    force-push/delete/rewrite 和 broad admin capability 均被拒绝。
-5. 在 VM provision 并验证固定 deterministic reset provider/device trust；只处理
+6. 在 VM provision 并验证固定 deterministic reset provider/device trust；只处理
    owner-marked allow-list，未知状态升级到 guest 外 snapshot restore。TestSafe、DryRun、
    development-retest Live 与幂等 reset smoke 依序通过前不得记为 ready。
-6. 重新确认两端 minute tasks 均为 paused 且绑定精确 runtime/prompt/bundle hash，随后按
+7. 重新确认两端 minute tasks 均为 paused 且绑定精确 runtime/prompt/bundle hash，随后按
    runbook 安全启用并用实际 remotes 证明无人值守失败/修复/重测闭环。普通 push 不能
    替代 acknowledgement，relay 不能替代正式 evidence receipt，VM 不得修改产品代码。
-7. 准备 Formal Lane：P10A 专用 disposable VM、限域 runner/provider、evidence
+8. 准备 Formal Lane：P10A 专用 disposable VM、限域 runner/provider、evidence
    exporter、外部 snapshot supervisor 与受控 submission，以及外部 CAS
    authority/commit service。
-8. 由外部 supervisor 恢复 clean snapshot 并签发 receipt，再按
+9. 由外部 supervisor 恢复 clean snapshot 并签发 receipt，再按
    `VM_CALIBRATION_PLAN.md` 执行首次窄 VM 校准，获取真实 Standard/Offline、MSIX、
    Git、helper/chooser、HKCU 与 cleanup evidence。
-9. 由独立 CAS/签名 authority 原子提交并消费 evidence，生成唯一 frozen facts。
-10. 回到 P10B，在 clean commit、固定工具链、实际 helper PE 和独立签名服务下构建
+10. 由独立 CAS/签名 authority 原子提交并消费 evidence，生成唯一 frozen facts。
+11. 回到 P10B，在 clean commit、固定工具链、实际 helper PE 和独立签名服务下构建
    并冻结 `VmAcceptance`/`UserLive` 双候选。
-11. 只有两个候选的精确字节冻结后，才进入 P11 全面 disposable VM；每次失败修复
+12. 只有两个候选的精确字节冻结后，才进入 P11 全面 disposable VM；每次失败修复
    都必须生成新 candidate identity/hash 并从外部恢复的干净快照重测。
 
 宿主机不得加载或执行真实下载、registry、MSIX/Git 安装、VMP、API、Claude 配置、
@@ -690,8 +694,9 @@ onboarding 标识由主代理在 clean commit 后记录：
 
 ## 当前外部阻塞
 
-- 三个 private repositories 因当前 GitHub 套餐以 HTTP 403 拒绝 private ruleset，仍缺
-  protected history；这是 `CanStartVmIntegration=false` 的外部门。
+- 三个 repositories 仍缺 protected history：当前 private ruleset 被 GitHub 套餐以 HTTP
+  403 拒绝；public 替代方案尚未完成合同迁移、三仓 visibility 切换及
+  服务端保护负向验证。这是 `CanStartVmIntegration=false` 的外部门。
 - 宿主机限 repair-ref/host-to-VM、VM 产品 read-only/VM-to-host 的窄 credentials，以及
   产品写、错向写、force/delete/rewrite 和 broad-admin 负向证据。
 - VM provider/device trust、真实 deterministic reset smoke、从 VM device 创建并保持

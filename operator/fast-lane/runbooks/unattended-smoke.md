@@ -5,7 +5,7 @@ negative tests. Start with both minute tasks paused and both protocol states at
 their pinned genesis commits, with no post-genesis message entry. Do not delete
 or recreate the initialized `outbox/` directories to make them appear empty.
 
-1. Revalidate the protected refs, repository numeric/node identities, pinned
+1. Revalidate expected `PUBLIC` visibility, the protected refs, repository numeric/node identities, pinned
    genesis ancestry, narrow credentials, exact runner/prompt/bundle hashes, and
    paused status. For each control ref, also validate the operator-plane trust
    root, current receipt-specific protection assertion, independently fixed

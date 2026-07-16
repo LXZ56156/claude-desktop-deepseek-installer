@@ -157,10 +157,12 @@ Formal Lane: external clean snapshot + exact artifact
   不能恢复自身快照。
 - relay 只传输状态、脱敏结果和证据引用，不替代 WORM/CAS、签名、snapshot receipt
   或 acceptance receipt；消息正文和日志永不作为 shell/PowerShell 指令执行。
-- private product/control repositories 已创建并初始化；宿主实现达到 VM bootstrap
-  ready，host heartbeat 已创建且暂停，VM task 可在 VM 上创建但必须先暂停。当前 GitHub
-  套餐仍以 HTTP 403 拒绝 private ruleset；protected history、两个方向的最小角色凭据、
-  VM 产品 remote 只读负向验证、real guest reset 证据、安全启用两端任务和 unattended
+- product/control repositories 已创建并初始化且当前均为 private；旧 commit
+  `3e843912...` 曾完成 VM bootstrap finalization，host heartbeat 已创建且暂停。当前
+  tracked 文档与 public-visibility 工作包改变 commit/tree 或 binding，新 HEAD 重新完成
+  finalization 前 `CanStartVmBootstrap=false`。GitHub Free 对 private ruleset 返回 HTTP
+  403；用户已接受存量公开风险，public visibility 合同升版、服务端保护、
+  最小角色凭据、VM 产品 remote 只读负向验证、real guest reset、两端任务和 unattended
   执行仍是 integration 阻断项。VM bootstrap 不等于 P10A-0A 完成。
 
 ## 当前加载顺序

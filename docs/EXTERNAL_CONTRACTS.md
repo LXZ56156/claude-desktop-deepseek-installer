@@ -1,9 +1,9 @@
 # 外部合同与调研基线
 
-最后核验：2026-07-15
+最后核验：2026-07-16
 
-项目影响更新：2026-07-15（同步双机 Codex operator coordination、自动轮询与
-clean-start 分层策略）
+项目影响更新：2026-07-16（同步 public visibility 预检、双机 Codex operator
+coordination、自动轮询与 clean-start 分层策略）
 
 本文件是 Anthropic、DeepSeek、Windows、Git 和 OpenAI Codex 外部事实的唯一项目内
 来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和实物证据
@@ -45,7 +45,7 @@ control plane，envelope 绑定 CycleId、单调 sequence、前序消息 hash �
 `lib/vm-reset.ps1` 和 `operator/fast-lane/*`。GitHub deploy key 的权限作用于整个
 repository，而不是 repository 内的单一路径；同一 repository 的两个目录不能靠两把
 writable deploy key 精确隔离写权限。因此一个逻辑 control plane 由两个物理单向
-private repository 承载：宿主机只写 host-to-VM repository，VM 只写 VM-to-host
+repository 承载：宿主机只写 host-to-VM repository，VM 只写 VM-to-host
 repository，并分别只读另一方向。不能用共享可写 token 把它降级为一个双方可写仓库。
 
 Fast Lane 只用于日常诊断，不以 WORM、message signing 或每轮整机快照为前置，也不
@@ -56,12 +56,20 @@ CAS/receipts/signatures。
 deploy key 收窄每个物理 repository 的权限；deploy key 不是 path-scoped capability，
 所以方向隔离来自两个 repository 与两套最小角色凭据，而不是目录约定。2026-07-15
 实测当前个人账号对 private repository 创建 ruleset 返回 HTTP 403，要求升级 GitHub
-Pro 或公开仓库；本项目保留 private，不能以取消服务端保护作为降级。它们只提供一种
-可选实现，项目不能把 GitHub 限定为唯一 transport，也不能把 Git remote 当作 WORM/CAS
-或签名/receipt 服务。
+Pro 或公开仓库。三个远端当前仍为 private；2026-07-16 用户选择 GitHub Free public
+方案，并接受现有 history/metadata 与未来 public outbox 可见性且不重写历史。它不是配置
+级降级，仍须先完成版本化合同迁移，再一并切换三仓、立即启用并验证服务端保护。迁移完成前 private 合同继续 fail
+closed。GitHub 只提供一种可选实现，项目不能把它限定为唯一 transport，也不能把 Git
+remote 当作 WORM/CAS 或签名/receipt 服务。
+
+public control repository 的所有历史 envelope、ACK 与脱敏诊断对互联网可读。合同必须
+把 public-safe 字段白名单、禁止的个人/本机/credential/自由文本内容、retention 和删除不
+等于撤回的事实冻结进 schema/tests；不能用 repository 名称不可猜测或之后删除 commit
+作为隐私控制。
 
 - [GitHub rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
 - [GitHub deploy keys](https://docs.github.com/en/rest/deploy-keys/deploy-keys)
+- [GitHub repository visibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)
 
 ## Anthropic Third-Party Desktop
 

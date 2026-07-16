@@ -30,7 +30,7 @@ function Test-CddsiFastLaneRepositoryObservation {
     )
 
     if (-not (Test-CddsiExactPropertySet -InputObject $Observation -Expected @(
-        'RepositoryToken', 'RepositoryId', 'RepositoryNodeId', 'Private',
+        'RepositoryToken', 'RepositoryId', 'RepositoryNodeId', 'Visibility',
         'Ref', 'GenesisCommitSha', 'IdentityVerified', 'ProtectedHistory',
         'ForcePushDenied', 'RefDeletionDenied', 'HistoryRewriteDenied'
     ))) { return $false }
@@ -41,7 +41,8 @@ function Test-CddsiFastLaneRepositoryObservation {
         [long]$Observation.RepositoryId -ne [long]$Expected.RepositoryId -or
         $Observation.RepositoryNodeId -isnot [string] -or
         $Observation.RepositoryNodeId -cne $Expected.RepositoryNodeId -or
-        $Observation.Private -isnot [bool] -or
+        $Observation.Visibility -isnot [string] -or
+        @('PUBLIC', 'PRIVATE') -cnotcontains $Observation.Visibility -or
         $Observation.Ref -isnot [string] -or
         $Observation.Ref -cne $Expected.Ref -or
         $Observation.GenesisCommitSha -isnot [string] -or
@@ -129,8 +130,9 @@ function Test-CddsiFastLaneDeploymentObservation {
         'HostCredential', 'HostAutomation', 'VmCredential', 'VmAutomation',
         'VmReset', 'UnattendedLoop', 'FormalLane', 'ObservationBindingToken'
     ))) { return $false }
-    if (-not (Test-CddsiSchemaVersionOne -Value $Observation.SchemaVersion) -or
-        $Observation.ContractVersion -cne 'cddsi-fast-lane-deployment-observation-v1' -or
+    if (($Observation.SchemaVersion -isnot [int] -and $Observation.SchemaVersion -isnot [long]) -or
+        [long]$Observation.SchemaVersion -ne 2 -or
+        $Observation.ContractVersion -cne 'cddsi-fast-lane-deployment-observation-v2' -or
         -not (Test-CddsiUtcTimestampValue -Value $Observation.CapturedAtUtc) -or
         -not (Test-CddsiUtcTimestampValue -Value $Observation.ValidUntilUtc) -or
         $Observation.PolicySha256 -isnot [string] -or
@@ -219,8 +221,13 @@ function Resolve-CddsiFastLaneReadiness {
         $Observation.HostToVmRepository,
         $Observation.VmToHostRepository
     )
+    $repositoryVisibilityReady = @($repositories | Where-Object {
+        $_.Visibility -cne 'PUBLIC'
+    }).Count -eq 0
+    if (-not $repositoryVisibilityReady) { $reasons += 'REPOSITORY_VISIBILITY_MISMATCH' }
+
     $repositoryProtectionReady = @($repositories | Where-Object {
-        -not $_.IdentityVerified -or -not $_.Private -or -not $_.ProtectedHistory -or
+        -not $_.IdentityVerified -or -not $_.ProtectedHistory -or
         -not $_.ForcePushDenied -or -not $_.RefDeletionDenied -or
         -not $_.HistoryRewriteDenied
     }).Count -eq 0
@@ -252,7 +259,7 @@ function Resolve-CddsiFastLaneReadiness {
     $canStartVmBootstrap = $hostImplementationReady -and $hostAutomationSafelyStaged
 
     $canStartVmIntegration = $hostImplementationReady -and
-        $repositoryProtectionReady -and $hostCredentialReady -and
+        $repositoryVisibilityReady -and $repositoryProtectionReady -and $hostCredentialReady -and
         $hostAutomationSafelyStaged
 
     $vmCredentialReady = $Observation.VmCredential.Present -and
@@ -289,7 +296,7 @@ function Resolve-CddsiFastLaneReadiness {
         $Observation.UnattendedLoop.DiagnosticOnly
     if (-not $unattendedReady) { $reasons += 'UNATTENDED_LOOP_NOT_VERIFIED' }
 
-    $p10a0aComplete = $hostImplementationReady -and $repositoryProtectionReady -and
+    $p10a0aComplete = $hostImplementationReady -and $repositoryVisibilityReady -and $repositoryProtectionReady -and
         $hostCredentialReady -and $hostAutomationSafelyStaged -and $vmCredentialReady -and
         $vmAutomationSafelyStaged -and $vmResetReady -and $unattendedReady
     # Fast Lane observations are diagnostic and cannot authenticate the
@@ -299,9 +306,10 @@ function Resolve-CddsiFastLaneReadiness {
     $reasons += 'FORMAL_LANE_UNAVAILABLE'
 
     return [pscustomobject][ordered]@{
-        SchemaVersion              = 1
-        ContractVersion            = 'cddsi-fast-lane-readiness-v1'
+        SchemaVersion              = 2
+        ContractVersion            = 'cddsi-fast-lane-readiness-v2'
         HostImplementationReady    = [bool]$hostImplementationReady
+        RepositoryVisibilityReady  = [bool]$repositoryVisibilityReady
         RepositoryProtectionReady  = [bool]$repositoryProtectionReady
         HostCredentialReady        = [bool]$hostCredentialReady
         HostAutomationReady        = [bool]$hostAutomationBound

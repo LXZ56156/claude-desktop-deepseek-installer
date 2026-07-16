@@ -583,6 +583,7 @@ function Assert-CddsiFastLaneProtectionEvidence {
         [Parameter(Mandatory = $true)][string]$RemoteRef,
         [Parameter(Mandatory = $true)][long]$ExpectedRepositoryNumericId,
         [Parameter(Mandatory = $true)][string]$ExpectedRepositoryNodeId,
+        [Parameter(Mandatory = $true)][ValidateSet('PUBLIC')][string]$ExpectedRepositoryVisibility,
         [Parameter(Mandatory = $true)][string]$ExpectedProtectionAuthority,
         [Parameter(Mandatory = $true)][string]$ExpectedProtectionPolicySha256,
         [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
@@ -591,15 +592,15 @@ function Assert-CddsiFastLaneProtectionEvidence {
     )
     $properties = @(
         'SchemaVersion', 'ContractVersion', 'RepositoryIdentity',
-        'RepositoryNumericId', 'RepositoryNodeId', 'Private', 'RemoteRef',
+        'RepositoryNumericId', 'RepositoryNodeId', 'Visibility', 'RemoteRef',
         'ForcePushAllowed', 'BranchDeletionAllowed', 'HistoryRewriteAllowed',
         'Authority', 'ProtectionPolicySha256', 'PreviousReceiptSha256',
         'ObservedAtUtc', 'ValidUntilUtc', 'ReceiptId'
     )
     if (-not (Test-CddsiExactPropertySet -InputObject $Evidence -Expected $properties)) { throw 'PROTECTION_EVIDENCE_SCHEMA_INVALID' }
     if (
-        $Evidence.SchemaVersion -ne 1 -or
-        $Evidence.ContractVersion -cne 'cddsi-fast-lane-control-repo-protection-v2' -or
+        $Evidence.SchemaVersion -ne 2 -or
+        $Evidence.ContractVersion -cne 'cddsi-fast-lane-control-repo-protection-v3' -or
         $Evidence.RepositoryIdentity -cne $RepositoryIdentity -or
         ($Evidence.RepositoryNumericId -isnot [int] -and $Evidence.RepositoryNumericId -isnot [long]) -or
         [long]$Evidence.RepositoryNumericId -lt 1 -or
@@ -610,7 +611,7 @@ function Assert-CddsiFastLaneProtectionEvidence {
         $Evidence.ProtectionPolicySha256 -isnot [string] -or
         $Evidence.ProtectionPolicySha256 -cne $ExpectedProtectionPolicySha256 -or
         $ExpectedProtectionPolicySha256 -cnotmatch '^[a-f0-9]{64}$' -or
-        $Evidence.Private -isnot [bool] -or -not $Evidence.Private -or
+        $Evidence.Visibility -isnot [string] -or $Evidence.Visibility -cne $ExpectedRepositoryVisibility -or
         $Evidence.RemoteRef -cne $RemoteRef -or
         $Evidence.ForcePushAllowed -isnot [bool] -or $Evidence.ForcePushAllowed -or
         $Evidence.BranchDeletionAllowed -isnot [bool] -or $Evidence.BranchDeletionAllowed -or
@@ -1282,6 +1283,7 @@ function Invoke-CddsiFastLaneGitOutbox {
         [Parameter(Mandatory = $true)][string]$ProtectionEvidenceSha256,
         [Parameter(Mandatory = $true)][long]$ExpectedRepositoryNumericId,
         [Parameter(Mandatory = $true)][string]$ExpectedRepositoryNodeId,
+        [Parameter(Mandatory = $true)][ValidateSet('PUBLIC')][string]$ExpectedRepositoryVisibility,
         [Parameter(Mandatory = $true)][string]$ExpectedProtectionAuthority,
         [Parameter(Mandatory = $true)][string]$ExpectedProtectionPolicySha256,
         [Parameter(Mandatory = $true)][string]$ProtectionTrustRoot,
@@ -1408,6 +1410,7 @@ function Invoke-CddsiFastLaneGitOutbox {
     Assert-CddsiFastLaneProtectionEvidence -Evidence $ProtectionEvidence `
         -EvidenceSha256 $ProtectionEvidenceSha256 -RepositoryIdentity $RepositoryIdentity -RemoteRef $RemoteRef `
         -ExpectedRepositoryNumericId $ExpectedRepositoryNumericId -ExpectedRepositoryNodeId $ExpectedRepositoryNodeId `
+        -ExpectedRepositoryVisibility $ExpectedRepositoryVisibility `
         -ExpectedProtectionAuthority $ExpectedProtectionAuthority `
         -ExpectedProtectionPolicySha256 $ExpectedProtectionPolicySha256 `
         -ValidationTimeUtc $ValidationTimeUtc -MaximumAgeSeconds $ProtectionEvidenceMaximumAgeSeconds `

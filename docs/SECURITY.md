@@ -292,13 +292,20 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
 - detached sidecar 必须验证真实签名字节和外部固定信任身份；P11 receipt 不存在时
   P12 promotion 必须保持 fail closed。
 - Fast Lane 本地 policy、relay/reset pure/fake contract、固定 prompt 和 synthetic
-  rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现；这只足以进入 VM
-  bootstrap，不足以宣称 P10A-0A 完成。
-- private repositories 已创建，但 private protected history、两个方向的最小角色凭据、
-  VM 产品 remote 只读负向验证、real guest reset 证据、VM automation、安全启用两端
-  paused tasks、无人值守执行和外部 hypervisor receipt 流程仍未完成；这些证据完成前
-  integration 与双机自动闭环保持阻断。private ruleset 的当前外部失败为 HTTP 403；
-  不得把仓库改为 public 或复用 bootstrap admin 作为降级。
+  rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现。旧 commit
+  `3e843912...` 曾完成 VM bootstrap finalization；当前 tracked 变更重新 finalization 前
+  `CanStartVmBootstrap=false`，且 bootstrap 本身不足以宣称 P10A-0A 完成。
+- 三个 repositories 当前均为 private，private ruleset 的外部失败为 HTTP 403。改用
+  GitHub Free public repositories 不是单纯配置切换：必须先升版 visibility/protection
+  receipt、policy、readiness、outbox/onboarding、prompt/runbook 和测试合同，随后一并切换三仓并立即部署、
+  负向验证服务端历史保护。迁移完成前不得修改 visibility，也不得复用 bootstrap admin。
+- 用户已设置 `PrivacyDecision=ACCEPTED`、`HistoryRewrite=NO`、
+  `ResidualPrivacyAudit=NOT_PERFORMED_ACCEPTED_RISK`。这些选择只接受存量个人/运营信息
+  暴露，不放松 credential、Authorization、API key、未脱敏日志或配置进入 public outbox
+  的禁令；不能依赖“仓库不易发现”保护 secret。
+- 两个方向的最小角色凭据、VM 产品 remote 只读负向验证、real guest reset 证据、VM
+  automation、安全启用两端 paused tasks、无人值守执行和外部 hypervisor receipt 流程
+  仍未完成；这些证据完成前 integration 与双机自动闭环保持阻断。
 - protection receipt 轮换必须 fail closed：先暂停消费者，由外部 provisioner 生成下一
   authority assertion 并把其 hash/token 写入固定 task binding，再允许恢复；自动化不得
   从新 receipt、relay payload 或旧本地 state 学习新的信任值。

@@ -1,5 +1,5 @@
 ﻿@{
-    SchemaVersion  = 1
+    SchemaVersion  = 2
     ProtocolVersion = 'cddsi-vm-test-relay-v1'
     Lane            = 'Fast'
 
@@ -7,7 +7,7 @@
         RepositoryToken         = 'github.com/LXZ56156/claude-desktop-deepseek-installer'
         RepositoryId            = 1301870422
         RepositoryNodeId        = 'R_kgDOTZj3Vg'
-        PrivateRequired          = $true
+        VisibilityRequired       = 'PUBLIC'
         HostWriteRefPattern      = 'refs/heads/codex/repair/*'
         VmReadOnly               = $true
         VmDisallowedCapabilities = @(
@@ -27,6 +27,7 @@
             RepositoryToken = 'github.com/LXZ56156/cddsi-host-to-vm'
             RepositoryId    = 1301870499
             RepositoryNodeId = 'R_kgDOTZj3ow'
+            VisibilityRequired = 'PUBLIC'
             Ref             = 'refs/heads/main'
             GenesisCommitSha = '179cb95df432392e6ecd901c9008c01e4b41003e'
             LogicalOutbox   = 'host-to-vm'
@@ -37,6 +38,7 @@
             RepositoryToken = 'github.com/LXZ56156/cddsi-vm-to-host'
             RepositoryId    = 1301870545
             RepositoryNodeId = 'R_kgDOTZj30Q'
+            VisibilityRequired = 'PUBLIC'
             Ref             = 'refs/heads/main'
             GenesisCommitSha = 'd88fe54d624bb5699751522e80e1cc4cd367ec33'
             LogicalOutbox   = 'vm-to-host'
@@ -50,7 +52,7 @@
         CompareAndSwapRequired = $true
         PinnedGenesisRequired   = $true
         ServerProtectedHistoryRequired = $true
-        PrivateRepositoryRequired      = $true
+        RepositoryVisibilityRequired   = 'PUBLIC'
     }
 
     TransportRuntime = @{

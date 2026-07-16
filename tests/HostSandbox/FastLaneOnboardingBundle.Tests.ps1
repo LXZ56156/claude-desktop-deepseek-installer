@@ -2,6 +2,7 @@
     $script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $script:OnboardingBuilderPath = Join-Path $script:RepoRoot 'operator\fast-lane\build-vm-onboarding.ps1'
     . $script:OnboardingBuilderPath -ImportOnly
+    $script:OnboardingTemplate = $null
     $trustedGitPath = Get-Variable -Name CddsiTrustedHarnessGitExecutablePath `
         -Scope Global -ErrorAction SilentlyContinue
     $trustedGitSha = Get-Variable -Name CddsiTrustedHarnessGitGrantSha256 `
@@ -53,6 +54,13 @@
             -RunId ([guid]::NewGuid().ToString('D')) -Ledger $ledger
         $script:OnboardingSandboxes.Add([pscustomobject]@{ Sandbox = $sandbox; Ledger = $ledger })
         $sourceRoot = Join-Path $sandbox.Root 'onboarding-source'
+        $knownHostsRelative = 'operator/fast-lane/trust/github-known-hosts'
+        if ($null -ne $script:OnboardingTemplate) {
+            Copy-Item -LiteralPath $script:OnboardingTemplate.SourceRoot `
+                -Destination $sandbox.Root -Recurse -Force
+            $productCommit = $script:OnboardingTemplate.ProductCommitSha
+            $productTree = $script:OnboardingTemplate.ProductTreeSha
+        } else {
         [void][System.IO.Directory]::CreateDirectory($sourceRoot)
         $fixtureAttributes = @(
             '*.ps1 text eol=crlf'
@@ -63,7 +71,6 @@
         ) -join "`n"
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot '.gitattributes') `
             -Text ($fixtureAttributes + "`n")
-        $knownHostsRelative = 'operator/fast-lane/trust/github-known-hosts'
         $knownHostsFull = Join-Path $sourceRoot ($knownHostsRelative.Replace('/', '\'))
         $knownHostsText = @(
             'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISyntheticOnboardingFixtureKey000000000000'
@@ -74,14 +81,14 @@
         $knownHostsSha256 = Get-CddsiFastLaneOnboardingFileSha256 -Path $knownHostsFull
         $fixturePolicy = @'
 @{
-    SchemaVersion = 1
+    SchemaVersion = 2
     ProtocolVersion = 'cddsi-vm-test-relay-v1'
     Lane = 'Fast'
     ProductRemote = @{
         RepositoryToken = 'github.com/LXZ56156/claude-desktop-deepseek-installer'
         RepositoryId = 1001
         RepositoryNodeId = 'R_kgDO_product_1001'
-        PrivateRequired = $true
+        VisibilityRequired = 'PUBLIC'
         HostWriteRefPattern = 'refs/heads/codex/repair/*'
         VmReadOnly = $true
     }
@@ -91,6 +98,7 @@
             RepositoryToken = 'github.com/LXZ56156/cddsi-host-to-vm'
             RepositoryId = 1002
             RepositoryNodeId = 'R_kgDO_host_to_vm_1002'
+            VisibilityRequired = 'PUBLIC'
             Ref = 'refs/heads/main'
             GenesisCommitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
         }
@@ -98,6 +106,7 @@
             RepositoryToken = 'github.com/LXZ56156/cddsi-vm-to-host'
             RepositoryId = 1003
             RepositoryNodeId = 'R_kgDO_vm_to_host_1003'
+            VisibilityRequired = 'PUBLIC'
             Ref = 'refs/heads/main'
             GenesisCommitSha = 'cccccccccccccccccccccccccccccccccccccccc'
         }
@@ -107,7 +116,7 @@
         CompareAndSwapRequired = $true
         PinnedGenesisRequired = $true
         ServerProtectedHistoryRequired = $true
-        PrivateRepositoryRequired = $true
+        RepositoryVisibilityRequired = 'PUBLIC'
     }
     SshTrust = @{
         GitHubHost = 'github.com'
@@ -171,6 +180,18 @@
         ))
         $productCommit = ([string](Invoke-CddsiOnboardingFixtureGit -Arguments @('-C', $sourceRoot, 'rev-parse', 'HEAD'))).Trim()
         $productTree = ([string](Invoke-CddsiOnboardingFixtureGit -Arguments @('-C', $sourceRoot, 'rev-parse', 'HEAD^{tree}'))).Trim()
+        $templateLedger = [System.Collections.Generic.List[object]]::new()
+        $templateSandbox = New-CddsiOwnedSandbox -TempBase ([System.IO.Path]::GetTempPath()) `
+            -RunId ([guid]::NewGuid().ToString('D')) -Ledger $templateLedger
+        Copy-Item -LiteralPath $sourceRoot -Destination $templateSandbox.Root -Recurse -Force
+        $script:OnboardingTemplate = [pscustomobject]@{
+            Sandbox = $templateSandbox
+            Ledger = $templateLedger
+            SourceRoot = Join-Path $templateSandbox.Root 'onboarding-source'
+            ProductCommitSha = $productCommit
+            ProductTreeSha = $productTree
+        }
+        }
 
         $arguments = @{
             Sandbox = $sandbox
@@ -292,6 +313,19 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         }
     }
 
+    AfterAll {
+        if ($null -ne $script:OnboardingTemplate -and
+            [System.IO.Directory]::Exists($script:OnboardingTemplate.Sandbox.Root)) {
+            foreach ($path in [System.IO.Directory]::EnumerateFiles(
+                $script:OnboardingTemplate.Sandbox.Root, '*', [System.IO.SearchOption]::AllDirectories
+            )) {
+                [System.IO.File]::SetAttributes($path, [System.IO.FileAttributes]::Normal)
+            }
+            Remove-CddsiOwnedSandbox -Sandbox $script:OnboardingTemplate.Sandbox `
+                -Ledger $script:OnboardingTemplate.Ledger
+        }
+    }
+
     It 'builds byte-identical canonical Store ZIPs from the same explicit immutable inputs' {
         $firstFixture = New-CddsiOnboardingFixture
         $firstArguments = $firstFixture.Arguments
@@ -320,6 +354,12 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $manifest | Should -Match 'READ_ONLY_EXACT_COMMIT'
         $manifest | Should -Match 'VmMayEditProductCode":false'
         $manifest | Should -Match '"VmInitialStatus":"PAUSED"'
+        $manifestObject = $manifest | ConvertFrom-Json
+        $manifestObject.SchemaVersion | Should -Be 2
+        $manifestObject.ContractVersion | Should -BeExactly 'cddsi-fast-lane-vm-onboarding-manifest-v2'
+        $manifestObject.Policy.ProductRepository.Visibility | Should -BeExactly 'PUBLIC'
+        $manifestObject.Policy.HostToVmRepository.Visibility | Should -BeExactly 'PUBLIC'
+        $manifestObject.Policy.VmToHostRepository.Visibility | Should -BeExactly 'PUBLIC'
         $manifest | Should -Match ('"TreeSha":"' + $firstFixture.ProductTreeSha + '"')
         $manifest | Should -Match '"SourceCommitVerified":true'
         $manifest | Should -Match ('"GitExecutableSha256":"' + $script:SourceGitExecutableSha256 + '"')
@@ -589,7 +629,7 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
     }
 
-    It 'rejects a non-exact commit and a repository identity that is not the frozen private remote' {
+    It 'rejects a non-exact commit and a repository identity that is not the frozen public remote' {
         $fixture = New-CddsiOnboardingFixture
         $fixture.Arguments.ProductCommitSha = ('a' * 39)
         $buildArguments = $fixture.Arguments
@@ -629,6 +669,46 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $fixture.Arguments.ToolSpecifications = @($fixture.Arguments.ToolSpecifications | Where-Object ToolId -cne 'WindowsPowerShell')
         { New-CddsiFastLaneVmOnboardingBundle @buildArguments } |
             Should -Throw '*exactly Git, OpenSSH, PowerShell7, and WindowsPowerShell*'
+        [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
+    }
+
+    It 'rejects a committed policy with private or mixed repository visibility' {
+        $fixture = New-CddsiOnboardingFixture
+        $policyPath = Join-Path $fixture.SourceRoot 'config\fast-lane-policy.psd1'
+        $policyText = [System.IO.File]::ReadAllText($policyPath, [System.Text.Encoding]::UTF8)
+        $policyText = [regex]::Replace(
+            $policyText,
+            "VisibilityRequired\s*=\s*'PUBLIC'",
+            "VisibilityRequired = 'PRIVATE'",
+            1)
+        Write-CddsiOnboardingFixtureText -Path $policyPath -Text $policyText
+        $knownHostsRelative = 'operator/fast-lane/trust/github-known-hosts'
+        $knownHostsPath = Join-Path $fixture.SourceRoot ($knownHostsRelative.Replace('/', '\'))
+        $productRepository = [pscustomobject]@{
+            Id = $fixture.Arguments.ProductRepositoryId
+            NodeId = $fixture.Arguments.ProductRepositoryNodeId
+            FullName = $fixture.Arguments.ProductRepositoryFullName
+        }
+        $hostToVmRepository = [pscustomobject]@{
+            Id = $fixture.Arguments.HostToVmRepositoryId
+            NodeId = $fixture.Arguments.HostToVmRepositoryNodeId
+            FullName = $fixture.Arguments.HostToVmRepositoryFullName
+        }
+        $vmToHostRepository = [pscustomobject]@{
+            Id = $fixture.Arguments.VmToHostRepositoryId
+            NodeId = $fixture.Arguments.VmToHostRepositoryNodeId
+            FullName = $fixture.Arguments.VmToHostRepositoryFullName
+        }
+        { Assert-CddsiFastLaneOnboardingPolicyBinding -PolicyPath $policyPath `
+            -PolicySha256 (Get-CddsiFastLaneOnboardingFileSha256 -Path $policyPath) `
+            -KnownHostsSourcePath $knownHostsRelative `
+            -KnownHostsSha256 (Get-CddsiFastLaneOnboardingFileSha256 -Path $knownHostsPath) `
+            -ProductRepository $productRepository -HostToVmRepository $hostToVmRepository `
+            -VmToHostRepository $vmToHostRepository -ProductCommitSha $fixture.ProductCommitSha `
+            -RepairRef $fixture.Arguments.RepairRef `
+            -HostToVmGenesisSha $fixture.Arguments.HostToVmGenesisSha `
+            -VmToHostGenesisSha $fixture.Arguments.VmToHostGenesisSha } |
+            Should -Throw '*frozen public protected-history contract*'
         [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
     }
 

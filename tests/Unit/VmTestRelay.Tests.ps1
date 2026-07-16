@@ -294,6 +294,34 @@ Describe 'Fast Lane VM test relay pure contracts' {
         (Get-CddsiVmTestRelayMessageSha256 $envelope $payload) | Should -Match '^[a-f0-9]{64}$'
     }
 
+    It 'rejects public-outbox payloads containing credentials or extra free-text fields' {
+        $state = New-CddsiRelayStateFixture
+        $payload = New-CddsiRelayRequestPayloadFixture
+        $authorizationScheme = 'Bear' + 'er'
+        $payload | Add-Member -NotePropertyName Authorization `
+            -NotePropertyValue ($authorizationScheme + ' ' + ('x' * 24))
+        $envelope = New-CddsiRelayEnvelopeFixture -State $state -Payload $payload `
+            -MessageType TEST_REQUEST -Status TEST_REQUESTED
+        (Test-CddsiVmTestRelayEnvelope -Envelope $envelope -Payload $payload `
+            -ValidationTimeUtc $script:ValidationTimeUtc `
+            -ExpectedHostToVmRepositoryIdentity $script:HostToVmRepositoryIdentity `
+            -ExpectedVmToHostRepositoryIdentity $script:VmToHostRepositoryIdentity `
+            -ExpectedProductRepositoryIdentity $script:ProductRepositoryIdentity `
+            -AuthenticatedSenderRole HostCoordinator -AuthenticatedOutbox host-to-vm) | Should -BeFalse
+
+        $freeTextPayload = New-CddsiRelayRequestPayloadFixture
+        $freeTextPayload | Add-Member -NotePropertyName Notes `
+            -NotePropertyValue 'untrusted public-outbox instructions'
+        $freeTextEnvelope = New-CddsiRelayEnvelopeFixture -State $state -Payload $freeTextPayload `
+            -MessageType TEST_REQUEST -Status TEST_REQUESTED
+        (Test-CddsiVmTestRelayEnvelope -Envelope $freeTextEnvelope -Payload $freeTextPayload `
+            -ValidationTimeUtc $script:ValidationTimeUtc `
+            -ExpectedHostToVmRepositoryIdentity $script:HostToVmRepositoryIdentity `
+            -ExpectedVmToHostRepositoryIdentity $script:VmToHostRepositoryIdentity `
+            -ExpectedProductRepositoryIdentity $script:ProductRepositoryIdentity `
+            -AuthenticatedSenderRole HostCoordinator -AuthenticatedOutbox host-to-vm) | Should -BeFalse
+    }
+
     It 'accepts PASS, closes the cycle, and never turns the diagnostic result into acceptance' {
         $cycleId = '40000000-0000-4000-8000-000000000001'
         $state = Complete-CddsiRelayOutcomeFixture -Outcome PASS -CycleId $cycleId

@@ -23,7 +23,8 @@ the product remote, execute a product test, or run reset Live.
 ## Bootstrap-only steps
 
 1. Verify the bundle ZIP, canonical manifest, inventory, every entry hash, the
-   product commit/tree binding, all repository numeric/node identities, both
+   product commit/tree binding, expected `PUBLIC` visibility for all three
+   repositories, all repository numeric/node identities, both
    pinned genesis commits, every fixed tool hash, and the policy-pinned GitHub
    `known_hosts` hash. OpenSSH and host-key expectations come only from this
    immutable binding, never from relay data.
@@ -46,8 +47,8 @@ the product remote, execute a product test, or run reset Live.
 
 ## Integration gate
 
-Continue only after the host supplies current receipts proving private
-protected history and its narrow HostCoordinator credential, and after the VM
+Continue only after the host supplies current receipts proving expected
+`PUBLIC` visibility plus protected history and its narrow HostCoordinator credential, and after the VM
 credentials have been registered without broad administrator capability. Run
 `negative-permissions.md`; any ambiguous or broader allow is `BLOCKED`. While
 both tasks remain paused, independently provision the current
@@ -74,7 +75,7 @@ This subsection is integration work, not bootstrap-only work.
 
 The VM task created during bootstrap remains paused until the
 negative-permission runbook passes. The host task also remains paused until
-private protected history and the HostCoordinator credential have independently
+expected `PUBLIC` visibility, protected history, and the HostCoordinator credential have independently
 passed their host-side gates and the current protection assertions are
 out-of-band hash-bound. Activate neither task merely because the other
 one exists. The tasks must not target a writable product checkout, share a

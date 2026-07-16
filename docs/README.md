@@ -73,15 +73,23 @@ onboarding builder、VM-only reset 边界以及两端分钟级 prompt/runbook。
 创建且暂停；VM task 必须从 VM 设备创建并同样先保持暂停。当前精确收尾状态只以
 `docs/HANDOFF.md` 为准。
 
-当前代码能力已经进入 **VM bootstrap finalization**，但尚未生成绑定最终 clean
-commit/tree 的 immutable onboarding bundle，也尚未把暂停的宿主机 heartbeat 更新为
-最终 hash-bound prompt，因此 `CanStartVmBootstrap=false`，不能进入 VM。完成最终双引擎
-统一门、Release DryRun、提交/推送、bundle 校验和暂停任务重绑后，才允许 VM 离线验包、
-生成设备本地密钥、回报公钥/工具 hash 并创建暂停任务。GitHub 当前套餐以 HTTP 403
-拒绝 private protected history，且窄权限角色凭据尚未发放，所以即使 bootstrap ready
-后 **VM integration 仍阻断**；不得轮询真实 outbox、执行产品测试或声称 P10A-0A 完成。
-首次 P10A 还必须经过外部 clean snapshot receipt、独立 CAS 与签名的 Formal Lane。
-整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
+2026-07-16 曾对 commit `3e843912df2543c1da05b09061970faff511d016` 完成宿主机
+finalization：双引擎全树门各 427/427、Release DryRun、18-entry immutable onboarding
+bundle、暂停 heartbeat 的最终 hash binding 和 PR CI 均通过。随后发现易变状态文档仍停在
+finalization 前；本次文档一致性修复使最终 HEAD/tree 与旧锚点不同，因此上述 bundle 只保留为
+历史锚点，不能作为新 HEAD 的 VM 输入。新 HEAD 重新通过统一门、提交/推送、bundle
+校验、暂停任务重绑和 CI 前，`CanStartVmBootstrap=false`。
+
+三个 GitHub repositories 当前仍为 private；当前代码、policy、prompts、readiness、
+onboarding 和测试均把 private visibility 冻结为 fail-closed 合同，不能先把远端改 public
+再补实现。当前套餐对 private ruleset 返回 HTTP 403，窄权限角色凭据也尚未发放，因此
+**VM integration 仍阻断**。首次 P10A 还必须经过外部 clean snapshot receipt、独立 CAS
+与签名的 Formal Lane。整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
+
+公开前预检对产品仓库当前已获取 repair ref（含已获取 main 历史）可达对象的常见凭据
+模式扫描为零。用户已明确接受提交元数据、历史运营信息和未来 public outbox 全网可读，
+不重写历史；剩余存量审计标记为 accepted risk，不再阻断 cutover。credential、Authorization
+数据和未脱敏 secret 仍绝对禁止进入 public repositories。
 
 `docs/HANDOFF.md` 是易变状态的唯一权威来源。其他文档可以保留便于理解的状态
 摘要，但必须链接到交接，且摘要与交接冲突时以交接和实际 Git 状态为准。

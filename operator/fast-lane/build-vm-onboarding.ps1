@@ -150,12 +150,14 @@ function Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes {
         throw 'VM onboarding repository Git attribute response is invalid.'
     }
 
-    $expectedPaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $attributeMaps = [System.Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
     foreach ($relativePath in $RelativePaths) {
-        if ($relativePath.Length -gt 0 -and $relativePath[0] -eq [char]0xFEFF) {
+        if ([string]::IsNullOrWhiteSpace($relativePath) -or
+            $relativePath.Length -gt 0 -and $relativePath[0] -eq [char]0xFEFF -or
+            $attributeMaps.ContainsKey($relativePath)) {
             throw 'VM onboarding repository path must not begin with a Unicode byte-order marker.'
         }
-        [void]$expectedPaths.Add($relativePath)
+        $attributeMaps.Add($relativePath, [ordered]@{})
     }
     $recordMarkerMode = $null
     for ($tokenIndex = 0; $tokenIndex -lt ($tokens.Count - 1); $tokenIndex += 3) {
@@ -181,15 +183,21 @@ function Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes {
         }
         $attributeName = $tokens[$tokenIndex + 1]
         $attributeValue = $tokens[$tokenIndex + 2]
-        if (-not $expectedPaths.Contains($relativePath) -or
+        if (-not $attributeMaps.ContainsKey($relativePath) -or
             [string]::IsNullOrEmpty($attributeName) -or
             [string]::IsNullOrEmpty($attributeValue)) {
             throw 'VM onboarding repository Git attribute response is not path-bound.'
         }
+        $attributes = $attributeMaps[$relativePath]
+        if ($attributes.Contains($attributeName)) {
+            throw 'VM onboarding repository Git attribute response contains a duplicate attribute.'
+        }
         if ($unsafeAttributeNames -ccontains $attributeName) {
             throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $relativePath)
         }
+        $attributes[$attributeName] = $attributeValue
     }
+    return ,$attributeMaps
 }
 
 function Assert-CddsiFastLaneOnboardingSafeGitAttributes {
@@ -199,30 +207,11 @@ function Assert-CddsiFastLaneOnboardingSafeGitAttributes {
         [Parameter(Mandatory = $true)][string]$RelativePath
     )
 
-    $unsafeAttributeNames = @('filter', 'working-tree-encoding', 'ident')
-    $result = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
-        -Arguments @('check-attr', '-z', '--all', '--', $RelativePath)
-    $tokens = @($result.StandardOutput.Split([char]0))
-    if ($tokens.Count -lt 1 -or $tokens[-1] -cne '' -or (($tokens.Count - 1) % 3) -ne 0) {
+    if (-not $Context.ContainsKey('GitAttributesByPath') -or
+        -not $Context.GitAttributesByPath.ContainsKey($RelativePath)) {
         throw ('VM onboarding Git attribute response is invalid: {0}' -f $RelativePath)
     }
-
-    $attributes = [ordered]@{}
-    for ($offset = 0; $offset -lt ($tokens.Count - 1); $offset += 3) {
-        $reportedPath = $tokens[$offset]
-        $name = $tokens[$offset + 1]
-        $value = $tokens[$offset + 2]
-        if (-not [string]::Equals($reportedPath, $RelativePath, [StringComparison]::Ordinal) -or
-            [string]::IsNullOrEmpty($name) -or [string]::IsNullOrEmpty($value) -or
-            $attributes.Contains($name)) {
-            throw ('VM onboarding Git attribute response is not path-bound: {0}' -f $RelativePath)
-        }
-        if ($unsafeAttributeNames -ccontains $name) {
-            throw ('VM onboarding source path has an unsafe Git clean attribute: {0}' -f $RelativePath)
-        }
-        $attributes[$name] = $value
-    }
-
+    $attributes = $Context.GitAttributesByPath[$RelativePath]
     if (-not $attributes.Contains('text') -or -not $attributes.Contains('eol') -or
         $attributes.text -cne 'set' -or @('lf', 'crlf') -cnotcontains $attributes.eol) {
         throw ('VM onboarding source path must use explicit built-in text/eol conversion: {0}' -f $RelativePath)
@@ -236,28 +225,34 @@ function Assert-CddsiFastLaneOnboardingSourceRepository {
         [Parameter(Mandatory = $true)][string]$ProductCommitSha
     )
 
-    $inside = Get-CddsiFastLaneOnboardingGitScalar -Context $Context `
-        -Arguments @('rev-parse', '--is-inside-work-tree') `
-        -FailureMessage 'VM onboarding source repository work-tree check failed.'
+    $identityResult = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
+        -Arguments @(
+            'rev-parse', '--is-inside-work-tree', '--show-toplevel',
+            'HEAD^{commit}', 'HEAD^{tree}'
+        )
+    $identityOutput = $identityResult.StandardOutput.Replace("`r`n", "`n")
+    if (-not $identityOutput.EndsWith("`n", [StringComparison]::Ordinal)) {
+        throw 'VM onboarding source repository identity response is invalid.'
+    }
+    $identityLines = @($identityOutput.Substring(0, $identityOutput.Length - 1).Split("`n"))
+    if ($identityLines.Count -ne 4 -or
+        @($identityLines | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -ne 0) {
+        throw 'VM onboarding source repository identity response is invalid.'
+    }
+    $inside = $identityLines[0]
     if ($inside -cne 'true') { throw 'VM onboarding source root is not a Git work tree.' }
 
-    $topLevel = Get-CddsiFastLaneOnboardingGitScalar -Context $Context `
-        -Arguments @('rev-parse', '--show-toplevel') `
-        -FailureMessage 'VM onboarding source repository root check failed.'
+    $topLevel = $identityLines[1]
     $topLevelFull = Get-CddsiCanonicalPath -Path $topLevel
     if (-not $topLevelFull.Equals($Context.SourceRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'VM onboarding source root must be the exact Git repository root.'
     }
 
-    $head = Get-CddsiFastLaneOnboardingGitScalar -Context $Context `
-        -Arguments @('rev-parse', '--verify', 'HEAD^{commit}') `
-        -FailureMessage 'VM onboarding source repository HEAD check failed.'
+    $head = $identityLines[2]
     if ($head -cne $ProductCommitSha) {
         throw 'VM onboarding source repository HEAD differs from the exact product commit.'
     }
-    $tree = Get-CddsiFastLaneOnboardingGitScalar -Context $Context `
-        -Arguments @('rev-parse', '--verify', 'HEAD^{tree}') `
-        -FailureMessage 'VM onboarding source repository tree check failed.'
+    $tree = $identityLines[3]
     if ($tree -cnotmatch '^[a-f0-9]{40}$') {
         throw 'VM onboarding source repository tree identity is invalid.'
     }
@@ -280,8 +275,8 @@ function Assert-CddsiFastLaneOnboardingSourceRepository {
         $committedBlobs[$_].Type -ceq 'blob'
     })
     [Array]::Sort($committedBlobPaths, [StringComparer]::Ordinal)
-    Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes -Context $Context `
-        -RelativePaths $committedBlobPaths
+    $Context.GitAttributesByPath = Assert-CddsiFastLaneOnboardingNoUnsafeGitAttributes `
+        -Context $Context -RelativePaths $committedBlobPaths
 
     $status = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
         -Arguments @('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none')
@@ -309,11 +304,13 @@ function Get-CddsiFastLaneOnboardingCommittedBlob {
         $Context.CommittedBlobs[$RelativePath].Type -cne 'blob') {
         throw ('VM onboarding allow-list path is not one exact committed blob: {0}' -f $RelativePath)
     }
+    if (-not $Context.ContainsKey('WorkingBlobShas') -or
+        -not $Context.WorkingBlobShas.ContainsKey($RelativePath)) {
+        throw ('VM onboarding working-tree blob hash is unavailable: {0}' -f $RelativePath)
+    }
     $blobSha = [string]$Context.CommittedBlobs[$RelativePath].Sha
     Assert-CddsiFastLaneOnboardingSafeGitAttributes -Context $Context -RelativePath $RelativePath
-    $workingBlobSha = Get-CddsiFastLaneOnboardingGitScalar -Context $Context `
-        -Arguments @('hash-object', ('--path={0}' -f $RelativePath), '--', $RelativePath) `
-        -FailureMessage ('VM onboarding working-tree blob hash is invalid: {0}' -f $RelativePath)
+    $workingBlobSha = [string]$Context.WorkingBlobShas[$RelativePath]
     if ($workingBlobSha -cnotmatch '^[a-f0-9]{40}$') {
         throw ('VM onboarding working-tree blob hash is invalid: {0}' -f $RelativePath)
     }
@@ -321,6 +318,57 @@ function Get-CddsiFastLaneOnboardingCommittedBlob {
         throw ('VM onboarding working tree does not match the committed blob: {0}' -f $RelativePath)
     }
     return $blobSha
+}
+
+function Initialize-CddsiFastLaneOnboardingWorkingBlobShas {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Context,
+        [Parameter(Mandatory = $true)][string[]]$RelativePaths
+    )
+
+    if ($RelativePaths.Count -lt 1) { throw 'VM onboarding working-tree blob set must not be empty.' }
+    $paths = [System.Collections.Generic.List[string]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($relativePath in $RelativePaths) {
+        if ([string]::IsNullOrWhiteSpace($relativePath) -or
+            $relativePath.Contains("`r") -or $relativePath.Contains("`n") -or
+            -not $seen.Add($relativePath)) {
+            throw 'VM onboarding working-tree blob path is invalid or duplicated.'
+        }
+        if (-not $Context.ContainsKey('CommittedBlobs') -or
+            -not $Context.CommittedBlobs.ContainsKey($relativePath) -or
+            $Context.CommittedBlobs[$relativePath].Type -cne 'blob') {
+            throw ('VM onboarding allow-list path is not one exact committed blob: {0}' -f $relativePath)
+        }
+        Assert-CddsiFastLaneOnboardingSafeGitAttributes -Context $Context -RelativePath $relativePath
+        $paths.Add($relativePath)
+    }
+
+    $result = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
+        -Arguments @('hash-object', '--stdin-paths') `
+        -StandardInput (($paths.ToArray() -join "`n") + "`n")
+    $output = $result.StandardOutput.Replace("`r`n", "`n")
+    if (-not $output.EndsWith("`n", [StringComparison]::Ordinal)) {
+        throw 'VM onboarding working-tree blob hash response is invalid.'
+    }
+    $hashes = @($output.Substring(0, $output.Length - 1).Split("`n"))
+    if ($hashes.Count -ne $paths.Count) {
+        throw 'VM onboarding working-tree blob hash response count differs.'
+    }
+    $workingBlobShas = [System.Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    for ($index = 0; $index -lt $paths.Count; $index++) {
+        $relativePath = $paths[$index]
+        $workingBlobSha = $hashes[$index]
+        if ($workingBlobSha -cnotmatch '^[a-f0-9]{40}$') {
+            throw ('VM onboarding working-tree blob hash is invalid: {0}' -f $relativePath)
+        }
+        if ($workingBlobSha -cne [string]$Context.CommittedBlobs[$relativePath].Sha) {
+            throw ('VM onboarding working tree does not match the committed blob: {0}' -f $relativePath)
+        }
+        $workingBlobShas.Add($relativePath, $workingBlobSha)
+    }
+    $Context.WorkingBlobShas = $workingBlobShas
 }
 
 function Write-CddsiFastLaneOnboardingCanonicalFile {
@@ -483,8 +531,6 @@ function ConvertTo-CddsiFastLaneOnboardingFileSet {
         }
         $actualSha = Get-CddsiFastLaneOnboardingFileSha256 -Path $full
         if ($actualSha -cne $expectedSha) { throw ('VM onboarding source hash differs: {0}' -f $relative) }
-        $gitBlobSha = Get-CddsiFastLaneOnboardingCommittedBlob -Context $SourceGitContext `
-            -ProductCommitSha $ProductCommitSha -RelativePath $relative
         $sourceScanItem = [pscustomobject][ordered]@{ RelativePath = $relative; FullPath = $full }
         $null = Invoke-CddsiReleaseFileSecretScan -Items @($sourceScanItem) -Layer Source
         Assert-CddsiFastLaneOnboardingNoUserPath -Path $full -RelativePath $relative
@@ -492,7 +538,7 @@ function ConvertTo-CddsiFastLaneOnboardingFileSet {
         $bundlePath = ConvertTo-CddsiReleaseRelativePath -Path ('payload/{0}/{1}' -f $categoryToken, $relative)
         $items.Add([pscustomobject][ordered]@{
             Category = $Category; SourcePath = $relative; BundlePath = $bundlePath
-            Sha256 = $expectedSha; GitBlobSha = $gitBlobSha; LengthBytes = $length; FullPath = $full
+            Sha256 = $expectedSha; GitBlobSha = $null; LengthBytes = $length; FullPath = $full
         })
     }
     return [object[]]$items.ToArray()
@@ -577,16 +623,18 @@ function Assert-CddsiFastLaneOnboardingPolicyBinding {
     )
 
     $policy = Import-PowerShellDataFile -LiteralPath $PolicyPath
-    if ($policy.SchemaVersion -ne 1 -or $policy.ProtocolVersion -cne 'cddsi-vm-test-relay-v1' -or
+    if ($policy.SchemaVersion -ne 2 -or $policy.ProtocolVersion -cne 'cddsi-vm-test-relay-v1' -or
         $policy.Lane -cne 'Fast' -or $policy.ControlPlane.Topology -cne 'DirectionalRepositoryPair' -or
-        -not $policy.ProductRemote.PrivateRequired -or -not $policy.ProductRemote.VmReadOnly -or
-        -not $policy.ControlPlane.PrivateRepositoryRequired -or
+        $policy.ProductRemote.VisibilityRequired -cne 'PUBLIC' -or -not $policy.ProductRemote.VmReadOnly -or
+        $policy.ControlPlane.RepositoryVisibilityRequired -cne 'PUBLIC' -or
+        $policy.ControlPlane.HostToVm.VisibilityRequired -cne 'PUBLIC' -or
+        $policy.ControlPlane.VmToHost.VisibilityRequired -cne 'PUBLIC' -or
         -not $policy.ControlPlane.ServerProtectedHistoryRequired -or
         -not $policy.ControlPlane.PinnedGenesisRequired -or
         -not $policy.ControlPlane.CompareAndSwapRequired -or
         $policy.ControlPlane.ForcePushAllowed -or $policy.ControlPlane.HistoryRewriteAllowed -or
         $policy.ControlPlane.DeletePublishedMessage) {
-        throw 'VM onboarding committed Fast Lane policy is not the frozen private append-only contract.'
+        throw 'VM onboarding committed Fast Lane policy is not the frozen public protected-history contract.'
     }
     if ($policy.SshTrust.GitHubHost -cne 'github.com' -or
         $policy.SshTrust.OpenSshToolId -cne 'OpenSSH' -or
@@ -633,6 +681,7 @@ function Assert-CddsiFastLaneOnboardingPolicyBinding {
             Id = [long]$policy.ProductRemote.RepositoryId
             NodeId = $policy.ProductRemote.RepositoryNodeId
             FullName = $ProductRepository.FullName
+            Visibility = $policy.ProductRemote.VisibilityRequired
             HostWriteRefPattern = $policy.ProductRemote.HostWriteRefPattern
         }
         HostToVmRepository = [pscustomobject][ordered]@{
@@ -640,6 +689,7 @@ function Assert-CddsiFastLaneOnboardingPolicyBinding {
             Id = [long]$policy.ControlPlane.HostToVm.RepositoryId
             NodeId = $policy.ControlPlane.HostToVm.RepositoryNodeId
             FullName = $HostToVmRepository.FullName
+            Visibility = $policy.ControlPlane.HostToVm.VisibilityRequired
             Ref = $policy.ControlPlane.HostToVm.Ref
             GenesisSha = $policy.ControlPlane.HostToVm.GenesisCommitSha
         }
@@ -648,6 +698,7 @@ function Assert-CddsiFastLaneOnboardingPolicyBinding {
             Id = [long]$policy.ControlPlane.VmToHost.RepositoryId
             NodeId = $policy.ControlPlane.VmToHost.RepositoryNodeId
             FullName = $VmToHostRepository.FullName
+            Visibility = $policy.ControlPlane.VmToHost.VisibilityRequired
             Ref = $policy.ControlPlane.VmToHost.Ref
             GenesisSha = $policy.ControlPlane.VmToHost.GenesisCommitSha
         }
@@ -679,9 +730,13 @@ function New-CddsiFastLaneNegativePermissionRunbook {
     param()
 
     $runbook = [pscustomobject][ordered]@{
-        SchemaVersion = 1
-        ContractVersion = 'cddsi-fast-lane-negative-permission-runbook-v1'
+        SchemaVersion = 2
+        ContractVersion = 'cddsi-fast-lane-negative-permission-runbook-v2'
         Purpose = 'VM_ROLE_NEGATIVE_PERMISSION_VALIDATION'
+        Preconditions = [pscustomobject][ordered]@{
+            ExpectedRepositoryVisibility = 'PUBLIC'; ServerProtectedHistoryVerified = $true
+            RepositoryIdentityVerified = $true; FixedSshProfilesVerified = $true
+        }
         Cases = @(
             [pscustomobject][ordered]@{ Sequence = 1; Identity = 'VmTester'; Target = 'ProductRepository'; Operation = 'FetchExactCommit'; Expected = 'ALLOWED' },
             [pscustomobject][ordered]@{ Sequence = 2; Identity = 'VmTester'; Target = 'ProductRepository'; Operation = 'Push'; Expected = 'DENIED' },
@@ -692,7 +747,8 @@ function New-CddsiFastLaneNegativePermissionRunbook {
         )
         SuccessCriteria = [pscustomobject][ordered]@{
             AllCasesObserved = $true; ProductWriteDenied = $true; WrongDirectionWriteDenied = $true
-            HistoryRewriteDenied = $true; SecretFindingCount = 0
+            HistoryRewriteDenied = $true; PublicVisibilityVerified = $true
+            ProtectedHistoryVerified = $true; SecretFindingCount = 0
         }
         BindingToken = $null
     }
@@ -707,11 +763,12 @@ function New-CddsiFastLaneUnattendedSmokeRunbook {
     param()
 
     $runbook = [pscustomobject][ordered]@{
-        SchemaVersion = 1
-        ContractVersion = 'cddsi-fast-lane-unattended-smoke-runbook-v1'
+        SchemaVersion = 2
+        ContractVersion = 'cddsi-fast-lane-unattended-smoke-runbook-v2'
         Purpose = 'DIAGNOSTIC_ONLY_UNATTENDED_FAST_LANE_SMOKE'
         Preconditions = [pscustomobject][ordered]@{
-            ExactCommitVerified = $true; NegativePermissionsPassed = $true; ResetPolicyFrozen = $true
+            ExactCommitVerified = $true; PublicVisibilityVerified = $true
+            ProtectedHistoryVerified = $true; NegativePermissionsPassed = $true; ResetPolicyFrozen = $true
             PayloadExecutionForbidden = $true; SingleActiveCycle = $true
         }
         Steps = @(
@@ -915,8 +972,8 @@ function Test-CddsiFastLaneVmOnboardingBundle {
         'SchemaVersion', 'ContractVersion', 'Purpose', 'EvidenceClass', 'Mode', 'Policy', 'Product',
         'ControlRepositories', 'FileSets', 'Tools', 'Constraints', 'Automation', 'Runbooks',
         'Inventory', 'Zip', 'ManifestBindingToken'
-    )) -or $manifest.SchemaVersion -ne 1 -or
-        $manifest.ContractVersion -cne 'cddsi-fast-lane-vm-onboarding-manifest-v1' -or
+    )) -or $manifest.SchemaVersion -ne 2 -or
+        $manifest.ContractVersion -cne 'cddsi-fast-lane-vm-onboarding-manifest-v2' -or
         $manifest.Purpose -cne 'P10A_0A_VM_ONBOARDING_DIAGNOSTIC_ONLY' -or
         $manifest.EvidenceClass -cne 'DIAGNOSTIC_ONLY' -or $manifest.Mode -cne 'DryRun') {
         throw 'VM onboarding manifest schema or classification is invalid.'
@@ -936,16 +993,17 @@ function Test-CddsiFastLaneVmOnboardingBundle {
         throw 'VM onboarding committed policy binding is invalid.'
     }
     $policyRepositorySchemas = [ordered]@{
-        ProductRepository = @('RepositoryToken', 'Id', 'NodeId', 'FullName', 'HostWriteRefPattern')
-        HostToVmRepository = @('RepositoryToken', 'Id', 'NodeId', 'FullName', 'Ref', 'GenesisSha')
-        VmToHostRepository = @('RepositoryToken', 'Id', 'NodeId', 'FullName', 'Ref', 'GenesisSha')
+        ProductRepository = @('RepositoryToken', 'Id', 'NodeId', 'FullName', 'Visibility', 'HostWriteRefPattern')
+        HostToVmRepository = @('RepositoryToken', 'Id', 'NodeId', 'FullName', 'Visibility', 'Ref', 'GenesisSha')
+        VmToHostRepository = @('RepositoryToken', 'Id', 'NodeId', 'FullName', 'Visibility', 'Ref', 'GenesisSha')
     }
     foreach ($name in $policyRepositorySchemas.Keys) {
         $repository = $manifest.Policy.$name
         if (-not (Test-CddsiExactPropertySet -InputObject $repository -Expected $policyRepositorySchemas[$name]) -or
             $repository.RepositoryToken -cne ('github.com/' + $repository.FullName) -or
             ($repository.Id -isnot [int] -and $repository.Id -isnot [long]) -or [long]$repository.Id -lt 1 -or
-            $repository.NodeId -cnotmatch '^[A-Za-z0-9_=-]{4,128}$') {
+            $repository.NodeId -cnotmatch '^[A-Za-z0-9_=-]{4,128}$' -or
+            $repository.Visibility -cne 'PUBLIC') {
             throw ('VM onboarding policy repository binding is invalid: {0}' -f $name)
         }
     }
@@ -1299,6 +1357,12 @@ function New-CddsiFastLaneVmOnboardingBundle {
             }
         }
     }
+    Initialize-CddsiFastLaneOnboardingWorkingBlobShas -Context $sourceGitContext `
+        -RelativePaths @($allFiles | ForEach-Object SourcePath)
+    foreach ($item in $allFiles) {
+        $item.GitBlobSha = Get-CddsiFastLaneOnboardingCommittedBlob -Context $sourceGitContext `
+            -ProductCommitSha $ProductCommitSha -RelativePath $item.SourcePath
+    }
     $requiredContentMarkers = [ordered]@{
         'config/fast-lane-policy.psd1' = @(
             'ProtocolVersion',
@@ -1438,8 +1502,8 @@ function New-CddsiFastLaneVmOnboardingBundle {
         $zipEntries = [string[]]$zipEntries
         [Array]::Sort($zipEntries, [StringComparer]::Ordinal)
         $manifest = [pscustomobject][ordered]@{
-            SchemaVersion = 1
-            ContractVersion = 'cddsi-fast-lane-vm-onboarding-manifest-v1'
+            SchemaVersion = 2
+            ContractVersion = 'cddsi-fast-lane-vm-onboarding-manifest-v2'
             Purpose = 'P10A_0A_VM_ONBOARDING_DIAGNOSTIC_ONLY'
             EvidenceClass = 'DIAGNOSTIC_ONLY'
             Mode = $Mode

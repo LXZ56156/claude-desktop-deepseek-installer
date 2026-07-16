@@ -21,12 +21,50 @@
         }
         $script:RunnerSha256 = (Get-FileHash -LiteralPath $script:RunnerPath -Algorithm SHA256).Hash.ToLowerInvariant()
         $script:FixtureRoots = [Collections.ArrayList]::new()
+        $script:OutboxFixtureTemplateRoot = $null
+        $script:OutboxFixtureTemplateGenesis = $null
 
         function Invoke-FixtureGit {
             param([Parameter(Mandatory = $true)][string[]]$Arguments)
             $output = & $script:GitExecutable -c core.hooksPath=NUL -c credential.helper= @Arguments 2>&1
             if ($LASTEXITCODE -ne 0) { throw ('Fixture Git failed: ' + (($output | ForEach-Object { [string]$_ }) -join ' ')) }
             return @($output | ForEach-Object { [string]$_ })
+        }
+
+        function Initialize-OutboxFixtureTemplate {
+            if (-not [string]::IsNullOrWhiteSpace($script:OutboxFixtureTemplateRoot)) { return }
+            $root = Join-Path ([IO.Path]::GetTempPath()) ('cddsi-test-' + [guid]::NewGuid().ToString('N'))
+            [void][IO.Directory]::CreateDirectory($root)
+            $owner = [pscustomobject][ordered]@{
+                SchemaVersion = 1; ContractVersion = 'cddsi-fast-lane-local-transport-owner-v1'
+                Owner = 'CDDsiFastLaneGitOutboxTests'; SyntheticOnly = $true
+            }
+            [IO.File]::WriteAllText(
+                (Join-Path $root '.cddsi-owner.json'),
+                ((ConvertTo-CddsiVmTestRelayCanonicalJson $owner) + "`n"),
+                (New-Object Text.UTF8Encoding($false)))
+            [void]$script:FixtureRoots.Add($root)
+            $work = Join-Path $root 'writer'
+            $remote = Join-Path $root 'control.git'
+            [void](Invoke-FixtureGit @('init', '--quiet', $work))
+            [void][IO.Directory]::CreateDirectory((Join-Path $work 'outbox'))
+            [IO.File]::WriteAllText(
+                (Join-Path $work 'README.md'), "fixture`n", (New-Object Text.UTF8Encoding($false)))
+            [IO.File]::WriteAllText(
+                (Join-Path $work 'outbox\README.md'), "outbox`n", (New-Object Text.UTF8Encoding($false)))
+            [void](Invoke-FixtureGit @('-C', $work, 'add', 'README.md', 'outbox/README.md'))
+            [void](Invoke-FixtureGit @(
+                '-C', $work, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@invalid',
+                'commit', '--quiet', '-m', 'genesis'
+            ))
+            [void](Invoke-FixtureGit @('-C', $work, 'branch', '-M', 'main'))
+            [void](Invoke-FixtureGit @('init', '--bare', '--quiet', $remote))
+            [void](Invoke-FixtureGit @('-C', $work, 'remote', 'add', 'origin', '../control.git'))
+            [void](Invoke-FixtureGit @('-C', $work, 'push', '--quiet', '-u', 'origin', 'main'))
+            $script:OutboxFixtureTemplateGenesis = (
+                [string](Invoke-FixtureGit @('-C', $work, 'rev-parse', 'HEAD') | Select-Object -First 1)
+            ).Trim()
+            $script:OutboxFixtureTemplateRoot = $root
         }
 
         function New-OutboxFixture {
@@ -60,29 +98,24 @@
                 (Join-Path $operatorWorkspaceRoot '.cddsi-owner.json'),
                 ((ConvertTo-CddsiVmTestRelayCanonicalJson $workspaceOwner) + "`n"),
                 (New-Object Text.UTF8Encoding($false)))
+            Initialize-OutboxFixtureTemplate
+            Copy-Item -LiteralPath (Join-Path $script:OutboxFixtureTemplateRoot 'writer') `
+                -Destination $root -Recurse -Force
+            Copy-Item -LiteralPath (Join-Path $script:OutboxFixtureTemplateRoot 'control.git') `
+                -Destination $root -Recurse -Force
             $work = Join-Path $root 'writer'
             $remote = Join-Path $root 'control.git'
-            [void](Invoke-FixtureGit @('init', '--quiet', $work))
-            [void][IO.Directory]::CreateDirectory((Join-Path $work 'outbox'))
-            [IO.File]::WriteAllText((Join-Path $work 'README.md'), "fixture`n", (New-Object Text.UTF8Encoding($false)))
-            [IO.File]::WriteAllText((Join-Path $work 'outbox\README.md'), "outbox`n", (New-Object Text.UTF8Encoding($false)))
-            [void](Invoke-FixtureGit @('-C', $work, 'add', 'README.md', 'outbox/README.md'))
-            [void](Invoke-FixtureGit @('-C', $work, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@invalid', 'commit', '--quiet', '-m', 'genesis'))
-            [void](Invoke-FixtureGit @('-C', $work, 'branch', '-M', 'main'))
-            [void](Invoke-FixtureGit @('init', '--bare', '--quiet', $remote))
-            [void](Invoke-FixtureGit @('-C', $work, 'remote', 'add', 'origin', $remote))
-            [void](Invoke-FixtureGit @('-C', $work, 'push', '--quiet', '-u', 'origin', 'main'))
-            $genesis = ([string](Invoke-FixtureGit @('-C', $work, 'rev-parse', 'HEAD') | Select-Object -First 1)).Trim()
+            $genesis = $script:OutboxFixtureTemplateGenesis
             $identity = 'synthetic/' + $Direction
             $authority = 'synthetic/CddsiFastLaneProtectionAuthority'
             $policySha = '6' * 64
             $evidence = [pscustomobject][ordered]@{
-                SchemaVersion = 1
-                ContractVersion = 'cddsi-fast-lane-control-repo-protection-v2'
+                SchemaVersion = 2
+                ContractVersion = 'cddsi-fast-lane-control-repo-protection-v3'
                 RepositoryIdentity = $identity
                 RepositoryNumericId = $NumericId
                 RepositoryNodeId = ('LOCAL_NODE_' + $NumericId)
-                Private = $true
+                Visibility = 'PUBLIC'
                 RemoteRef = 'refs/heads/main'
                 ForcePushAllowed = $false
                 BranchDeletionAllowed = $false
@@ -155,6 +188,7 @@
                 ProtectionEvidenceSha256 = $Fixture.EvidenceSha256
                 ExpectedRepositoryNumericId = [long]$Fixture.Evidence.RepositoryNumericId
                 ExpectedRepositoryNodeId = [string]$Fixture.Evidence.RepositoryNodeId
+                ExpectedRepositoryVisibility = 'PUBLIC'
                 ExpectedProtectionAuthority = $Fixture.ExpectedProtectionAuthority
                 ExpectedProtectionPolicySha256 = $Fixture.ExpectedProtectionPolicySha256
                 ProtectionTrustRoot = $Fixture.ProtectionTrustRoot
@@ -772,6 +806,13 @@
         $parameters.ExpectedRepositoryNumericId = 999L
         { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode TestSafe @parameters } | Should -Throw '*PROTECTION_EVIDENCE_INVALID*'
         $parameters.ExpectedRepositoryNumericId = [long]$fixture.Evidence.RepositoryNumericId
+        $parameters.ProtectionEvidence.Visibility = 'PRIVATE'
+        $parameters.ProtectionEvidenceSha256 = Get-CddsiSupplyChainTextBindingToken -Text `
+            (ConvertTo-CddsiVmTestRelayCanonicalJson $parameters.ProtectionEvidence)
+        { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode TestSafe @parameters } |
+            Should -Throw '*PROTECTION_EVIDENCE_INVALID*'
+        $parameters.ProtectionEvidence.Visibility = 'PUBLIC'
+        $parameters.ProtectionEvidenceSha256 = $fixture.EvidenceSha256
         $parameters.ProtectionEvidence.ValidUntilUtc = '2030-01-01T01:00:00.0000001Z'
         $parameters.ProtectionEvidenceSha256 = Get-CddsiSupplyChainTextBindingToken -Text `
             (ConvertTo-CddsiVmTestRelayCanonicalJson $parameters.ProtectionEvidence)
@@ -799,9 +840,9 @@
         $authority = 'github.com/LXZ56156/cddsi-control-protection-authority-v1'
         $protectionPolicySha = '7' * 64
         $evidence = [pscustomobject][ordered]@{
-            SchemaVersion = 1; ContractVersion = 'cddsi-fast-lane-control-repo-protection-v2'
+            SchemaVersion = 2; ContractVersion = 'cddsi-fast-lane-control-repo-protection-v3'
             RepositoryIdentity = $identity; RepositoryNumericId = 7001L; RepositoryNodeId = 'R_SYNTHETIC_7001'
-            Private = $true; RemoteRef = 'refs/heads/main'; ForcePushAllowed = $false
+            Visibility = 'PUBLIC'; RemoteRef = 'refs/heads/main'; ForcePushAllowed = $false
             BranchDeletionAllowed = $false; HistoryRewriteAllowed = $false
             Authority = $authority; ProtectionPolicySha256 = $protectionPolicySha; PreviousReceiptSha256 = $null
             ObservedAtUtc = '2030-01-01T00:00:00.0000000Z'; ValidUntilUtc = '2030-01-01T00:30:00.0000000Z'
@@ -821,6 +862,7 @@
             RepositoryIdentity = $identity; ProtectionEvidence = $evidence
             ProtectionEvidenceSha256 = $evidenceSha
             ExpectedRepositoryNumericId = 7001L; ExpectedRepositoryNodeId = 'R_SYNTHETIC_7001'
+            ExpectedRepositoryVisibility = 'PUBLIC'
             ExpectedProtectionAuthority = $authority; ExpectedProtectionPolicySha256 = $protectionPolicySha
             ProtectionTrustRoot = $protectionTrust.ProtectionTrustRoot
             ProtectionAuthorityAssertionPath = $protectionTrust.ProtectionAuthorityAssertionPath

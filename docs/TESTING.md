@@ -133,10 +133,18 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
 
-上述映射证明宿主实现可制作 VM onboarding，因此可进入 bootstrap-only 步骤；它不证明
-private protected history、角色 credential、VM reset 或 unattended loop 已通过。
-两端 minute tasks 在这些 integration gates 完成前都必须保持暂停。首次 P10A 另需外部
-snapshot receipt、独立 CAS 与签名，Fast Lane 测试绝不能替代。
+上述映射曾证明旧 commit `3e843912...` 可制作 VM onboarding；当前 tracked 变更重新
+finalization 前 `CanStartVmBootstrap=false`。它不证明 protected history、角色 credential、
+VM reset 或 unattended loop 已通过。若采用 GitHub Free public 三仓，必须先增加
+public-protected 正向、visibility mismatch、缺保护、force-push/delete/rewrite 和错误角色
+写入负向测试；旧 private-only 断言不得静默删除或伪造 `Private=true`。两端 minute tasks
+在这些 integration gates 完成前都必须保持暂停。首次 P10A 另需外部 snapshot receipt、
+独立 CAS 与签名，Fast Lane 测试绝不能替代。
+
+Release secret scanner 只证明当前 PackageFiles 的 source/staging/ZIP/extracted bytes；它不
+覆盖 Git history/metadata、DevelopmentOnly 文档、PR、Actions logs/artifacts 或 control-repo
+history。用户已接受未审计的存量范围，不把它们作为 cutover 门；但 public outbox 对
+credential/Authorization/secret 和未脱敏自由文本的禁令及负向测试仍必须通过。
 
 ## 本地依赖
 

@@ -47,16 +47,19 @@ runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
 dispatcher/provider 边界、两端 prompt/runbook 和 synthetic rehearsal。它们位于独立
 OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release。宿主机侧实现
 可以生成绑定精确 commit/tree、文件/blob/tool hash、repository 数字/node identity 与
-pinned genesis 的诊断 onboarding ZIP。当前最终 clean commit、统一门、实际 immutable
-ZIP 与暂停宿主机任务的 hash binding 尚未完成，所以仍是 **VM bootstrap finalization**，
-不是 bootstrap ready。最终化完成后也只允许 VM 离线核验、设备本地密钥生成和创建
+pinned genesis 的诊断 onboarding ZIP。旧 commit `3e843912...` 已完成 clean commit、
+统一门、实际 18-entry immutable ZIP、暂停 heartbeat hash binding 与 CI；本次 tracked
+文档/public-visibility 工作包使旧 ZIP 成为历史 anchor。新 HEAD 重新完成相同 finalization
+前 `CanStartVmBootstrap=false`。完成后也只允许 VM 离线核验、设备本地密钥生成和创建
 仍暂停的 VM task。
 
-真实 private protected history 当前被 GitHub 套餐以 HTTP 403 阻断，窄权限角色凭据、
+真实 protected history 当前被 private GitHub 套餐以 HTTP 403 阻断，窄权限角色凭据、
 VM 负向权限证据、VM provider/device trust、reset smoke 与 unattended acceptance 尚未
 完成，所以 **VM integration 仍 fail closed**。这些 operator runtime 不解除宿主机
 Live 边界，也不授权 VM 修改产品代码。Formal Lane 的外部 snapshot receipt、独立
-CAS/signature/receipt authority 仍未就绪，不能据此声称 P10A-0A 或 P10A 完成。
+CAS/signature/receipt authority 仍未就绪，不能据此声称 P10A-0A 或 P10A 完成。三个
+远端当前仍为 private；用户已接受存量公开风险，但在 public visibility 合同升版、测试与
+服务端保护部署完成前，不得先改 public。
 
 ## 零接触定义
 
@@ -312,12 +315,12 @@ Fake 层必须覆盖：
   VM-only dispatcher/provider、device trust 和 fail-closed receipt 合同；实际 VM
   provisioning、Live development-retest smoke 与系统证据仍必须在 disposable VM 完成。
   MVP 使用一个逻辑双 outbox、
-  两个物理单向私有 control repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，
+  两个物理单向 control repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，
   `vm-to-host` 仅 VM 写/HostCoordinator 读。
 - 两端分钟级 Codex automation 属于外部 operator coordination，不是产品 Scheduled
-  Task，不能扩大宿主机 Live 或让 VM 修改产品代码。private repository pair、固定
+  Task，不能扩大宿主机 Live 或让 VM 修改产品代码。repository pair、固定
   outbox runtime、prompt、onboarding 和 synthetic 演练已实现；宿主机 heartbeat 已
-  创建且暂停。VM task 必须从 VM 设备创建并先保持暂停。private protected history、
+  创建且暂停。VM task 必须从 VM 设备创建并先保持暂停。protected history、
   最小 credentials、任务安全启用和 unattended acceptance 尚未完成。
 - Formal Lane 用于 P10A/P11 正式证据，必须由 VM 外部的 hypervisor supervisor
   恢复固定快照并签发 receipt，并使用独立 CAS/receipts/signatures。VMP/重启/卸载、

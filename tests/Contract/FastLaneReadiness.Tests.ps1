@@ -13,7 +13,7 @@
             RepositoryToken = $Expected.RepositoryToken
             RepositoryId = [long]$Expected.RepositoryId
             RepositoryNodeId = $Expected.RepositoryNodeId
-            Private = $true
+            Visibility = $Expected.VisibilityRequired
             Ref = $Ref
             GenesisCommitSha = $GenesisCommitSha
             IdentityVerified = $true
@@ -77,8 +77,8 @@
         $commit = 'd' * 40
         $repairRef = 'refs/heads/codex/repair/p10a-0a-fast-lane'
         $observation = [pscustomobject][ordered]@{
-            SchemaVersion = 1
-            ContractVersion = 'cddsi-fast-lane-deployment-observation-v1'
+            SchemaVersion = 2
+            ContractVersion = 'cddsi-fast-lane-deployment-observation-v2'
             CapturedAtUtc = '2030-01-01T00:00:00Z'
             ValidUntilUtc = '2030-01-01T00:10:00Z'
             PolicySha256 = $script:PolicySha256
@@ -120,6 +120,7 @@ Describe 'P10A-0A deployment readiness contracts' {
         $result = Resolve-CddsiFastLaneReadiness -Observation $observation -Policy $script:Policy `
             -ValidationTimeUtc $script:ValidationTimeUtc -ExpectedPolicySha256 $script:PolicySha256
         $result.HostImplementationReady | Should -BeTrue
+        $result.RepositoryVisibilityReady | Should -BeTrue
         $result.CanStartVmBootstrap | Should -BeTrue
         $result.RepositoryProtectionReady | Should -BeFalse
         $result.HostCredentialReady | Should -BeFalse
@@ -168,6 +169,26 @@ Describe 'P10A-0A deployment readiness contracts' {
     It 'rejects repository identity substitution before readiness evaluation' {
         $observation = New-CddsiFastLaneDeploymentObservationFixture
         $observation.HostToVmRepository.RepositoryId = 1
+        { Resolve-CddsiFastLaneReadiness -Observation $observation -Policy $script:Policy `
+            -ValidationTimeUtc $script:ValidationTimeUtc -ExpectedPolicySha256 $script:PolicySha256 } |
+            Should -Throw '*observation is invalid*'
+    }
+
+    It 'reports any private repository as a visibility mismatch and rejects non-canonical visibility' {
+        foreach ($repositoryName in @('ProductRepository', 'HostToVmRepository', 'VmToHostRepository')) {
+            $observation = New-CddsiFastLaneDeploymentObservationFixture
+            $observation.$repositoryName.Visibility = 'PRIVATE'
+            $observation.ObservationBindingToken = Get-CddsiFastLaneDeploymentObservationBindingToken -Observation $observation
+            $result = Resolve-CddsiFastLaneReadiness -Observation $observation -Policy $script:Policy `
+                -ValidationTimeUtc $script:ValidationTimeUtc -ExpectedPolicySha256 $script:PolicySha256
+            $result.RepositoryVisibilityReady | Should -BeFalse
+            $result.RepositoryProtectionReady | Should -BeTrue
+            $result.CanStartVmIntegration | Should -BeFalse
+            $result.ReasonCodes | Should -Contain 'REPOSITORY_VISIBILITY_MISMATCH'
+        }
+        $observation = New-CddsiFastLaneDeploymentObservationFixture
+        $observation.VmToHostRepository.Visibility = 'public'
+        $observation.ObservationBindingToken = Get-CddsiFastLaneDeploymentObservationBindingToken -Observation $observation
         { Resolve-CddsiFastLaneReadiness -Observation $observation -Policy $script:Policy `
             -ValidationTimeUtc $script:ValidationTimeUtc -ExpectedPolicySha256 $script:PolicySha256 } |
             Should -Throw '*observation is invalid*'

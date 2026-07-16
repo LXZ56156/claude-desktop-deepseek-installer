@@ -6,6 +6,12 @@ VM-to-host append. Use repository and trust facts from the onboarding bundle,
 and record only command class, repository identity, expected/actual allow
 or deny result, exit code class, timestamp, and a redacted evidence hash.
 
+Before any credential probe, verify exact repository ID/node ID, expected
+`PUBLIC` visibility, protected refs, and current protection receipts for all
+three repositories. Public anonymous readability is not credential evidence;
+when the frozen SSH deploy-key profile is used, key scope must still be
+validated per repository.
+
 ## Required denials
 
 The VM identity must be denied all of the following:
@@ -17,7 +23,8 @@ The VM identity must be denied all of the following:
 - append to `host-to-vm`;
 - force-push, delete a ref, or rewrite history in either control repository;
 - use the HostCoordinator identity or access its credential material.
-- use any one VM deploy key against either of the other two repositories.
+- use any one VM deploy key through the fixed authenticated SSH profile against
+  either of the other two repositories.
 
 Use non-mutating permission probes where the provider supports them. A Git push
 probe must use `--dry-run` and a unique synthetic ref. An API capability is

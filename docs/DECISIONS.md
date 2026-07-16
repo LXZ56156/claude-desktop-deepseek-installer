@@ -1,6 +1,6 @@
 # 决策记录
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
 才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。
@@ -286,10 +286,10 @@ compensation；分层状态不能掩盖部分系统修改。
   校准包或 P10B 双候选的重建和签名。
 - VM Codex 对产品仓库只读，只测试、分析和回传；它可以向独立 control repo 的 VM
   outbox 写结构化结果，但不得修改源码、ZIP、runbook 或 fixture。
-- Fast Lane（日常自动修复）MVP 使用共享私有 control repo 的双向隔离 outbox，
-  envelope 绑定 CycleId、单调 sequence 和内容 hash，由两端分钟级 Codex Scheduled
-  Tasks 自动轮询。可用低延迟 watcher 触发受限 `codex exec`/resume，不要求用户
-  人工搬文件；transport 可替换，不限定 GitHub。
+- Fast Lane（日常自动修复）MVP 使用两个物理 control repositories 的双向隔离
+  outbox；冻结实现当前为 private。envelope 绑定 CycleId、单调 sequence 和内容 hash，
+  由两端分钟级 Codex Scheduled Tasks 自动轮询。可用低延迟 watcher 触发受限
+  `codex exec`/resume，不要求用户人工搬文件；transport 可替换，不限定 GitHub。
 - P10A 固定精确 commit/calibration artifact；P11 固定 P10B candidate exact
   bytes/hash。P11 失败后，宿主机修复并过门、提交/推送，再回到 P10B 重建/签名新
   候选；VM 不拉取修复源码直接重测。
@@ -303,3 +303,25 @@ compensation；分层状态不能掩盖部分系统修改。
 - relay message/ACK/notification 不是 CAS、签名、snapshot receipt 或 acceptance
   receipt；free text/log 只作为数据，不能自动执行。不得自动 merge，也不得自动
   进入 P12。
+
+## D-021：GitHub Free public visibility 迁移
+
+**状态：冻结目标（2026-07-16；待部署）**
+
+用户选择不升级 GitHub Pro，并要求评估把产品与两个 control repositories 改为 public。
+当前远端仍为 private；用户已作出以下不可逆风险选择：
+
+- `PrivacyDecision=ACCEPTED`：接受 commit metadata、历史运营信息和未来 public outbox
+  对互联网可见。
+- `HistoryRewrite=NO`：不重写现有历史。
+- `ResidualPrivacyAudit=NOT_PERFORMED_ACCEPTED_RISK`：Actions logs/artifacts、远端未枚举
+  refs/tags 和 control author metadata 不再作为 visibility cutover 前置门。
+
+以下代码与保护门仍必须关闭后才能修改 visibility：
+- 升版 visibility/protection receipt、policy/readiness/outbox/onboarding、prompts/runbook
+  与测试，明确 `PUBLIC`，不得伪报 `Private=true`。
+- 把三个 repositories 一并切换，立即部署禁止删除、禁止 force-push、线性历史与角色限制，
+  并以真实负向测试验证；任一仓未保护时继续 fail closed。
+- 从新 clean exact commit 重新运行统一门、重建 onboarding bundle、重绑仍暂停的 heartbeat
+  并等待 CI。D-021 只有在这些证据完成后才能转为冻结并替代 D-020 的 private transport
+  实例；宿主机 Live、VM 只读产品代码和 Formal Lane 边界不变。

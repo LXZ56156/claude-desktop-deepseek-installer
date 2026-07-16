@@ -4,7 +4,7 @@ This directory is development-only operator coordination material. It is not
 loaded by `lib/bootstrap.ps1`, is not part of the product execution plane, and
 must never enter a Release ZIP.
 
-The Fast Lane uses one logical control plane backed by two physical private Git
+The Fast Lane uses one logical control plane backed by two physical public Git
 repositories:
 
 - `host-to-vm`: only `HostCoordinator` can append; `VmTester` is read-only.
@@ -76,13 +76,13 @@ Current deployment state (2026-07-16):
 - VM to host: `LXZ56156/cddsi-vm-to-host` (private; repository ID
   `1301870545`, node ID `R_kgDOTZj30Q`, ref `refs/heads/main`, genesis
   `d88fe54d624bb5699751522e80e1cc4cd367ec33`).
-- The host-side diagnostic implementation is feature-complete for VM-bootstrap
-  finalization: the fixed Git outbox runtime, readiness resolver, deterministic
-  onboarding builder, VM-only reset dispatcher/provider boundary, prompts, and
-  runbooks can be bound into one immutable, inventory-checked ZIP. The final
-  clean commit, full gates, actual ZIP, and paused heartbeat hash binding remain
-  pending, so VM bootstrap is not authorized yet. This never authorizes polling
-  or a product test.
+- The host-side diagnostic implementation is feature-complete. Commit
+  `3e843912df2543c1da05b09061970faff511d016` completed the full dual-engine
+  gates, Release DryRun, one immutable 18-entry ZIP, paused heartbeat hash
+  binding, and PR CI. The current tracked documentation/public-visibility work
+  changes the commit/tree or policy binding, so that ZIP is now a historical
+  anchor. A new clean commit must repeat finalization before VM bootstrap is
+  authorized. This never authorizes polling or a product test.
 - Host Codex heartbeat: `cddsi-fast-lane-hostcoordinator-minute-poll`, paused
   until a narrow HostCoordinator credential, append-only server protection,
   and its protected authority assertion are verified.
@@ -93,32 +93,38 @@ Current deployment state (2026-07-16):
   current protection assertion/hash/token is independently provisioned, and
   the VM reset authority/device/anchor-grant trust gates are ready.
 - GitHub rejected private-repository rulesets for the current account plan.
-  The repositories remain private; force-push/deletion protection is therefore
-  an open fail-closed deployment gate rather than a policy downgrade.
+  The user accepted the existing history/metadata exposure and chose public
+  transport without history rewrite. All three remotes remain private until the
+  versioned PUBLIC contract passes its gates; then they must change together,
+  receive immediate server protection, and be re-finalized.
 - Narrow, non-admin credentials for both roles remain an external integration
   gate. The interactive bootstrap administrator credential must never be used
   by either minute task.
 
 The readiness states are deliberately separate:
 
-- `CanStartVmBootstrap`: no until the final immutable bundle is validated and
-  the host heartbeat is hash-bound and remains paused; yes only after both are
-  evidenced. Bootstrap is limited to offline bundle verification, VM-local key
-  creation, tool/hash reporting, and creation of the still-paused VM task.
+- `CanStartVmBootstrap`: no for the current working tree. The old finalized
+  anchor is recorded below, but any new commit requires a new immutable bundle
+  and a newly hash-bound, still-paused host heartbeat. Bootstrap remains limited
+  to offline bundle verification, VM-local key creation, tool/hash reporting,
+  and creation of the still-paused VM task.
 - `CanStartVmIntegration`: no until protected history and the narrow
   HostCoordinator credential are independently evidenced. VM polling, remote
   negative-permission tests, reset smoke, and unattended smoke remain pending.
 - `P10A0AComplete` and `CanStartFormalP10A`: no. The first Formal P10A run also
   requires an external clean-snapshot receipt, independent CAS, and signatures.
 
-Finalization values are intentionally not guessed in this tracked document:
+Historical finalization anchor:
 
-- product commit: `<FINAL_PRODUCT_COMMIT_SHA_AFTER_COMMIT>`
-- product tree: `<FINAL_PRODUCT_TREE_SHA_AFTER_COMMIT>`
-- onboarding ZIP SHA-256: `<FINAL_ONBOARDING_ZIP_SHA256_AFTER_BUILD>`
+- product commit: `3e843912df2543c1da05b09061970faff511d016`
+- product tree: `5d2d18317e0dfa9359d8caed6b30c5ddad984985`
+- onboarding ZIP SHA-256:
+  `58bf3d26930b1c2eda78c29b4d53a89a28794fc7d74ef6ecdb90b6858cb88832`
 - onboarding manifest binding token:
-  `<FINAL_ONBOARDING_MANIFEST_BINDING_TOKEN_AFTER_BUILD>`
-- final host quality evidence: `<FINAL_HOST_QUALITY_EVIDENCE_AFTER_GATES>`
+  `c9309d30b02168a3a33552eb0d1dabd7374492a50d06f64e53d6b8e703ad2a54`
+- final host quality evidence:
+  `RunId=dd9af0ff-6230-4b42-9420-4f9f7d3048a4`, 427/427 on both engines,
+  all required zero metrics satisfied
 
 The VM reset contract is limited to resources with exact project ownership
 receipts. Missing receipts, baseline drift, unknown mutation, or uncertain

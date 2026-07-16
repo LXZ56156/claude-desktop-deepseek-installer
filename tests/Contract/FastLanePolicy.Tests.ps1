@@ -29,7 +29,7 @@
 
 Describe 'P10A-0A Fast Lane infrastructure policy' {
     It 'uses two physical one-way repositories for one logical dual-outbox control plane' {
-        $script:Policy.SchemaVersion | Should -Be 1
+        $script:Policy.SchemaVersion | Should -Be 2
         $script:Policy.ProtocolVersion | Should -BeExactly 'cddsi-vm-test-relay-v1'
         $script:Policy.Lane | Should -BeExactly 'Fast'
         $script:Policy.ControlPlane.Topology | Should -BeExactly 'DirectionalRepositoryPair'
@@ -58,8 +58,10 @@ Describe 'P10A-0A Fast Lane infrastructure policy' {
         $script:Policy.ControlPlane.CompareAndSwapRequired | Should -BeTrue
         $script:Policy.ControlPlane.PinnedGenesisRequired | Should -BeTrue
         $script:Policy.ControlPlane.ServerProtectedHistoryRequired | Should -BeTrue
-        $script:Policy.ControlPlane.PrivateRepositoryRequired | Should -BeTrue
-        $script:OperatorReadme | Should -Match 'two physical private Git\s+repositories'
+        $script:Policy.ControlPlane.RepositoryVisibilityRequired | Should -BeExactly 'PUBLIC'
+        $script:Policy.ControlPlane.HostToVm.VisibilityRequired | Should -BeExactly 'PUBLIC'
+        $script:Policy.ControlPlane.VmToHost.VisibilityRequired | Should -BeExactly 'PUBLIC'
+        $script:OperatorReadme | Should -Match 'two physical public Git\s+repositories'
         $script:OperatorReadme | Should -Match 'shared writable credential'
     }
 
@@ -68,7 +70,7 @@ Describe 'P10A-0A Fast Lane infrastructure policy' {
             Should -BeExactly 'github.com/LXZ56156/claude-desktop-deepseek-installer'
         $script:Policy.ProductRemote.RepositoryId | Should -Be 1301870422
         $script:Policy.ProductRemote.RepositoryNodeId | Should -BeExactly 'R_kgDOTZj3Vg'
-        $script:Policy.ProductRemote.PrivateRequired | Should -BeTrue
+        $script:Policy.ProductRemote.VisibilityRequired | Should -BeExactly 'PUBLIC'
         $script:Policy.ProductRemote.HostWriteRefPattern | Should -BeExactly 'refs/heads/codex/repair/*'
         $script:Policy.ProductRemote.VmReadOnly | Should -BeTrue
         (@($script:Policy.ProductRemote.VmDisallowedCapabilities) -join "`n") |
@@ -101,12 +103,16 @@ Describe 'P10A-0A Fast Lane infrastructure policy' {
         $script:HostPrompt | Should -Match 'Never auto-merge, auto-promote P12, or publish'
         $script:HostPrompt | Should -Match 'Only `HostCoordinator` and `VmTester` are authenticated Git transport sender'
         $script:HostPrompt | Should -Match 'sender role is not receipt authority'
+        $script:HostPrompt | Should -Match 'control repositories are public'
+        $script:HostPrompt | Should -Match 'every committed byte is internet-readable'
         $script:HostPrompt | Should -Match 'receipt-specific authority assertion'
         $script:HostPrompt | Should -Match 'receipt rotation, stay paused'
         $script:VmPrompt | Should -Match 'Do not edit, commit, push, patch, regenerate'
         $script:VmPrompt | Should -Match 'Fast Lane results\s+are diagnostic\s+only'
         $script:VmPrompt | Should -Match 'independently verified, out-of-band expected values'
         $script:VmPrompt | Should -Match 'Human and HypervisorSupervisor are not Git sender roles'
+        $script:VmPrompt | Should -Match 'control repositories are public'
+        $script:VmPrompt | Should -Match 'every committed byte is internet-readable'
         $script:VmPrompt | Should -Match 'receipt-specific authority assertion'
         $script:VmPrompt | Should -Match 'paused across receipt rotation'
         $script:VmPrompt | Should -Match 'fresh external-supervisor SYSTEM-owned anchor/grant pair'
