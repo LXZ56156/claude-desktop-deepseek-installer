@@ -513,6 +513,15 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
     It 'requires the exact trusted Git executable hash and exact repository root' {
         $hashFixture = New-CddsiOnboardingFixture
         $hashFixture.Arguments.SourceGitExecutableSha256 = '0' * 64
+        $requiredTools = @($hashFixture.Arguments.ToolSpecifications)
+        $hashFixture.Arguments.ToolSpecifications = @(
+            $requiredTools | Where-Object { $_.ToolId -cne 'OpenSSH' }
+        )
+        $pureArguments = $hashFixture.Arguments
+        { New-CddsiFastLaneVmOnboardingBundle @pureArguments } |
+            Should -Throw '*tools must contain exactly Git, OpenSSH, PowerShell7, and WindowsPowerShell*'
+
+        $hashFixture.Arguments.ToolSpecifications = $requiredTools
         $hashArguments = $hashFixture.Arguments
         { New-CddsiFastLaneVmOnboardingBundle @hashArguments } | Should -Throw '*Git executable SHA-256 differs*'
 

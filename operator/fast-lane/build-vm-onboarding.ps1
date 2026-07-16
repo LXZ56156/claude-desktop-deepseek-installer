@@ -257,6 +257,21 @@ function Assert-CddsiFastLaneOnboardingSourceRepository {
         throw 'VM onboarding source repository tree identity is invalid.'
     }
 
+    return [pscustomobject][ordered]@{
+        CommitSha = $head
+        TreeSha = $tree
+        SourceCommitVerified = $true
+        GitExecutableSha256 = $Context.GitExecutableSha256
+    }
+}
+
+function Initialize-CddsiFastLaneOnboardingSourceRepositoryContent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Context,
+        [Parameter(Mandatory = $true)][string]$ProductCommitSha
+    )
+
     $committedBlobs = [System.Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
     $treeListing = Invoke-CddsiFastLaneOnboardingSourceGit -Context $Context `
         -Arguments @('ls-tree', '-r', '-z', '--full-tree', $ProductCommitSha)
@@ -282,12 +297,6 @@ function Assert-CddsiFastLaneOnboardingSourceRepository {
         -Arguments @('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none')
     if ($status.StandardOutput.Length -ne 0) {
         throw 'VM onboarding source repository must be clean, including untracked files.'
-    }
-    return [pscustomobject][ordered]@{
-        CommitSha = $head
-        TreeSha = $tree
-        SourceCommitVerified = $true
-        GitExecutableSha256 = $Context.GitExecutableSha256
     }
 }
 
@@ -498,14 +507,11 @@ function Assert-CddsiFastLaneOnboardingNoUserPath {
     }
 }
 
-function ConvertTo-CddsiFastLaneOnboardingFileSet {
+function ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Git', 'Runtime', 'Reset', 'Prompt', 'Runbook')][string]$Category,
-        [Parameter(Mandatory = $true)][object[]]$Specifications,
-        [Parameter(Mandatory = $true)][string]$SourceRoot,
-        [Parameter(Mandatory = $true)][hashtable]$SourceGitContext,
-        [Parameter(Mandatory = $true)][string]$ProductCommitSha
+        [Parameter(Mandatory = $true)][object[]]$Specifications
     )
 
     if (@($Specifications).Count -lt 1) { throw ('VM onboarding {0} file set must not be empty.' -f $Category) }
@@ -520,6 +526,25 @@ function ConvertTo-CddsiFastLaneOnboardingFileSet {
         }
         $expectedSha = [string]$specification.Sha256
         if ($expectedSha -cnotmatch '^[a-f0-9]{64}$') { throw 'VM onboarding expected file SHA-256 is invalid.' }
+        $items.Add([pscustomobject][ordered]@{ Path = $relative; Sha256 = $expectedSha })
+    }
+    return [object[]]$items.ToArray()
+}
+
+function ConvertTo-CddsiFastLaneOnboardingFileSet {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Git', 'Runtime', 'Reset', 'Prompt', 'Runbook')][string]$Category,
+        [Parameter(Mandatory = $true)][object[]]$Specifications,
+        [Parameter(Mandatory = $true)][string]$SourceRoot
+    )
+
+    $normalizedSpecifications = @(ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet `
+        -Category $Category -Specifications $Specifications)
+    $items = [System.Collections.Generic.List[object]]::new()
+    foreach ($specification in $normalizedSpecifications) {
+        $relative = [string]$specification.Path
+        $expectedSha = [string]$specification.Sha256
         $full = Get-CddsiCanonicalPath -Path (Join-Path $SourceRoot ($relative.Replace('/', '\')))
         if (-not (Test-CddsiPathWithinRoot -Path $full -Root $SourceRoot) -or -not [System.IO.File]::Exists($full)) {
             throw ('VM onboarding allow-list entry is missing: {0}' -f $relative)
@@ -1305,26 +1330,14 @@ function New-CddsiFastLaneVmOnboardingBundle {
     $outputFull = Assert-CddsiFastLaneOnboardingOutputPath -Sandbox $Sandbox -OutputDirectory $OutputDirectory
     $outputCreated = $false
     try {
-    $sourceGitContext = New-CddsiFastLaneOnboardingSourceGitContext `
-        -GitExecutable $SourceGitExecutable -GitExecutableSha256 $SourceGitExecutableSha256 `
-        -SourceRoot $sourceFull -SandboxRoot $Sandbox.Root
-    $sourceBinding = Assert-CddsiFastLaneOnboardingSourceRepository `
-        -Context $sourceGitContext -ProductCommitSha $ProductCommitSha
     $tools = @(ConvertTo-CddsiFastLaneOnboardingTools -ToolSpecifications $ToolSpecifications)
-    $allFiles = [System.Collections.Generic.List[object]]::new()
-    foreach ($set in @(
-        [pscustomobject]@{ Category = 'Git'; Specs = $GitFileSpecifications },
-        [pscustomobject]@{ Category = 'Runtime'; Specs = $RuntimeFileSpecifications },
-        [pscustomobject]@{ Category = 'Reset'; Specs = $ResetFileSpecifications },
-        [pscustomobject]@{ Category = 'Prompt'; Specs = $PromptFileSpecifications },
-        [pscustomobject]@{ Category = 'Runbook'; Specs = $RunbookFileSpecifications }
-    )) {
-        foreach ($item in @(ConvertTo-CddsiFastLaneOnboardingFileSet -Category $set.Category `
-            -Specifications $set.Specs -SourceRoot $sourceFull -SourceGitContext $sourceGitContext `
-            -ProductCommitSha $ProductCommitSha)) {
-            $allFiles.Add($item)
-        }
-    }
+    $specificationSets = @(
+        [pscustomobject]@{ Category = 'Git'; Specs = @(ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet -Category Git -Specifications $GitFileSpecifications) },
+        [pscustomobject]@{ Category = 'Runtime'; Specs = @(ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet -Category Runtime -Specifications $RuntimeFileSpecifications) },
+        [pscustomobject]@{ Category = 'Reset'; Specs = @(ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet -Category Reset -Specifications $ResetFileSpecifications) },
+        [pscustomobject]@{ Category = 'Prompt'; Specs = @(ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet -Category Prompt -Specifications $PromptFileSpecifications) },
+        [pscustomobject]@{ Category = 'Runbook'; Specs = @(ConvertTo-CddsiFastLaneOnboardingFileSpecificationSet -Category Runbook -Specifications $RunbookFileSpecifications) }
+    )
     $requiredPaths = [ordered]@{
         Git = @(
             'config/fast-lane-policy.psd1',
@@ -1350,11 +1363,27 @@ function New-CddsiFastLaneVmOnboardingBundle {
         )
     }
     foreach ($category in $requiredPaths.Keys) {
-        $observedPaths = @($allFiles | Where-Object Category -eq $category | ForEach-Object SourcePath)
+        $specificationSet = @($specificationSets | Where-Object Category -eq $category)
+        if ($specificationSet.Count -ne 1) { throw ('VM onboarding {0} file set is invalid.' -f $category) }
+        $observedPaths = @($specificationSet[0].Specs | ForEach-Object Path)
         foreach ($requiredPath in @($requiredPaths[$category])) {
             if (@($observedPaths | Where-Object { $_ -ceq $requiredPath }).Count -ne 1) {
                 throw ('VM onboarding {0} file set must contain the exact required entry: {1}' -f $category, $requiredPath)
             }
+        }
+    }
+    $sourceGitContext = New-CddsiFastLaneOnboardingSourceGitContext `
+        -GitExecutable $SourceGitExecutable -GitExecutableSha256 $SourceGitExecutableSha256 `
+        -SourceRoot $sourceFull -SandboxRoot $Sandbox.Root
+    $sourceBinding = Assert-CddsiFastLaneOnboardingSourceRepository `
+        -Context $sourceGitContext -ProductCommitSha $ProductCommitSha
+    Initialize-CddsiFastLaneOnboardingSourceRepositoryContent -Context $sourceGitContext `
+        -ProductCommitSha $ProductCommitSha
+    $allFiles = [System.Collections.Generic.List[object]]::new()
+    foreach ($set in $specificationSets) {
+        foreach ($item in @(ConvertTo-CddsiFastLaneOnboardingFileSet -Category $set.Category `
+            -Specifications $set.Specs -SourceRoot $sourceFull)) {
+            $allFiles.Add($item)
         }
     }
     Initialize-CddsiFastLaneOnboardingWorkingBlobShas -Context $sourceGitContext `
