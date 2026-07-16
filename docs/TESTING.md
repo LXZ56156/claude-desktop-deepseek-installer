@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 ## 核心原则
 
@@ -75,8 +75,9 @@ VM 工作分两道门。先按 `VM_CALIBRATION_PLAN.md` 在 P10A 专用 disposab
 
 `VM_TEST_RELAY.md` 是双机角色、消息状态机、清洁启动和回传合同的权威。operator
 coordination runtime 与产品平面分离，全部文件归类为 DevelopmentOnly，不由默认
-bootstrap 加载，也不进入 Release。只有纯 synthetic rehearsal 入口作为精确 allow-list
-的 trusted harness 支持运行；这不把 operator modules 变成产品或测试实现依赖：
+bootstrap 加载，也不进入 Release。trusted harness 只按精确 allow-list 运行 synthetic、
+owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测试连接 remote、
+加载真实 credential 或进入 VM/system Live。这不把 operator modules 变成产品依赖：
 
 - Fast Lane（日常自动修复）MVP 使用一个逻辑双 outbox、两个物理单向私有 control
   repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，`vm-to-host` 仅 VM 写/
@@ -84,8 +85,9 @@ bootstrap 加载，也不进入 Release。只有纯 synthetic rehearsal 入口�
   previous hash 和内容 hash。
 - 分钟级 Codex automation 是外部 operator coordination，不是产品创建或管理的
   Windows Scheduled Task，也不授予产品 Live。private repository pair 已创建，宿主机
-  heartbeat 已按分钟创建但保持暂停；protected history、最小 credentials、VM task、
-  安全启用与 unattended acceptance 尚未完成。
+  heartbeat 已按分钟创建但保持暂停；VM task 必须由 VM Codex 设备创建并同样先暂停。
+  protected history、最小 credentials、VM 负向权限验证、安全启用与 unattended
+  acceptance 尚未完成。
 - Formal Lane 的 append-only/WORM CAS、独立签名、外部 snapshot supervisor 和正式
   acceptance validator 尚未实现；Fast Lane synthetic PASS 不能替代这些门。
 - 宿主机 Codex 是唯一产品代码写入者，负责修复、L0-L4、本地提交/推送和候选重建；
@@ -110,7 +112,19 @@ bootstrap 加载，也不进入 Release。只有纯 synthetic rehearsal 入口�
   canonical/hash、方向与身份、expiry、重复/乱序/篡改、状态转换和 STOP。
 - `lib/vm-reset.ps1` 只实现 fake/TestSafe/DryRun 合同；
   `tests/Contract/VmReset.Tests.ps1` 覆盖 ownership、baseline、plan/receipt、
-  `CLEAN_READY` 与需外部快照的 fail-closed 分支。真实 VM reset adapter 尚未实现。
+  `CLEAN_READY` 与需外部快照的 fail-closed 分支。
+- `operator/fast-lane/invoke-git-outbox.ps1` 固定 Git/SSH/tool hash、最小进程环境、
+  pinned-genesis/linear-history 校验、canonical message path、原子本地 state/lock 和
+  fast-forward-only append；HostSandbox 测试只能使用 owner-marked local transport。
+- `lib/vm-fast-lane-readiness.ps1` 分开计算宿主实现、VM bootstrap、VM integration、
+  P10A-0A 和 Formal P10A；protected history 或窄凭据缺失不能被 bootstrap 状态吞掉。
+- `operator/fast-lane/build-vm-onboarding.ps1` 从 clean exact commit 生成确定性 Store ZIP，
+  绑定 commit/tree、committed blob、working bytes、工具 hash、repository identity 和
+  genesis。输出是 diagnostic onboarding，不是 evidence CAS 对象或产品候选。
+- `operator/fast-lane/invoke-vm-reset-live.ps1` 与
+  `operator/fast-lane/providers/windows-vm-reset.ps1` 冻结 VM-only dispatcher/provider
+  边界。宿主机/CI/伪造上下文必须在任何真实 provider dispatch 前失败；设备 trust、
+  real system evidence 与 development-retest Live smoke 仍由 disposable VM 验证。
 - `tests/Contract/FastLanePolicy.Tests.ps1` 冻结两 repository 拓扑、角色权限和
   diagnostic-only 边界；`tests/Contract/OperatorCoordinationBoundary.Tests.ps1` 证明
   operator modules 是 DevelopmentOnly、非默认 bootstrap、非 Release 且不能加载 Live。
@@ -118,6 +132,11 @@ bootstrap 加载，也不进入 Release。只有纯 synthetic rehearsal 入口�
   `operator/fast-lane/invoke-synthetic-rehearsal.ps1` 演练本地双 outbox。该演练必须为
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
+
+上述映射证明宿主实现可制作 VM onboarding，因此可进入 bootstrap-only 步骤；它不证明
+private protected history、角色 credential、VM reset 或 unattended loop 已通过。
+两端 minute tasks 在这些 integration gates 完成前都必须保持暂停。首次 P10A 另需外部
+snapshot receipt、独立 CAS 与签名，Fast Lane 测试绝不能替代。
 
 ## 本地依赖
 
@@ -182,6 +201,10 @@ if ($releaseEvidence.Status -cne 'SUCCEEDED' -or $releaseEvidence.Changed -ne $f
 运行 Pester 和 Git；不继承真实用户 HOME/AppData/Temp、Git 配置或一般
 `PSModulePath`。它已经覆盖 Windows PowerShell 5.1，因此禁止在外部再直接导入
 Pester 运行一遍。
+
+HostSandbox 内需要构造本地 bare repository 的测试必须消费父 harness 传入并由
+worker 再验 hash 的固定 Git grant，不能依赖 worker `PATH`。该 grant 只允许本地
+fixture/CAS 质量验证，不授权网络 remote；缺少固定 binding 时正式 worker 失败。
 
 `build-release.ps1` 必须在同一工作流的 clean quality evidence 之后运行，只接受
 `-DryRun`。省略 `-DryRun`、传入 `-SkipQualityGate` 或指定输出目录都必须

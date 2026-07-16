@@ -2,6 +2,7 @@
     $script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     . (Join-Path $script:RepoRoot 'lib\common.ps1')
     . (Join-Path $script:RepoRoot 'lib\vm-test-relay.ps1')
+    $script:FastLanePolicy = Import-PowerShellDataFile -LiteralPath (Join-Path $script:RepoRoot 'config\fast-lane-policy.psd1')
 
     $script:HostToVmRepositoryIdentity = 'synthetic/cddsi-host-to-vm'
     $script:VmToHostRepositoryIdentity = 'synthetic/cddsi-vm-to-host'
@@ -35,6 +36,17 @@
             SchemaVersion   = '1'
             ContractVersion = 'cddsi-vm-test-relay-control-v1'
             Code            = $Code
+        }
+    }
+
+    function New-CddsiRelaySnapshotReadyPayloadFixture {
+        param([string]$ExternalReceiptAuthorityBindingToken = ('6' * 64))
+        return [pscustomobject][ordered]@{
+            SchemaVersion                        = '1'
+            ContractVersion                      = 'cddsi-vm-test-relay-snapshot-ready-v1'
+            Code                                 = 'EXTERNAL_SNAPSHOT_VERIFIED'
+            ExternalReceiptAuthority             = 'HypervisorSupervisor'
+            ExternalReceiptAuthorityBindingToken = $ExternalReceiptAuthorityBindingToken
         }
     }
 
@@ -123,9 +135,9 @@
         }
 
         $defaultRole = @{
-            TEST_REQUEST = 'HostCoordinator'; VM_ACK = 'VmTester'; SNAPSHOT_READY = 'HypervisorSupervisor'
+            TEST_REQUEST = 'HostCoordinator'; VM_ACK = 'VmTester'; SNAPSHOT_READY = 'HostCoordinator'
             CLEAN_READY = 'VmTester'; TEST_STARTED = 'VmTester'; TEST_RESULT = 'VmTester'
-            HOST_ACK = 'HostCoordinator'; FIX_READY = 'HostCoordinator'; STOP = 'Human'
+            HOST_ACK = 'HostCoordinator'; FIX_READY = 'HostCoordinator'; STOP = 'HostCoordinator'
         }[$MessageType]
         if ($null -eq $SenderRole) { $SenderRole = if ($null -ne $defaultRole) { $defaultRole } else { 'HostCoordinator' } }
         if ($null -eq $Outbox) { $Outbox = if ($SenderRole -ceq 'VmTester') { 'vm-to-host' } else { 'host-to-vm' } }
@@ -217,13 +229,17 @@
             [Parameter(Mandatory = $true)]$Envelope,
             [Parameter(Mandatory = $true)]$Payload,
             [AllowNull()]$AuthenticatedSenderRole = $null,
-            [AllowNull()]$AuthenticatedOutbox = $null
+            [AllowNull()]$AuthenticatedOutbox = $null,
+            [AllowNull()]$ExternallyVerifiedSnapshotReceiptSha256 = $null,
+            [AllowNull()]$ExternallyVerifiedSnapshotAuthorityBindingToken = $null
         )
         if ($null -eq $AuthenticatedSenderRole) { $AuthenticatedSenderRole = $Envelope.SenderRole }
         if ($null -eq $AuthenticatedOutbox) { $AuthenticatedOutbox = $Envelope.Outbox }
         return Resolve-CddsiVmTestRelayTransition -State $State -Envelope $Envelope -Payload $Payload `
             -ValidationTimeUtc $script:ValidationTimeUtc `
-            -AuthenticatedSenderRole $AuthenticatedSenderRole -AuthenticatedOutbox $AuthenticatedOutbox
+            -AuthenticatedSenderRole $AuthenticatedSenderRole -AuthenticatedOutbox $AuthenticatedOutbox `
+            -ExternallyVerifiedSnapshotReceiptSha256 $ExternallyVerifiedSnapshotReceiptSha256 `
+            -ExternallyVerifiedSnapshotAuthorityBindingToken $ExternallyVerifiedSnapshotAuthorityBindingToken
     }
 
     function Complete-CddsiRelayOutcomeFixture {
@@ -251,6 +267,21 @@
 }
 
 Describe 'Fast Lane VM test relay pure contracts' {
+    It 'accepts the frozen GitHub repository identities and rejects domain lookalikes' {
+        $state = New-CddsiVmTestRelayState `
+            -HostToVmRepositoryIdentity $script:FastLanePolicy.ControlPlane.HostToVm.RepositoryToken `
+            -VmToHostRepositoryIdentity $script:FastLanePolicy.ControlPlane.VmToHost.RepositoryToken `
+            -ProductRepositoryIdentity $script:FastLanePolicy.ProductRemote.RepositoryToken
+
+        (Test-CddsiVmTestRelayState -State $state) | Should -BeTrue
+        {
+            New-CddsiVmTestRelayState `
+                -HostToVmRepositoryIdentity 'github.com.evil/LXZ56156/cddsi-host-to-vm' `
+                -VmToHostRepositoryIdentity $script:FastLanePolicy.ControlPlane.VmToHost.RepositoryToken `
+                -ProductRepositoryIdentity $script:FastLanePolicy.ProductRemote.RepositoryToken
+        } | Should -Throw
+    }
+
     It 'canonicalizes property order and hashes the complete envelope plus payload' {
         $left = [pscustomobject][ordered]@{ Z = "line`nvalue"; A = 7 }
         $right = [pscustomobject][ordered]@{ A = 7; Z = "line`nvalue" }
@@ -365,7 +396,72 @@ Describe 'Fast Lane VM test relay pure contracts' {
         (Invoke-CddsiRelayMessageFixture -State $state -Envelope $unknown -Payload $control).Accepted | Should -BeFalse
     }
 
-    It 'honors STOP, closes the old cycle, and requires a new CycleId' {
+    It 'reaches CLEAN_READY through a HostCoordinator-forwarded independently verified snapshot receipt' {
+        $cycleId = '40000000-0000-4000-8000-000000000010'
+        $state = New-CddsiRelayStateFixture
+        $snapshotBinding = @{ EnvironmentResetMode = 'SnapshotRestore' }
+
+        $requestPayload = New-CddsiRelayRequestPayloadFixture
+        $requestEnvelope = New-CddsiRelayEnvelopeFixture -State $state -Payload $requestPayload `
+            -MessageType TEST_REQUEST -Status TEST_REQUESTED -CycleId $cycleId -BindingOverrides $snapshotBinding
+        $request = Invoke-CddsiRelayMessageFixture -State $state -Envelope $requestEnvelope -Payload $requestPayload
+        $request.Accepted | Should -BeTrue
+
+        $ackPayload = New-CddsiRelayControlPayloadFixture 'REQUEST_ACKED'
+        $ackEnvelope = New-CddsiRelayEnvelopeFixture -State $request.State -Payload $ackPayload `
+            -MessageType VM_ACK -Status VM_ACKED -CycleId $cycleId
+        $ack = Invoke-CddsiRelayMessageFixture -State $request.State -Envelope $ackEnvelope -Payload $ackPayload
+        $ack.Accepted | Should -BeTrue
+
+        $snapshotReceiptSha256 = 'f' * 64
+        $authorityBindingToken = '6' * 64
+        $snapshotPayload = New-CddsiRelaySnapshotReadyPayloadFixture `
+            -ExternalReceiptAuthorityBindingToken $authorityBindingToken
+        $snapshotEnvelope = New-CddsiRelayEnvelopeFixture -State $ack.State -Payload $snapshotPayload `
+            -MessageType SNAPSHOT_READY -Status ENVIRONMENT_PREPARING -CycleId $cycleId `
+            -SnapshotReceiptSha256 $snapshotReceiptSha256
+
+        $withoutExternalProof = Invoke-CddsiRelayMessageFixture -State $ack.State `
+            -Envelope $snapshotEnvelope -Payload $snapshotPayload
+        $withoutExternalProof.Accepted | Should -BeFalse
+        $withoutExternalProof.ErrorCode | Should -BeExactly 'RELAY_ENVELOPE_INVALID'
+
+        $wrongReceipt = Invoke-CddsiRelayMessageFixture -State $ack.State -Envelope $snapshotEnvelope `
+            -Payload $snapshotPayload -ExternallyVerifiedSnapshotReceiptSha256 ('a' * 64) `
+            -ExternallyVerifiedSnapshotAuthorityBindingToken $authorityBindingToken
+        $wrongReceipt.Accepted | Should -BeFalse
+        $wrongReceipt.ErrorCode | Should -BeExactly 'RELAY_ENVELOPE_INVALID'
+
+        $snapshot = Invoke-CddsiRelayMessageFixture -State $ack.State -Envelope $snapshotEnvelope `
+            -Payload $snapshotPayload -ExternallyVerifiedSnapshotReceiptSha256 $snapshotReceiptSha256 `
+            -ExternallyVerifiedSnapshotAuthorityBindingToken $authorityBindingToken
+        $snapshot.Accepted | Should -BeTrue
+        $snapshot.State.ActiveStatus | Should -BeExactly 'ENVIRONMENT_PREPARING'
+        $snapshot.State.ActiveSnapshotReceiptSha256 | Should -BeExactly $snapshotReceiptSha256
+
+        $cleanPayload = New-CddsiRelayControlPayloadFixture 'SNAPSHOT_RESTORE_CLEAN'
+        $cleanEnvelope = New-CddsiRelayEnvelopeFixture -State $snapshot.State -Payload $cleanPayload `
+            -MessageType CLEAN_READY -Status CLEAN_READY -CycleId $cycleId
+        $clean = Invoke-CddsiRelayMessageFixture -State $snapshot.State -Envelope $cleanEnvelope -Payload $cleanPayload
+        $clean.Accepted | Should -BeTrue
+        $clean.State.ActiveStatus | Should -BeExactly 'CLEAN_READY'
+    }
+
+    It 'rejects Human and HypervisorSupervisor self-report sender roles on the dual Git transport' {
+        $state = New-CddsiRelayStateFixture
+        $stopPayload = New-CddsiRelayStopPayloadFixture
+        foreach ($selfReportedRole in @('Human', 'HypervisorSupervisor')) {
+            $stopEnvelope = New-CddsiRelayEnvelopeFixture -State $state -Payload $stopPayload `
+                -MessageType STOP -Status STOPPED -SenderRole $selfReportedRole -Outbox host-to-vm `
+                -PhysicalControlRepositoryIdentity $script:HostToVmRepositoryIdentity
+            $result = Invoke-CddsiRelayMessageFixture -State $state -Envelope $stopEnvelope -Payload $stopPayload `
+                -AuthenticatedSenderRole HostCoordinator -AuthenticatedOutbox host-to-vm
+            $result.Accepted | Should -BeFalse
+            $result.ErrorCode | Should -BeExactly 'RELAY_ENVELOPE_INVALID'
+        }
+    }
+
+    It 'allows HostCoordinator to forward STOP, closes the old cycle, and requires a new CycleId' {
         $state = New-CddsiRelayStateFixture
         $cycleId = '40000000-0000-4000-8000-000000000008'
         $requestPayload = New-CddsiRelayRequestPayloadFixture
@@ -374,6 +470,7 @@ Describe 'Fast Lane VM test relay pure contracts' {
 
         $stopPayload = New-CddsiRelayStopPayloadFixture
         $stopEnvelope = New-CddsiRelayEnvelopeFixture -State $request.State -Payload $stopPayload -MessageType STOP -Status STOPPED -CycleId $cycleId
+        $stopEnvelope.SenderRole | Should -BeExactly 'HostCoordinator'
         $stop = Invoke-CddsiRelayMessageFixture -State $request.State -Envelope $stopEnvelope -Payload $stopPayload
         $stop.Accepted | Should -BeTrue
         $stop.State.StoppedCycleIds | Should -Contain $cycleId

@@ -28,6 +28,12 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$EngineGrantSha256,
 
+    [Parameter(Mandatory = $true)]
+    [string]$GitExecutablePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$GitGrantSha256,
+
     [switch]$SkipPester,
 
     [switch]$EvidenceBuilderOnly
@@ -132,6 +138,28 @@ function Protect-CheckMessage {
     $safe = [regex]::Replace($safe, $privateKeyPattern, '[REDACTED PRIVATE KEY]')
     if ($safe.Length -gt 6000) { return $safe.Substring(0, 6000) }
     return $safe
+}
+
+function Get-CddsiWorkerErrorRecordMessage {
+    param([AllowNull()]$ErrorRecord)
+
+    $messages = @(
+        foreach ($record in @($ErrorRecord)) {
+            if ($null -eq $record) { continue }
+            $exceptionProperty = $record.PSObject.Properties['Exception']
+            if ($null -ne $exceptionProperty -and $null -ne $exceptionProperty.Value) {
+                $messageProperty = $exceptionProperty.Value.PSObject.Properties['Message']
+                if ($null -ne $messageProperty -and -not [string]::IsNullOrWhiteSpace(
+                    [string]$messageProperty.Value)) {
+                    [string]$messageProperty.Value
+                    continue
+                }
+            }
+            [string]$record
+        }
+    )
+    if ($messages.Count -eq 0) { return 'NO_ERROR_RECORD' }
+    return ($messages -join ' | ')
 }
 
 function Test-CddsiJsonIntegerOne {
@@ -764,6 +792,157 @@ function Get-CddsiForbiddenReflectionFindings {
     return $findings.ToArray()
 }
 
+function Get-CddsiOperatorRuntimeCapabilityObservation {
+    param(
+        [Parameter(Mandatory = $true)][System.Management.Automation.Language.Ast]$Ast,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$SourceText
+    )
+
+    $commands = @($Ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst]
+    }, $true))
+    $commandNames = @(
+        $commands |
+            ForEach-Object { Get-CddsiCommandName -CommandAst $_ } |
+            Where-Object { $_ } |
+            Sort-Object -Unique
+    )
+    $typeNames = @(Get-CddsiAstTypeNames -Ast $Ast | Sort-Object -Unique)
+    $stringValues = @(
+        $Ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+        }, $true) |
+            ForEach-Object { [string]$_.Value }
+    )
+
+    $dynamicInvocation = @($commands | Where-Object {
+        $_.InvocationOperator -eq [System.Management.Automation.Language.TokenKind]::Ampersand -and
+            [string]::IsNullOrWhiteSpace($_.GetCommandName())
+    }).Count -gt 0
+
+    $fileSystemCommands = @(
+        'Add-Content', 'Clear-Content', 'Copy-Item', 'Get-Acl', 'Get-ChildItem',
+        'Get-Content', 'Get-FileHash', 'Get-Item', 'Import-PowerShellDataFile',
+        'Move-Item', 'New-Item', 'Out-File', 'Remove-Item', 'Resolve-Path',
+        'Set-Acl', 'Set-Content', 'Test-Path'
+    )
+    $fileSystemTypes = @($typeNames | Where-Object {
+        $_ -match '^(?:System\.)?IO\.(?:File|Directory)(?:Info|Stream)?$' -or
+            $_ -match '^(?:System\.)?IO\.(?:BinaryReader|StreamReader|FileAccess|FileAttributes|FileMode|FileShare)$' -or
+            $_ -match '^System\.IO\.Compression\.(?:ZipArchive|ZipFile)'
+    })
+    $fileSystem = @($commandNames | Where-Object { $fileSystemCommands -icontains $_ }).Count -gt 0 -or
+        $fileSystemTypes.Count -gt 0
+
+    $processCommands = @(
+        'Start-Process', 'Start-Job', 'Invoke-Command', 'New-PSSession',
+        'Enter-PSSession', 'git', 'git.exe', 'pwsh', 'pwsh.exe', 'powershell',
+        'powershell.exe', 'cmd', 'cmd.exe', 'msiexec', 'msiexec.exe', 'winget',
+        'winget.exe'
+    )
+    $transitiveGitProcessCommands = @(
+        'Initialize-CddsiFastLaneBoundedProcessType',
+        'Invoke-CddsiFastLaneGitCommand',
+        'Invoke-CddsiFastLaneOnboardingSourceGit'
+    )
+    $process = @($commandNames | Where-Object {
+        $processCommands -icontains $_ -or $transitiveGitProcessCommands -icontains $_
+    }).Count -gt 0 -or @($typeNames | Where-Object {
+        $_ -match '^(?:System\.)?Diagnostics\.Process(?:StartInfo)?$' -or
+            $_ -match '^(?:Cddsi\.FastLane\.)?BoundedProcessRunner$'
+    }).Count -gt 0 -or $SourceText -match '(?i)\bProcessStartInfo\b|\bBoundedProcessRunner\b'
+
+    $networkCommands = @(
+        'Invoke-WebRequest', 'Invoke-RestMethod', 'Start-BitsTransfer',
+        'Test-NetConnection', 'Resolve-DnsName', 'curl', 'curl.exe', 'wget',
+        'wget.exe'
+    )
+    $hasRemoteGitVerb = @($stringValues | Where-Object {
+        @('fetch', 'push', 'ls-remote') -ccontains $_
+    }).Count -gt 0 -and $commandNames -icontains 'Invoke-CddsiFastLaneGitCommand'
+    $network = @($commandNames | Where-Object { $networkCommands -icontains $_ }).Count -gt 0 -or
+        @($typeNames | Where-Object { $_ -match '^System\.Net\.' }).Count -gt 0 -or
+        $hasRemoteGitVerb
+
+    $reflection = $commandNames -icontains 'Add-Type' -or
+        @(Get-CddsiForbiddenReflectionFindings -Ast $Ast).Count -gt 0 -or
+        @($typeNames | Where-Object { $_ -match '^System\.Reflection\.' }).Count -gt 0 -or
+        @($commandNames | Where-Object { $transitiveGitProcessCommands -icontains $_ }).Count -gt 0
+
+    $vmInspectionCommands = @(
+        'Get-AppxPackage', 'Get-CimInstance', 'Get-WindowsOptionalFeature',
+        'Get-Service', 'Get-ItemProperty', 'Get-ItemPropertyValue'
+    )
+    $vmInspection = @($commandNames | Where-Object { $vmInspectionCommands -icontains $_ }).Count -gt 0 -or
+        @($typeNames | Where-Object {
+            $_ -match '^Microsoft\.Win32\.Registry' -or
+                $_ -match '^System\.Management\.' -or
+                $_ -match '^System\.ServiceProcess\.'
+        }).Count -gt 0 -or
+        $SourceText -match '(?i)\bCredRead\b|\bFindPackagesForUser\b|\bGetCurrentPackage\b'
+
+    $vmMutationCommands = @(
+        'Remove-AppxPackage', 'Remove-ItemProperty', 'Set-ItemProperty',
+        'New-ItemProperty', 'Enable-WindowsOptionalFeature',
+        'Disable-WindowsOptionalFeature', 'Restart-Service', 'Stop-Service'
+    )
+    $hasWindowsResetFileMutation = (
+        $SourceText -match '(?i)\b(?:IO|System\.IO)\.(?:File|Directory)\]::Delete\s*\(' -and
+        $SourceText -match '(?i)CddsiWindowsVmReset(?:ResourceMutation|OwnedDirectory)Internal'
+    )
+    $vmMutation = @($commandNames | Where-Object { $vmMutationCommands -icontains $_ }).Count -gt 0 -or
+        $SourceText -match '(?i)\bCredDelete\b|\.DeleteValue\s*\(' -or
+        $hasWindowsResetFileMutation
+
+    return [pscustomobject][ordered]@{
+        DynamicInvocation = [bool]$dynamicInvocation
+        FileSystem        = [bool]$fileSystem
+        Process           = [bool]$process
+        Network           = [bool]$network
+        Reflection        = [bool]$reflection
+        VmInspection      = [bool]$vmInspection
+        VmMutation        = [bool]$vmMutation
+    }
+}
+
+function Assert-CddsiOperatorRuntimeCapabilityAllowLists {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$RuntimeFiles,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Rules,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary]$ActualByCapability
+    )
+
+    $capabilityRules = [ordered]@{
+        DynamicInvocation = 'OperatorRuntimeDynamicInvocationFiles'
+        FileSystem        = 'OperatorRuntimeFileSystemFiles'
+        Process           = 'OperatorRuntimeProcessFiles'
+        Network           = 'OperatorRuntimeNetworkFiles'
+        Reflection        = 'OperatorRuntimeReflectionFiles'
+        VmInspection      = 'OperatorRuntimeVmInspectionFiles'
+        VmMutation        = 'OperatorRuntimeVmMutationFiles'
+    }
+    foreach ($capabilityName in $capabilityRules.Keys) {
+        $policyProperty = $capabilityRules[$capabilityName]
+        if (-not $Rules.Contains($policyProperty) -or -not $ActualByCapability.Contains($capabilityName)) {
+            throw "Operator runtime $capabilityName capability contract is missing."
+        }
+        $declared = @($Rules[$policyProperty])
+        $actual = @($ActualByCapability[$capabilityName])
+        if (@($declared | Group-Object | Where-Object Count -gt 1).Count -gt 0) {
+            throw "Operator runtime $policyProperty allow-list contains duplicates."
+        }
+        if (@($declared | Where-Object { $RuntimeFiles -cnotcontains $_ }).Count -gt 0 -or
+            @($actual | Where-Object { $RuntimeFiles -cnotcontains $_ }).Count -gt 0) {
+            throw "Operator runtime $policyProperty allow-list escapes its runtime plane."
+        }
+        if ((@($declared | Sort-Object) -join "`n") -cne (@($actual | Sort-Object -Unique) -join "`n")) {
+            throw "Operator runtime $policyProperty actual capability set drifted."
+        }
+    }
+}
+
 function Assert-CddsiWorkerEngineGrant {
     $expectedLeaf = if ($EngineId -ceq 'PowerShell7') { 'pwsh.exe' } else { 'powershell.exe' }
     $fullPath = [System.IO.Path]::GetFullPath($EngineExecutablePath)
@@ -775,6 +954,26 @@ function Assert-CddsiWorkerEngineGrant {
     $actualSha256 = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -cne $EngineGrantSha256) { throw 'Worker engine executable SHA-256 does not match its grant.' }
     return $actualSha256
+}
+
+function Assert-CddsiWorkerGitGrant {
+    $fullPath = [System.IO.Path]::GetFullPath($GitExecutablePath)
+    if ((Split-Path -Leaf $fullPath) -cne 'git.exe') {
+        throw 'Worker Git executable leaf does not match the trusted grant.'
+    }
+    Assert-CddsiWorkerSha256Value -Value $GitGrantSha256 -Name 'GitGrantSha256'
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+        throw 'Worker Git grant executable is missing.'
+    }
+    $item = Get-Item -LiteralPath $fullPath -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Worker Git grant executable is a reparse point.'
+    }
+    $actualSha256 = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -cne $GitGrantSha256) {
+        throw 'Worker Git executable SHA-256 does not match its grant.'
+    }
+    return [pscustomobject][ordered]@{ Path = $fullPath; Sha256 = $actualSha256 }
 }
 
 function New-CddsiWorkerSyntheticContext {
@@ -839,6 +1038,7 @@ if ($EvidenceBuilderOnly) { return }
 
 $script:SandboxBindingSha256 = Assert-CddsiWorkerSandboxBinding
 $engineGrantSha256Actual = Assert-CddsiWorkerEngineGrant
+$gitGrantActual = Assert-CddsiWorkerGitGrant
 $initialRepositoryFiles = @(Get-RepositoryFiles)
 $initialInventory = @($initialRepositoryFiles.RelativePath)
 $initialContentManifest = @(Get-RepositoryContentManifest)
@@ -868,6 +1068,15 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         'TestForbiddenVariables',
         'TestForbiddenTypePrefixes',
         'OperatorCoordinationLibraryFiles',
+        'OperatorRuntimeFiles',
+        'OperatorRuntimeEntryPoints',
+        'OperatorRuntimeDynamicInvocationFiles',
+        'OperatorRuntimeFileSystemFiles',
+        'OperatorRuntimeProcessFiles',
+        'OperatorRuntimeNetworkFiles',
+        'OperatorRuntimeReflectionFiles',
+        'OperatorRuntimeVmInspectionFiles',
+        'OperatorRuntimeVmMutationFiles',
         'TrustedHarnessDynamicInvocationFiles',
         'TrustedHarnessProcessFiles',
         'TrustedHarnessNetworkFiles',
@@ -911,12 +1120,26 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             throw "$relative must be packaged from the exact release allow-list."
         }
     }
-    $expectedOperatorLibraries = @('lib/vm-test-relay.ps1', 'lib/vm-reset.ps1')
-    if ((@($boundary.Planes.OperatorCoordination | Sort-Object) -join "`n") -cne (@($expectedOperatorLibraries | Sort-Object) -join "`n") -or
+    $expectedOperatorLibraries = @(
+        'lib/vm-test-relay.ps1'
+        'lib/vm-reset.ps1'
+        'lib/vm-fast-lane-readiness.ps1'
+    )
+    $expectedOperatorRuntimes = @(
+        'operator/fast-lane/build-vm-onboarding.ps1'
+        'operator/fast-lane/invoke-git-outbox.ps1'
+        'operator/fast-lane/invoke-vm-reset-live.ps1'
+        'operator/fast-lane/providers/windows-vm-reset.ps1'
+    )
+    $expectedOperatorFiles = @($expectedOperatorLibraries + $expectedOperatorRuntimes)
+    if ((@($boundary.Planes.OperatorCoordination | Sort-Object) -join "`n") -cne (@($expectedOperatorFiles | Sort-Object) -join "`n") -or
         (@($boundary.Rules.OperatorCoordinationLibraryFiles | Sort-Object) -join "`n") -cne (@($expectedOperatorLibraries | Sort-Object) -join "`n")) {
-        throw 'Operator coordination library allow-list drift.'
+        throw 'Operator coordination plane or pure-library allow-list drift.'
     }
-    foreach ($relative in $expectedOperatorLibraries) {
+    if ((@($boundary.Rules.OperatorRuntimeFiles | Sort-Object) -join "`n") -cne (@($expectedOperatorRuntimes | Sort-Object) -join "`n")) {
+        throw 'Operator runtime allow-list drift.'
+    }
+    foreach ($relative in $expectedOperatorFiles) {
         if (@($releasePolicy.PackageFiles) -ccontains $relative -or @($releasePolicy.DevelopmentOnlyFiles) -cnotcontains $relative) {
             throw "$relative must remain DevelopmentOnly and outside the Release package."
         }
@@ -1148,7 +1371,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         if ($reflectionHits.Count -gt 0) { throw "$relative uses forbidden reflection or dynamic code: $($reflectionHits -join ', ')" }
     }
 
-    foreach ($relative in @($boundary.Planes.OperatorCoordination)) {
+    foreach ($relative in @($boundary.Rules.OperatorCoordinationLibraryFiles)) {
         $tokens = $null
         $errors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
@@ -1183,6 +1406,91 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         $reflectionHits = @(Get-CddsiForbiddenReflectionFindings -Ast $ast)
         if ($reflectionHits.Count -gt 0) { throw "$relative uses forbidden reflection or dynamic code: $($reflectionHits -join ', ')" }
     }
+
+    $operatorRuntimeFiles = @($boundary.Rules.OperatorRuntimeFiles)
+    $operatorRuntimeActualCapabilities = [ordered]@{}
+    foreach ($capabilityName in @(
+        'DynamicInvocation', 'FileSystem', 'Process', 'Network', 'Reflection',
+        'VmInspection', 'VmMutation'
+    )) {
+        $operatorRuntimeActualCapabilities[$capabilityName] =
+            New-Object System.Collections.Generic.List[string]
+    }
+    $runtimeEntryPointKeys = @($boundary.Rules.OperatorRuntimeEntryPoints.Keys | Sort-Object)
+    if (($runtimeEntryPointKeys -join "`n") -cne (@($operatorRuntimeFiles | Sort-Object) -join "`n")) {
+        throw 'Operator runtime entry-point map keys drifted.'
+    }
+    $expectedRuntimeEntryPoints = [ordered]@{
+        'operator/fast-lane/build-vm-onboarding.ps1' = @(
+            'New-CddsiFastLaneVmOnboardingBundle'
+            'Test-CddsiFastLaneVmOnboardingBundle'
+        )
+        'operator/fast-lane/invoke-git-outbox.ps1' = @('Invoke-CddsiFastLaneGitOutbox')
+        'operator/fast-lane/invoke-vm-reset-live.ps1' = @('Invoke-CddsiVmResetLiveAdapter')
+        'operator/fast-lane/providers/windows-vm-reset.ps1' = @(
+            'Get-CddsiWindowsVmResetProviderOperationContract'
+            'Test-CddsiWindowsVmResetTrustPolicy'
+            'Test-CddsiWindowsVmResetDeploymentEvidence'
+            'Test-CddsiWindowsVmResetLiveAuthorization'
+            'Test-CddsiWindowsVmResetProviderAdapterAuthorization'
+            'Test-CddsiWindowsVmResetAdapterDeviceSignature'
+            'Invoke-CddsiWindowsVmResetAuthorizedRequest'
+            'New-CddsiWindowsVmResetProvider'
+        )
+    }
+    foreach ($relative in $operatorRuntimeFiles) {
+        $tokens = $null
+        $errors = $null
+        $fullRuntimePath = Join-Path $script:Root $relative
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($fullRuntimePath, [ref]$tokens, [ref]$errors)
+        if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
+        $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
+        $actualEntryPoints = @($boundary.Rules.OperatorRuntimeEntryPoints[$relative])
+        if ((@($actualEntryPoints | Sort-Object) -join "`n") -cne (@($expectedRuntimeEntryPoints[$relative] | Sort-Object) -join "`n")) {
+            throw "$relative operator runtime entry points drifted."
+        }
+        foreach ($entryPoint in $actualEntryPoints) {
+            if (@($functions | Where-Object Name -CEQ $entryPoint).Count -ne 1) {
+                throw "$relative is missing exact operator runtime entry point $entryPoint."
+            }
+        }
+        $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+        $sourceText = [System.IO.File]::ReadAllText($fullRuntimePath, [System.Text.Encoding]::UTF8)
+        $capabilityObservation = Get-CddsiOperatorRuntimeCapabilityObservation `
+            -Ast $ast -SourceText $sourceText
+        foreach ($capabilityName in @($operatorRuntimeActualCapabilities.Keys)) {
+            if ($capabilityObservation.$capabilityName) {
+                $operatorRuntimeActualCapabilities[$capabilityName].Add($relative)
+            }
+        }
+        $forbiddenRuntimeCommands = @(
+            'Invoke-Expression', 'Invoke-Command', 'Start-Job', 'New-PSSession',
+            'Enter-PSSession', 'Exit-PSSession', 'Register-ScheduledTask',
+            'Unregister-ScheduledTask', 'Get-ScheduledTask', 'Restart-Computer',
+            'shutdown', 'shutdown.exe', 'cmd', 'cmd.exe', 'powershell',
+            'powershell.exe', 'pwsh', 'pwsh.exe'
+        )
+        $runtimeCommandHits = @(
+            $commands | ForEach-Object { Get-CddsiCommandName -CommandAst $_ } |
+                Where-Object { $_ -and $forbiddenRuntimeCommands -ccontains $_ } |
+                Sort-Object -Unique
+        )
+        if ($runtimeCommandHits.Count -gt 0) { throw "$relative invokes forbidden operator commands: $($runtimeCommandHits -join ', ')" }
+        if ($sourceText -match '(?im)(?:^|\s)--force(?:\s|$)' -or
+            $sourceText -match '(?im)push[^\r\n]*--force' -or
+            $sourceText -match '(?im)update-ref[^\r\n]+refs/heads/') {
+            throw "$relative contains a destructive remote-ref operation."
+        }
+        if ($relative -ceq 'operator/fast-lane/providers/windows-vm-reset.ps1') {
+            foreach ($requiredPrimitive in @('Remove-AppxPackage', 'CredDelete', 'Microsoft.Win32.Registry')) {
+                if ($sourceText -cnotmatch [regex]::Escape($requiredPrimitive)) {
+                    throw "$relative is missing required narrow VM reset primitive $requiredPrimitive."
+                }
+            }
+        }
+    }
+    Assert-CddsiOperatorRuntimeCapabilityAllowLists -RuntimeFiles $operatorRuntimeFiles `
+        -Rules $boundary.Rules -ActualByCapability $operatorRuntimeActualCapabilities
 
     $testForbiddenCommands = @($boundary.Rules.TestForbiddenCommands)
     $testForbiddenVariables = @($boundary.Rules.TestForbiddenVariables)
@@ -1704,6 +2012,10 @@ if (-not $SkipPester) {
         $pesterManifest = Test-CddsiDevDependencyLock
         Remove-Module Pester -Force -ErrorAction SilentlyContinue
         Import-Module $pesterManifest -Force -ErrorAction Stop
+        Set-Variable -Name CddsiTrustedHarnessGitExecutablePath -Scope Global `
+            -Value $gitGrantActual.Path -Option ReadOnly -Force
+        Set-Variable -Name CddsiTrustedHarnessGitGrantSha256 -Scope Global `
+            -Value $gitGrantActual.Sha256 -Option ReadOnly -Force
         $result = Invoke-Pester -Path (Join-Path $script:Root 'tests') -Output Detailed -PassThru
         $script:PesterResult = $result
         if ([string]$result.Result -ne 'Passed' -or $result.FailedCount -gt 0 -or $result.SkippedCount -gt 0 -or $result.NotRunCount -gt 0 -or $result.InconclusiveCount -gt 0) {
@@ -1711,8 +2023,7 @@ if (-not $SkipPester) {
                 $result.Tests |
                     Where-Object { [string]$_.Result -ceq 'Failed' } |
                     ForEach-Object {
-                        $message = ''
-                        if ($null -ne $_.ErrorRecord) { $message = [string]$_.ErrorRecord.Exception.Message }
+                        $message = Get-CddsiWorkerErrorRecordMessage -ErrorRecord $_.ErrorRecord
                         if ($message.Length -gt 300) { $message = $message.Substring(0, 300) }
                         '{0} [{1}:{2}] {3}' -f $_.ExpandedName, $_.ScriptBlock.File, $_.ScriptBlock.StartPosition.StartLine, $message
                     }

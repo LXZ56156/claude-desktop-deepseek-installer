@@ -1,6 +1,6 @@
 # 新任务交接
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 ## 一句话状态
 
@@ -9,32 +9,39 @@
 实现。P10B 的宿主机支撑合同也已完成并通过统一门，包括 `release-facts`、
 `release-artifact`、`credential-helper-release` 和 fail-closed candidate assembler。
 
-最新记录质量门 `RunId=62ed01b0-7c51-411d-9931-206fbc28602f` 中，PowerShell 7
-与 Windows PowerShell 5.1 各 338 项 Pester 全部通过；扫描 139 个仓库文件，
-`PackageFiles` 仍为 39。live provider、产品真实 process/network/registry、越界
-写入、forbidden access、unexpected ledger、secret findings 和全部 mutation spy
-均为 0，cleanup 成功。随后 Release Simulation DryRun 以 `Changed=false` 验证 39 个
-PackageFiles、39 个 ZIP/extract 条目、精确 inventory/content hash、deterministic Store
-ZIP 和四层零 secret；本节证据写回后还会由下一次统一门覆盖。
+`RunId=62ed01b0-7c51-411d-9931-206fbc28602f` 与每引擎 338 项 Pester 是本轮
+P10A-0A runtime 变更前的历史基线，不再代表当前全树。最终双引擎质量门、Release
+Simulation DryRun、`git diff --check`、commit/tree 和 onboarding bundle 标识必须由
+主代理在 clean final commit 后生成；本文不猜测这些易变值，收尾占位见下文。
 
 这些结果只证明纯合同、fake/synthetic、deterministic Release Simulation 和
 fail-closed assembler。P10A 真实 VM evidence、实际 helper PE/签名、frozen facts、
 P10B 双候选和 P11 全面 VM 验收均未产生，不能写成已完成。
 
 双机 Codex 测试闭环的职责、消息、证据、清洁和重测合同已经写入
-`docs/VM_TEST_RELAY.md`。P10A-0A 的本地 TestSafe/DryRun 合同切片已经实现：
-`DirectionalRepositoryPair`、relay/state/hash、fake reset 与 `CLEAN_READY`、两端
-轮询 prompt、synthetic rehearsal，以及独立且只归入 `DevelopmentOnlyFiles` 的
-operator coordination plane。私有产品 remote 与两个物理 control repos 已创建，
-产品 `main` 基线已推送，两个 `outbox/` 已初始化；宿主机分钟级 heartbeat 也已创建但
-保持暂停。GitHub 当前套餐拒绝私有仓库 ruleset，角色最小权限凭据、VM 对产品 remote
-的负向写验证、真实 VM reset adapter、VM Scheduled Task 和无人值守闭环仍未完成；
-外部 CAS/WORM evidence store、签名 authority 与外部快照 supervisor 也未就绪。
-因此不能宣称 P10A-0A、P10A、P10B 或 P11 已完成。
+`docs/VM_TEST_RELAY.md`。P10A-0A 宿主机侧现已实现：`DirectionalRepositoryPair`、
+relay/state/hash、固定 Git outbox runtime、readiness resolver、deterministic VM
+onboarding builder、fake reset 与 VM-only reset dispatcher/provider boundary、两端
+分钟级 prompt/runbook 和 synthetic rehearsal；整个 operator coordination plane 只归入
+`DevelopmentOnlyFiles`。
 
-产品运行阶段仍是 `Scaffold`。仓库内没有可执行的真实 Live adapter、已构建的
-credential helper PE、代码签名或冻结的 VM 事实；宿主机也从未执行真实安装、配置、
-API、系统探测或进程控制。
+私有产品 remote 与两个物理单向 control repos 已创建，产品 `main` 基线已推送，两个
+`outbox/` 已初始化；宿主机分钟级 heartbeat 已创建并保持暂停。宿主实现达到
+**VM bootstrap ready**：最终 immutable bundle 生成后，VM 可离线验包、生成本机密钥、
+回报 public fingerprints/tool hashes，并从 VM Codex device 创建同样先暂停的 minute task。
+bootstrap 不授权轮询、产品测试、reset Live 或修改产品代码。
+
+**VM integration 仍被外部门阻断**：GitHub 当前套餐以 HTTP 403 拒绝 private protected
+history，窄 HostCoordinator/VmTester credentials 尚未发放；VM 负向权限、provider/device
+trust、reset smoke、两端任务安全启用和 unattended loop 均尚未产生真实证据。Formal
+Lane 的外部 clean-snapshot receipt、CAS/WORM store、签名 authority 与 receipt validator
+也未就绪。因此 `P10A0AComplete=false`、`CanStartFormalP10A=false`，不能宣称 P10A、
+P10B 真实候选或 P11 已完成。
+
+产品运行阶段仍是 `Scaffold`。产品 Release/default bootstrap 内没有可工作的真实 Live
+adapter、已构建的 credential helper PE、代码签名或冻结的 VM 事实；新增的 Windows
+guest-reset provider 仅属于 DevelopmentOnly 的 VM operator plane，不能进入产品包或在
+宿主机执行。宿主机也从未执行真实安装、配置、API、系统探测或进程控制。
 
 ## 仓库与工作树
 
@@ -45,9 +52,10 @@ API、系统探测或进程控制。
 - Control repos：`LXZ56156/cddsi-host-to-vm`、`LXZ56156/cddsi-vm-to-host`（均为 private）
 - 当前版本：`0.1.0-dev`
 - 产品运行阶段：`Scaffold`
-- 实施位置：P10B 宿主机支撑合同已通过门；P10A-0A 本地合同及私有 repository pair
-  已落地，当前停在 protected history、最小权限凭据、真实 VM reset、VM task 与
-  无人值守负向权限验证门；完成并验证后才执行 P10A 窄范围 disposable VM 校准
+- 实施位置：P10B 宿主机支撑合同已通过门；P10A-0A 宿主实现与私有 repository pair
+  达到 VM bootstrap ready。当前停在 protected history、最小权限凭据、VM
+  provider/device/reset evidence、VM task 与 unattended 负向权限验证的 integration 门；
+  随后还须完成 Formal Lane，才可执行首次 P10A 窄范围 disposable VM 校准
 
 保留当前工作树继续开发。不得 reset、checkout、清理或覆盖用户与前任务的改动。
 实际 commit/clean 状态只能通过项目规定的隔离 Git 入口核验，不能把本交接中的描述
@@ -130,45 +138,43 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
 - candidate assembler 已实现外部 frozen facts/trust anchor、双 profile、两阶段构建和
   deterministic identity 合同；没有真实外部输入时不会生成可发布候选。
 
-## 最新统一验证基线
+## 最终宿主机验证与 VM onboarding 标识
 
-2026-07-15 的最新记录全树基线（Quality RunId
-`62ed01b0-7c51-411d-9931-206fbc28602f`）：
+2026-07-15 的 `RunId=62ed01b0-7c51-411d-9931-206fbc28602f`（每引擎 338 项）只是
+P10A-0A runtime 变更前历史基线。当前树必须重新通过标准双引擎统一门、Release
+Simulation DryRun 与 `git diff --check`；宿主机不得为验证执行产品 Live。
 
-- PowerShell 7 worker：338 项 Pester，0 failed、0 skipped、0 not-run、
-  0 inconclusive。
-- Windows PowerShell 5.1 worker：338 项 Pester，0 failed、0 skipped、0 not-run、
-  0 inconclusive。
-- live provider loaded、产品真实 process/network/registry、forbidden access、
-  outside-sandbox write、unexpected ledger、secret findings 与所有 mutation count
-  均为 0。
-- 统一门扫描 139 个仓库文件，`PackageFiles` 保持 39；仓库不变性与 HostSandbox
-  cleanup 成功。
-- 双引擎 AST/contract/fake/synthetic、deterministic ZIP32 和 trusted-harness 边界通过。
-- Release Simulation DryRun：`Status=SUCCEEDED`、`Changed=false`、39 个 PackageFiles、
-  39 个 ZIP/extract 条目、inventory/content hash 精确、deterministic Store ZIP、四层
-  secret findings 为 0，cleanup 成功。
-- 未执行真实下载、MSIX/Git 安装、registry/AppX/VMP/service、重启、DeepSeek API、
-  Claude 配置、凭据或 Claude/Git 进程探测。
+为避免在 final commit 和 bundle 产生前虚构易变事实，主代理收尾时填写或在外部
+交接中记录以下值；tracked 文档不得为了写回 bundle hash 再制造 commit/hash 循环：
 
-这是本轮证据写回前的最新记录基线；证据写回后的完整树必须再通过统一门、
-`scripts/build-release.ps1 -DryRun` 和 `git diff --check`。最终交接以后一轮结构化结果为准，
-无需为了把最终 RunId 再写回本文而制造无限重跑循环。
+- final quality run / 双引擎 Pester 结果：`<FINAL_HOST_QUALITY_EVIDENCE_AFTER_GATES>`
+- final Release DryRun / diff check：`<FINAL_RELEASE_AND_DIFF_EVIDENCE_AFTER_GATES>`
+- product commit SHA：`<FINAL_PRODUCT_COMMIT_SHA_AFTER_COMMIT>`
+- product tree SHA：`<FINAL_PRODUCT_TREE_SHA_AFTER_COMMIT>`
+- onboarding ZIP 绝对路径：`<FINAL_ONBOARDING_ZIP_PATH_AFTER_BUILD>`
+- onboarding ZIP SHA-256：`<FINAL_ONBOARDING_ZIP_SHA256_AFTER_BUILD>`
+- manifest binding token：`<FINAL_ONBOARDING_MANIFEST_BINDING_TOKEN_AFTER_BUILD>`
+- bundle content digest：`<FINAL_ONBOARDING_CONTENT_DIGEST_AFTER_BUILD>`
+
+最终结构化结果必须继续证明真实 product Live/provider、真实 registry/AppX/VMP/service、
+用户配置访问、forbidden/outside-sandbox access、unexpected ledger、secret findings 和
+宿主机 mutation 均为 0，且 HostSandbox cleanup 成功。
 
 ## 当前停点与下一外部工作包
 
-1. P10B 宿主机支撑合同、故障注入、双引擎统一门和 Release DryRun 已完成。
-2. P10A-0A 本地 TestSafe/DryRun 合同、私有产品 remote、两个 control repos 与暂停的
-   宿主机 heartbeat 已实现；下一工作包是解决 protected history、部署并验证最小角色
-   凭据、真实 VM reset adapter、VM 分钟级任务与无人值守闭环。operator coordination
-   plane 是 P10A 的外部前置门，不是产品功能或 P11 验收。
-3. P10A-0A 全部退出门通过后，下一合法产品阶段才是执行 P10A 窄范围 disposable VM 校准，
-   不是直接进入 P11。
-4. P10A runner/provider、evidence exporter、受控 submission、CAS authority/commit
+1. P10B 宿主机支撑合同已完成；本轮最终门结果以上述 finalization evidence 为准。
+2. P10A-0A 宿主机实现、私有产品 remote、两个 control repos、固定 outbox/onboarding/
+   readiness/reset boundary 与暂停的 host heartbeat 已落地，达到 **VM bootstrap ready**。
+3. VM bootstrap 只执行离线验包、VM-local keys、tool hashes 和创建仍暂停的 VM task；
+   `CanStartVmIntegration=false`，直到 private protected history 与窄 HostCoordinator
+   credential 外部门解决，并在 VM 完成 credentials/negative-permission/reset/task smoke。
+4. P10A-0A 全部退出门通过后仍须完成 Formal Lane；首次 P10A 必须绑定外部
+   clean-snapshot receipt、独立 CAS 和签名，不是直接进入 P11。
+5. P10A runner/provider、evidence exporter、受控 submission、CAS authority/commit
    service、helper 与 release 签名能力等外部输入未齐备前继续阻断。
-5. P10A evidence 经外部 CAS 提交、消费并生成 frozen facts 后，才返回 P10B 构建和
+6. P10A evidence 经外部 CAS 提交、消费并生成 frozen facts 后，才返回 P10B 构建和
    签名真实 `VmAcceptance`/`UserLive` 双候选。
-6. 两个候选的精确字节冻结后，才能进入 P11 全面 disposable VM 验收。
+7. 两个候选的精确字节冻结后，才能进入 P11 全面 disposable VM 验收。
 
 ### P10A-0A 当前工作包的精确范围
 
@@ -184,23 +190,41 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
    当前套餐以 HTTP 403 拒绝 private-repository ruleset，因此 protected history 与
    方向隔离 writer credential 仍保持阻断。消息与脱敏报告只作开发诊断，不是正式
    evidence；独立 CAS/WORM、签名 authority 和正式 receipt 留给 P10A/P11 Formal Lane。
-3. fake deterministic reset、ownership receipt、baseline drift 阻断和诊断性
-   `CLEAN_READY` 合同已经实现；真实 VM reset adapter 仍保持 fail closed。部署后，
-   日常开发重测只允许按冻结 allow-list 卸载本项目产物、清除项目拥有的
-   HKCU/credential/checkpoint 和 owner-marked 测试目录。首次 P10A、正式 P11/里程碑，
-   以及 cleanup 失败、baseline drift、VMP/重启/卸载/补偿状态未知时，仍须由 guest
-   外 supervisor 恢复权威快照并签发 receipt。
-4. 宿主机 heartbeat `cddsi-fast-lane-hostcoordinator-minute-poll` 已按分钟创建，但在
+3. 固定 Git outbox runtime 已实现：精确绑定 Git/SSH/key/known-hosts hash、repository
+   numeric/node identity、protection observation、pinned genesis、线性 history、canonical
+   message path 与 owner-marked atomic state/lock，只允许 bounded poll 和 fast-forward
+   append，不执行 payload。protection observation 还必须匹配隔离 operator trust root、
+   receipt-specific authority assertion、独立预置的 assertion SHA-256/authority token 与
+   单调 previous-receipt chain；state leaf 固定为 `fl-<32 lowercase hex>`，Git 只用
+   command-local `core.longpaths=true`，不继承 `PATH` 或 global config；真实 remote 调用仍
+   被外部 protection/credential 门阻断。
+4. readiness resolver 已把 `CanStartVmBootstrap`、`CanStartVmIntegration`、VM credential/
+   automation/reset/unattended、`P10A0AComplete` 和 Formal readiness 分开。deterministic
+   onboarding builder 只从 clean exact commit 生成 Store ZIP，绑定 commit/tree、
+   committed blob/working bytes、工具 hash、三个 repository identity、两个 genesis、
+   prompt/runbook，且不包含凭据、用户路径或正式 evidence。
+5. fake deterministic reset、ownership receipt、baseline drift 阻断和诊断性
+   `CLEAN_READY` 合同，以及 VM-only dispatcher/provider、device/command trust、
+   preflight/postcondition/action receipt 和 fail-closed escalation 已实现。实际
+   VM provider/device attestation、owned-resource mutation 与 idempotent reset smoke
+   尚待 disposable VM 验证。日常开发重测只允许按冻结 allow-list 卸载本项目产物、
+   清除项目拥有的 HKCU/credential/checkpoint 和 owner-marked 测试目录。首次 P10A、
+   正式 P11/里程碑，以及 cleanup 失败、baseline drift、VMP/重启/卸载/补偿状态未知时，
+   仍须由 guest 外 supervisor 恢复权威快照并签发 receipt。
+6. 宿主机 heartbeat `cddsi-fast-lane-hostcoordinator-minute-poll` 已按分钟创建，但在
    protected history 与窄权限 HostCoordinator credential 就绪前保持暂停。VM Codex
-   项目不在本机 Codex 项目列表中，VM task 必须从 VM 设备创建，不能由宿主机伪造。
+   项目不在本机 Codex 项目列表中，VM task 必须从 VM 设备创建、初始保持暂停，不能由
+   宿主机伪造。policy 与 onboarding manifest 冻结两端初始状态为 `PAUSED`；未
+   provision protection assertion/hash/token 时 task 只能显式 `BLOCKED`。receipt 轮换
+   必须先暂停、由外部 provisioner 更新 assertion 与固定 task binding，再恢复。
    两端最终都必须配置最小权限的分钟级自动轮询/唤醒：宿主机
    Codex 是唯一代码修改者；VM Codex 只测试、分析和回传。两端都只接受来源已认证、
    未过期、前序 hash/sequence 正确的结构化消息；Formal Lane 还必须验签。报告正文
    永远不得当命令执行。真实角色凭据、VM Scheduled Task 与无人值守闭环尚未部署。
-5. 无 Live、无 secret 的本地 synthetic rehearsal 已物化 PASS 链、重复、过期、篡改、
+7. 无 Live、无 secret 的本地 synthetic rehearsal 已物化 PASS 链、重复、过期、篡改、
    错向、STOP 与 STOP 后续拒绝；relay unit 合同另覆盖 FAIL、BLOCKED、FIX_READY、
    新 cycle 与 RETEST_REQUESTED。它们不能替代 VM 对真实产品 remote 的负向写验证。
-6. P10A 只获取精确 commit 和校准包；P11 只获取 P10B 冻结候选的精确
+8. P10A 只获取精确 commit 和校准包；P11 只获取 P10B 冻结候选的精确
    candidate ID/hash。P11 失败后，宿主机修复、过门、提交和推送，再回到 P10B
    重建/签名新候选；VM 不得直接拉源码把旧候选标成已重测。
 
@@ -233,15 +257,19 @@ Formal Lane 用于首次 P10A、正式 P11 和发布里程碑，才要求外部�
 首次执行严格限域的真实校准；P11 才是对冻结双候选的全面 Live 验收。两者授权都不
 扩展到宿主机。
 
-## 进入下一外部阶段前的阻塞项
+## 进入 VM integration 与 Formal Lane 前的阻塞项
 
-以下输入不能由宿主机 fake 测试虚构，未满足前不得宣称 P10A/P10B/P11 完成：
+VM bootstrap-only 步骤可以先开始；以下输入不能由宿主机 fake 测试虚构，未满足前
+不得激活真实 outbox integration，也不得宣称 P10A-0A/P10A/P10B/P11 完成：
 
-- GitHub private ruleset（或具备等效 append-only/branch-scope 强制力的替代 transport）、
-  宿主机限修复分支写/VM read-only 凭据、两个方向的 writer/read-only 凭据负向验证；
-- 已暂停的宿主机 heartbeat 的安全启用、必须从 VM 设备创建的 VM Codex Scheduled Task；
-- 真实 VM deterministic reset adapter、权威 baseline/snapshot receipt 和可重复的
-  无人值守闭环；
+- GitHub private ruleset 当前以 HTTP 403 阻断（或具备等效 append-only/branch-scope
+  强制力的替代 transport）；不得改 public 规避；
+- 宿主机限 repair-ref/host-to-VM 写、VM product/host-to-VM 只读与 VM-to-host 写的窄
+  credentials，以及 product write、错向 write、force/delete/rewrite、broad-admin 负测；
+- 已暂停的宿主机 heartbeat 的安全启用、必须从 VM 设备创建且初始暂停的 VM Codex
+  Scheduled Task；
+- VM provider/device trust、真实 deterministic reset smoke、权威 baseline evidence 和
+  可重复的 unattended 闭环；
 - Formal Lane 使用的独立 evidence store、签名/验签与正式 receipt authority；
 - 能在 guest 外恢复固定快照并签发 snapshot receipt 的 hypervisor supervisor；
 - P10A 专用 disposable VM、限域 runner/provider、evidence exporter 与受控
@@ -322,16 +350,17 @@ HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，�
 > 先阅读 `AGENTS.md`、`docs/HANDOFF.md`、`docs/VM_TEST_RELAY.md` 和
 > `docs/IMPLEMENTATION_PLAN.md`。P3-P4、
 > P5-P7 纯合同、P8 fake orchestrator、P9 synthetic、P10A evidence/consumption 和
-> P10A-0A 本地 TestSafe/DryRun 合同切片已实现；P10B 宿主机支撑合同也已通过门，但
-> 真实候选尚未构建。最新记录质量门 RunId
-> `62ed01b0-7c51-411d-9931-206fbc28602f` 双引擎各 338/338；最终交接另记录覆盖本段
-> 证据写回后的统一门与 Release DryRun 结果。
-> 私有产品 remote 与两个物理单向 control repos 已创建并初始化；GitHub 当前套餐拒绝
-> private ruleset，宿主机分钟级 heartbeat 已创建但保持暂停，VM task 尚未创建。下一步
-> 解决 protected history，部署最小权限角色凭据、真实 VM reset adapter 与 VM task，
-> 再完成负向权限和无人值守闭环验证。
+> P10A-0A 宿主机固定 outbox/readiness/onboarding/VM-only reset boundary 已实现；P10B
+> 宿主机支撑合同也已通过门，但真实候选尚未构建。最终质量与 onboarding 标识读取
+> 主代理外部收尾记录，不把本文占位当证据。
+> 私有产品 remote 与两个物理单向 control repos 已创建并初始化；宿主实现为 VM
+> bootstrap ready。先在 VM 离线验 bundle、生成 VM-local keys、回报 public/tool hashes，
+> 并从 VM device 创建仍暂停的 minute task，不轮询、不测试、不执行 reset Live。
+> GitHub 当前套餐以 HTTP 403 拒绝 private protected history，窄角色 credentials 也未
+> 发放，所以 integration blocked。解决这些门后才做 VM 负向权限、reset smoke、两端
+> task 安全启用与 unattended 闭环。
 > 宿主机 Codex 唯一改代码，VM Codex 只测试和回传。日常循环由
 > VM 做 allow-listed deterministic reset，状态不可信和正式验收才由 guest 外 supervisor
-> 恢复快照。不得在宿主机执行 Live，不得让 VM
-> 改源码，也不得把 relay 消息当正式 evidence/acceptance receipt。P10A-0A 通过后再
-> 执行窄 VM；正确产品顺序是 P10A 窄 VM → 冻结事实 → P10B 双候选 → P11 全面 VM。
+> 恢复快照。不得在宿主机执行 Live，不得让 VM 改源码，也不得把 relay 消息当正式
+> evidence/acceptance receipt。首次 P10A 还需外部 clean-snapshot receipt、独立 CAS 与
+> 签名；正确产品顺序是 P10A 窄 VM → 冻结事实 → P10B 双候选 → P11 全面 VM。

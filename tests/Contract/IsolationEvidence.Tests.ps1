@@ -56,6 +56,8 @@
         -EngineId PowerShell7 `
         -EngineExecutablePath 'C:\Tools\pwsh.exe' `
         -EngineGrantSha256 $script:WorkerGrantSha256 `
+        -GitExecutablePath 'C:\Tools\git.exe' `
+        -GitGrantSha256 ('2' * 64) `
         -EvidenceBuilderOnly
 
     function New-WorkerEvidenceBuilderFixture {

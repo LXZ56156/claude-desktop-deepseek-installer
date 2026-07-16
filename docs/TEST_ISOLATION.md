@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -24,16 +24,37 @@ P1 Sandbox Foundation 已于 2026-07-14 满足本文件针对“项目控制自�
 trusted harness 分平面记账；worker evidence、仓库快照和 Release Simulation
 均为机器可读实测值。
 
+需要本地 Git 的 HostSandbox 测试不依赖 `PATH` 或用户 Git 配置。父 harness 将已验
+SHA-256 的 Git grant 作为 worker 必填参数传入，worker 复验 bytes 后只以只读 global
+binding 暴露给测试；测试仍使用空 hooks/credential 配置和 owner-marked local bare
+repository。缺 grant、hash 漂移或从 `Get-Command` 推断宿主路径时，正式隔离 worker
+必须 fail closed。
+
+Fast Lane outbox 的 state leaf 固定为短格式 `fl-<32 lowercase hex>`，以便在
+质量 worker 的 owner-marked 临时根内再次嵌套 synthetic fixture 时仍满足 Git for
+Windows 的 `$GIT_DIR` 路径预算。runner 仅通过每条命令的
+`-c core.longpaths=true` 支持长路径，不读取或修改 global Git config，也不把 Git
+目录加入 `PATH`；短 repository directory token 只用于 cache 定位，state 仍绑定完整
+repository identity/URI hash，碰撞必须 fail closed；失败诊断只返回调用序号与数值
+exit code。
+
 这一结论不改变本文开头的限制：HostSandbox 不是 OS 权限边界，不能抵御恶意代码
 或未知静态门绕过。后续阶段可以开始纯领域/provider/fake 开发，但宿主机仍不得
 加载 live adapter、执行 Live 或发起 sandbox 外产品 I/O。
 
-P10A-0A 当前只新增 DevelopmentOnly 的 operator coordination 合同和纯 synthetic
-rehearsal。`lib/vm-test-relay.ps1` 与 `lib/vm-reset.ps1` 位于独立
-OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release；前者为纯函数，
-后者只实现 fake/TestSafe/DryRun。真实 Git transport/credentials、VM reset adapter、
-两端 Codex automation、unattended acceptance 与 Formal Lane 均未完成，不能据此声称
-P10A-0A 完成或解除任何 Live 边界。
+P10A-0A 现在包含 DevelopmentOnly 的 operator coordination 合同、固定 Git outbox
+runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
+dispatcher/provider 边界、两端 prompt/runbook 和 synthetic rehearsal。它们位于独立
+OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release。宿主机侧实现
+可以生成绑定精确 commit/tree、文件/blob/tool hash、repository 数字/node identity 与
+pinned genesis 的诊断 onboarding ZIP，因此达到 **VM bootstrap ready**；这只允许 VM
+离线核验、设备本地密钥生成和创建仍暂停的 VM task。
+
+真实 private protected history 当前被 GitHub 套餐以 HTTP 403 阻断，窄权限角色凭据、
+VM 负向权限证据、VM provider/device trust、reset smoke 与 unattended acceptance 尚未
+完成，所以 **VM integration 仍 fail closed**。这些 operator runtime 不解除宿主机
+Live 边界，也不授权 VM 修改产品代码。Formal Lane 的外部 snapshot receipt、独立
+CAS/signature/receipt authority 仍未就绪，不能据此声称 P10A-0A 或 P10A 完成。
 
 ## 零接触定义
 
@@ -270,9 +291,10 @@ Fake 层必须覆盖：
 - 本地开发和 CI 只运行 L0-L4，永不执行 Live provider。
 - 双机 operator coordination 以 `VM_TEST_RELAY.md` 为权威，并与产品执行平面、
   trusted harness runtime 和正式证据平面隔离。operator modules 是 DevelopmentOnly、
-  非默认 bootstrap、非 Release；只有精确 allow-list 的 synthetic rehearsal 入口可由
-  harness 调用。宿主机 Codex 是唯一代码写入者；VM Codex 只测试、分析和回传，没有
-  产品仓库写权限。
+  非默认 bootstrap、非 Release；harness 只可按 execution-boundaries 的精确 allow-list
+  调用 synthetic、owner-marked local Git/onboarding 与 fake/reset contract 测试入口，
+  不得访问 remote、真实 credential 或 VM/system Live。宿主机 Codex 是唯一代码写入者；
+  VM Codex 只测试、分析和回传，没有产品仓库写权限。
 - P10A 在 Release Candidate 之前先进入专用 disposable VM；只有限域 calibration
   runner/provider 可以执行真实校准操作，产品 Live adapter 仍不得加载；每轮必须
   绑定精确 commit、校准 artifact/hash 和 runbook，不跟随移动分支头。
@@ -282,16 +304,19 @@ Fake 层必须覆盖：
   P10A 的窄范围事实校准不能替代 P11。P11 只测试请求中绑定的 candidate exact
   bytes/hash，不以源码 checkout 替换 artifact。
 - VM 内 Codex 的授权不扩展到宿主机，也不允许自行扩大测试范围。
-- Fast Lane（日常自动修复）未来由 VM Codex 按精确 allow-list 卸载本项目产物，清除
+- Fast Lane（日常自动修复）由 VM Codex 按精确 allow-list 卸载本项目产物，清除
   项目拥有的 HKCU policy、credential、checkpoint 和 owner-marked
-  `cddsi-vm-test-<GUID>` 资源，再核验 baseline。当前 `lib/vm-reset.ps1` 只冻结
-  fake/TestSafe/DryRun 合同，真实 VM adapter 尚未实现。MVP 使用一个逻辑双 outbox、
+  `cddsi-vm-test-<GUID>` 资源，再核验 baseline。宿主机已冻结 pure/fake reset、
+  VM-only dispatcher/provider、device trust 和 fail-closed receipt 合同；实际 VM
+  provisioning、Live development-retest smoke 与系统证据仍必须在 disposable VM 完成。
+  MVP 使用一个逻辑双 outbox、
   两个物理单向私有 control repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，
   `vm-to-host` 仅 VM 写/HostCoordinator 读。
 - 两端分钟级 Codex automation 属于外部 operator coordination，不是产品 Scheduled
-  Task，不能扩大宿主机 Live 或让 VM 修改产品代码。private repository pair、prompt
-  模板与纯 synthetic 演练已实现；宿主机 heartbeat 已创建但暂停。private ruleset、
-  最小 credentials、VM task、安全启用和 unattended acceptance 尚未完成。
+  Task，不能扩大宿主机 Live 或让 VM 修改产品代码。private repository pair、固定
+  outbox runtime、prompt、onboarding 和 synthetic 演练已实现；宿主机 heartbeat 已
+  创建且暂停。VM task 必须从 VM 设备创建并先保持暂停。private protected history、
+  最小 credentials、任务安全启用和 unattended acceptance 尚未完成。
 - Formal Lane 用于 P10A/P11 正式证据，必须由 VM 外部的 hypervisor supervisor
   恢复固定快照并签发 receipt，并使用独立 CAS/receipts/signatures。VMP/重启/卸载、
   补偿未知、baseline drift 或 reset 失败必须从 Fast Lane 升级；VM Codex 不能恢复

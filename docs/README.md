@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -67,11 +67,17 @@ Scaffold 已可执行 Live。
 
 P2-P10A 已把配置、环境、供应链、credential、恢复、重启、fake 编排、synthetic
 验收与 VM calibration evidence 建成纯/fake 合同；P10B 宿主机支撑合同也已通过
-统一门。它们仍不等于真实 registry、helper、Desktop 实物或 Release Candidate
-验证。精确边界记录在 `HANDOFF.md`、`EXTERNAL_CONTRACTS.md` 和
-`CONFIGURATION_DESIGN.md`；当前先停在 P10A-0 双机 operator coordination 建设门，
-remote、relay 和外部证据存储仍是计划，完成后才进入 P10A 窄范围 disposable VM
-校准，不增加宿主机产品 I/O。
+统一门。P10A-0A 的宿主机侧 Fast Lane 实现现已包括私有产品 remote、两个物理单向
+private control repositories、固定 Git outbox runtime、readiness resolver、确定性 VM
+onboarding builder、VM-only reset 边界以及两端分钟级 prompt/runbook。宿主机 task 已
+创建且暂停；VM task 必须从 VM 设备创建并同样先保持暂停。
+
+这只达到 **VM bootstrap ready**：可在 VM 离线验 bundle、生成设备本地密钥、回报
+公钥/工具 hash 并创建暂停任务。GitHub 当前套餐以 HTTP 403 拒绝 private protected
+history，且窄权限角色凭据尚未发放，所以 **VM integration 仍阻断**；不得轮询真实
+outbox、执行产品测试或声称 P10A-0A 完成。首次 P10A 还必须经过外部 clean snapshot
+receipt、独立 CAS 与签名的 Formal Lane。精确易变状态以 `HANDOFF.md` 为准；整个
+过程不增加宿主机产品 Live，VM 也不得修改产品代码。
 
 `docs/HANDOFF.md` 是易变状态的唯一权威来源。其他文档可以保留便于理解的状态
 摘要，但必须链接到交接，且摘要与交接冲突时以交接和实际 Git 状态为准。

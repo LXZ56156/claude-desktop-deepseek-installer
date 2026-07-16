@@ -338,6 +338,14 @@
             'Test-CddsiVmCleanReadyReceipt'
             'Invoke-CddsiVmGuestReset'
         )
+        'lib/vm-fast-lane-readiness.ps1' = @(
+            'Get-CddsiFastLaneDeploymentObservationBindingToken'
+            'Test-CddsiFastLaneRepositoryObservation'
+            'Test-CddsiFastLaneCredentialObservation'
+            'Test-CddsiFastLaneAutomationObservation'
+            'Test-CddsiFastLaneDeploymentObservation'
+            'Resolve-CddsiFastLaneReadiness'
+        )
     }
 
     ParameterContracts = @{
@@ -629,5 +637,11 @@
         'New-CddsiVmCleanReadyReceipt' = @{ Kind = 'Pure'; Mandatory = @('Policy', 'Plan', 'OwnershipReceipts', 'ActionReceipts', 'BaselineBefore', 'BaselineAfter', 'FinalState', 'StartedAtUtc', 'CompletedAtUtc', 'ControlIdentity', 'AuthenticationDigest', 'ExecutionMode'); Mode = $false }
         'Test-CddsiVmCleanReadyReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'Policy', 'Plan', 'OwnershipReceipts', 'ActionReceipts', 'BaselineBefore', 'BaselineAfter', 'FinalState'); Mode = $false }
         'Invoke-CddsiVmGuestReset' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Policy', 'OwnershipReceipts', 'CycleId', 'StartedAtUtc', 'CompletedAtUtc', 'ControlIdentity', 'AuthenticationDigest'); Mode = $true }
+        'Test-CddsiFastLaneRepositoryObservation' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'Expected'); Mode = $false }
+        'Test-CddsiFastLaneCredentialObservation' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'Role'); Mode = $false }
+        'Test-CddsiFastLaneAutomationObservation' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'Role', 'ExpectedAutomationId', 'ExpectedIntervalMinutes'); Mode = $false }
+        'Test-CddsiFastLaneDeploymentObservation' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'Policy'); Mode = $false }
+        'Get-CddsiFastLaneDeploymentObservationBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Observation'); Mode = $false }
+        'Resolve-CddsiFastLaneReadiness' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'Policy', 'ValidationTimeUtc', 'ExpectedPolicySha256'); Mode = $false }
     }
 }

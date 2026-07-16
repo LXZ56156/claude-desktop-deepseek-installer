@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 ## 定位
 
@@ -25,9 +25,10 @@ Entrypoints
               -> Live adapters (VM/UserLive only)
 
 OperatorCoordination (separate development plane)
-  -> Fast Lane policy + pure relay state machine
-     -> pure/fake guest-reset contract + synthetic rehearsal
-        -> future directional transports and scheduled tasks
+  -> Fast Lane policy + pure relay state machine + readiness
+     -> deterministic onboarding + bounded directional Git transport
+        -> pure/fake reset + VM-only provider boundary + synthetic rehearsal
+           -> external protected history, credentials, paused tasks and VM evidence
 ~~~
 
 ### Entrypoints
@@ -97,8 +98,10 @@ Feature、Service、Credential、Clock。
 
 双机测试闭环属于独立 OperatorCoordination development plane，权威合同见
 `VM_TEST_RELAY.md`。它不进入产品 bootstrap、ProductCore、Release 或 trusted
-harness，也不充当正式证据验证器。截至 2026-07-15，本地合同层已实现，但外部
-transport、VM 系统 adapter 和无人值守双机部署尚未完成：
+harness runtime；trusted harness 仅可从自己的 allow-listed 测试入口调用其
+synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-16，宿主机侧
+transport/runtime、onboarding 和 readiness 合同已实现，但外部保护/凭据、VM 设备
+provisioning 和无人值守双机验证尚未完成：
 
 ~~~text
 Fast Lane logical control plane:
@@ -115,11 +118,30 @@ Formal Lane: external clean snapshot + exact artifact
 - `lib/vm-test-relay.ps1` 是 pure Fast Lane canonical validator/state machine，负责
   双 repository/outbox identity、CycleId/sequence/previous hash、CAS、单 active
   cycle、STOP 和 fail-closed transition；它没有 Git/network transport。
+- `operator/fast-lane/invoke-git-outbox.ps1` 是 DevelopmentOnly 的固定 transport
+  runner：清空继承环境、绑定 Git/SSH/key/known-hosts hash、验证 repository 数字/node
+  identity、protected-history evidence、pinned genesis 和线性 commit chain，只允许
+  bounded fast-forward poll/append，不执行 payload。protection observation 还必须与
+  operator-plane `control-protection-trust` owner marker、receipt-specific authority
+  assertion、独立预置的 assertion SHA-256/authority token 及单调 previous-receipt
+  chain 交叉绑定，不能用 receipt 或 relay 自举信任。
+- `lib/vm-fast-lane-readiness.ps1` 明确区分 `CanStartVmBootstrap` 与
+  `CanStartVmIntegration`。前者只授权离线 bundle/key/task staging；后者还要求 protected
+  history、窄 HostCoordinator credential 和保持暂停的 host task。policy 与 onboarding
+  manifest 同时冻结 host/VM 两端的初始状态为 `PAUSED`。
+- `operator/fast-lane/build-vm-onboarding.ps1` 从 clean exact commit 构造 deterministic
+  Store ZIP，并绑定 tree/blob/working bytes、工具 hash、repository identity、genesis、
+  prompt 和 runbook。ZIP 为 diagnostic-only，不是产品候选或 Formal evidence。
 - `lib/vm-reset.ps1` 是 pure/fake deterministic-reset 合同：冻结 owner receipt、
   精确 allow-list、baseline、升级原因和 `CLEAN_READY`。TestSafe/DryRun 只消费声明的
-  fake provider，Scaffold Live 在 provider dispatch 前失败，没有真实 VM/system
-  adapter。
-- `operator/fast-lane/*` 保存固定的 host/VM prompt 与纯 synthetic 双 outbox 演练；
+  fake provider，Scaffold Live 在 provider dispatch 前失败。
+- `operator/fast-lane/invoke-vm-reset-live.ps1` 与 `providers/windows-vm-reset.ps1`
+  冻结 VM-only dispatcher/provider 和 device-trust boundary；只有 disposable VM、精确
+  trust/evidence、DevelopmentRetest 及单独 real-change acknowledgement 才可进入真实
+  dispatch，且必须在 runtime 注册前独占复验并原子消费由外部 supervisor 签发、
+  SYSTEM-owned、共同绑定本轮全部事实的 one-shot anchor/grant pair；每次 Live 都必须
+  使用全新 pair。宿主机/CI/里程碑场景均 fail closed。
+- `operator/fast-lane/*` 还保存固定的 host/VM prompt 与纯 synthetic 双 outbox 演练；
   prompt 不携带凭据，relay 自由文本只作为数据，不能成为 shell、PowerShell 或 Codex
   操作指令。
 - 宿主机完成修复、本地门、提交/推送和候选重建；VM 没有产品仓库写权限，只能向
@@ -135,10 +157,11 @@ Formal Lane: external clean snapshot + exact artifact
   不能恢复自身快照。
 - relay 只传输状态、脱敏结果和证据引用，不替代 WORM/CAS、签名、snapshot receipt
   或 acceptance receipt；消息正文和日志永不作为 shell/PowerShell 指令执行。
-- private product/control repositories 已创建并初始化，但当前 GitHub 套餐拒绝 private
-  ruleset。protected history、两个方向的最小角色凭据、VM 产品 remote 只读负向验证、
-  real guest reset、VM Scheduled Task、安全启用暂停的 host heartbeat 和两端无人值守
-  执行仍是阻断项；本地合同或 repository bootstrap 不能表述为 P10A-0A 完成。
+- private product/control repositories 已创建并初始化；宿主实现达到 VM bootstrap
+  ready，host heartbeat 已创建且暂停，VM task 可在 VM 上创建但必须先暂停。当前 GitHub
+  套餐仍以 HTTP 403 拒绝 private ruleset；protected history、两个方向的最小角色凭据、
+  VM 产品 remote 只读负向验证、real guest reset 证据、安全启用两端任务和 unattended
+  执行仍是 integration 阻断项。VM bootstrap 不等于 P10A-0A 完成。
 
 ## 当前加载顺序
 

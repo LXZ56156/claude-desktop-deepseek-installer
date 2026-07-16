@@ -55,14 +55,19 @@
             'tests/Contract/GitSupplyChain.Tests.ps1'
             'tests/Contract/LiveAdapters.Tests.ps1'
             'tests/Contract/FastLanePolicy.Tests.ps1'
+            'tests/Contract/FastLaneReadiness.Tests.ps1'
             'tests/Contract/OperatorCoordinationBoundary.Tests.ps1'
             'tests/Contract/VmReset.Tests.ps1'
+            'tests/Contract/VmResetLiveAdapter.Tests.ps1'
+            'tests/Contract/WindowsVmResetProvider.Tests.ps1'
             'tests/Unit/VmTestRelay.Tests.ps1'
             'tests/Support/TestContext.ps1'
             'tests/HostSandbox/HostSandbox.Tests.ps1'
             'tests/HostSandbox/ReleaseSimulation.Tests.ps1'
             'tests/HostSandbox/CandidateBuild.Tests.ps1'
             'tests/HostSandbox/FastLaneSyntheticRehearsal.Tests.ps1'
+            'tests/HostSandbox/FastLaneOnboardingBundle.Tests.ps1'
+            'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
         )
 
         TrustedHarness = @(
@@ -78,6 +83,11 @@
         OperatorCoordination = @(
             'lib/vm-test-relay.ps1'
             'lib/vm-reset.ps1'
+            'lib/vm-fast-lane-readiness.ps1'
+            'operator/fast-lane/build-vm-onboarding.ps1'
+            'operator/fast-lane/invoke-git-outbox.ps1'
+            'operator/fast-lane/invoke-vm-reset-live.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
         )
 
         PolicyData = @(
@@ -400,6 +410,72 @@
         OperatorCoordinationLibraryFiles = @(
             'lib/vm-test-relay.ps1'
             'lib/vm-reset.ps1'
+            'lib/vm-fast-lane-readiness.ps1'
+        )
+
+        OperatorRuntimeFiles = @(
+            'operator/fast-lane/build-vm-onboarding.ps1'
+            'operator/fast-lane/invoke-git-outbox.ps1'
+            'operator/fast-lane/invoke-vm-reset-live.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+        )
+
+        OperatorRuntimeEntryPoints = @{
+            'operator/fast-lane/build-vm-onboarding.ps1' = @(
+                'New-CddsiFastLaneVmOnboardingBundle'
+                'Test-CddsiFastLaneVmOnboardingBundle'
+            )
+            'operator/fast-lane/invoke-git-outbox.ps1' = @(
+                'Invoke-CddsiFastLaneGitOutbox'
+            )
+            'operator/fast-lane/invoke-vm-reset-live.ps1' = @(
+                'Invoke-CddsiVmResetLiveAdapter'
+            )
+            'operator/fast-lane/providers/windows-vm-reset.ps1' = @(
+                'Get-CddsiWindowsVmResetProviderOperationContract'
+                'Test-CddsiWindowsVmResetTrustPolicy'
+                'Test-CddsiWindowsVmResetDeploymentEvidence'
+                'Test-CddsiWindowsVmResetLiveAuthorization'
+                'Test-CddsiWindowsVmResetProviderAdapterAuthorization'
+                'Test-CddsiWindowsVmResetAdapterDeviceSignature'
+                'Invoke-CddsiWindowsVmResetAuthorizedRequest'
+                'New-CddsiWindowsVmResetProvider'
+            )
+        }
+
+        OperatorRuntimeDynamicInvocationFiles = @(
+            'operator/fast-lane/invoke-vm-reset-live.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+        )
+
+        OperatorRuntimeFileSystemFiles = @(
+            'operator/fast-lane/build-vm-onboarding.ps1'
+            'operator/fast-lane/invoke-git-outbox.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+        )
+
+        OperatorRuntimeProcessFiles = @(
+            'operator/fast-lane/build-vm-onboarding.ps1'
+            'operator/fast-lane/invoke-git-outbox.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+        )
+
+        OperatorRuntimeNetworkFiles = @(
+            'operator/fast-lane/invoke-git-outbox.ps1'
+        )
+
+        OperatorRuntimeReflectionFiles = @(
+            'operator/fast-lane/build-vm-onboarding.ps1'
+            'operator/fast-lane/invoke-git-outbox.ps1'
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+        )
+
+        OperatorRuntimeVmInspectionFiles = @(
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
+        )
+
+        OperatorRuntimeVmMutationFiles = @(
+            'operator/fast-lane/providers/windows-vm-reset.ps1'
         )
     }
 }

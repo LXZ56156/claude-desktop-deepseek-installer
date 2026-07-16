@@ -1,6 +1,6 @@
 # 宿主机与 VM Codex 测试中继协议
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 ## 定位与权威范围
 
@@ -12,19 +12,25 @@
 Release ZIP、默认 bootstrap 或 trusted test harness。relay 是独立的 operator
 coordination plane；产品平面、测试执行平面、证据平面和协调平面必须分离记账。
 
-截至 2026-07-15，本仓库已经实现 Fast Lane 的本地合同和纯 synthetic 演练：
+截至 2026-07-16，本仓库已经实现 Fast Lane 的宿主机侧 bootstrap 合同与 runtime：
 `lib/vm-test-relay.ps1` 提供 canonical JSON、hash、envelope/state/transition 的纯函数
 合同；`lib/vm-reset.ps1` 提供 fake/TestSafe/DryRun 的 ownership、baseline、plan、
-receipt 与 fail-closed reset 合同；`operator/fast-lane/prompts/` 提供两端轮询模板，
-`operator/fast-lane/invoke-synthetic-rehearsal.ps1` 提供本地双 outbox 演练。它们都属于
+receipt 与 fail-closed reset 合同；`lib/vm-fast-lane-readiness.ps1` 分开计算 VM
+bootstrap、integration、P10A-0A 和 Formal readiness；`operator/fast-lane/` 提供固定 Git
+outbox runner、deterministic onboarding builder、VM-only reset dispatcher/provider
+boundary、两端轮询模板、runbook 与本地双 outbox synthetic rehearsal。它们都属于
 DevelopmentOnly 的 operator coordination material，不由默认 bootstrap 加载，也不进入
 Release ZIP。
 
 私有产品 remote 与两个 control repository 已创建，产品旧 `main` 基线已推送，两个
-`outbox/` 已初始化。GitHub 当前套餐拒绝 private ruleset；最小角色 credentials、VM
-只读身份及负向写验证、真实 guest reset adapter、VM Codex automation 和无人值守闭环
-仍未完成。宿主机 heartbeat 已创建但保持暂停。Formal Lane 的 CAS、签名和外部
-snapshot supervisor 也未实现。因此当前不能宣称 P10A-0A 完成，更不能开始真实 P10A/P11。
+`outbox/` 已初始化。宿主实现可从 clean exact commit 生成 immutable diagnostic onboarding
+ZIP，所以当前状态为 **VM bootstrap ready**：VM 可离线验 bundle、生成本地密钥、回报
+公钥/工具 hash 并创建仍暂停的 minute task。GitHub 当前套餐以 HTTP 403 拒绝 private
+ruleset；窄 HostCoordinator/VmTester credentials、VM 只读身份及负向写验证、VM reset
+设备信任/实测、任务安全启用和无人值守闭环仍未完成，所以 **VM integration blocked**。
+宿主机 heartbeat 已创建并保持暂停；VM task 必须从 VM 设备创建且初始也必须暂停。
+Formal Lane 的 CAS、签名和外部 snapshot supervisor 也未实现。因此当前不能宣称
+P10A-0A 完成，更不能开始真实 P10A/P11。
 
 ## 不可变原则
 
@@ -138,6 +144,9 @@ Lane 还执行签名验证。它不得解释报告来生成命令，也不得为
 - 在 P12 决定是否合并、发布或停止。
 
 该角色不能由正在被恢复的 VM 内进程替代。
+Human 与 HypervisorSupervisor 是 relay 外部的决策或 receipt 权威，不是 Git
+transport sender。dual outbox 只认证 HostCoordinator 与 VmTester；relay 中出现的
+`SenderRole` 不能证明人工决定或 snapshot receipt 的权威性。
 
 ## 四个平面与凭据隔离
 
@@ -183,6 +192,8 @@ tag、release、issue、PR 或 workflow dispatch 的权限。
 ref 是 `codex/repair/p10a-0a-fast-lane`。宿主机最终只能向受保护的 repair branch 推送，
 VM 使用独立只读 deploy key 或等效细粒度凭据。当前 GitHub 套餐拒绝 private ruleset，
 所以这项服务端强制与角色凭据仍未满足；交互式 bootstrap admin 不得交给 automation。
+onboarding manifest 另绑定产品 repository numeric ID/node ID、精确 commit/tree 与固定
+Git 工具 hash；显示名或 remote URL 不能单独替代身份验证。
 
 P10A 需要源码时，VM runner 只允许类似以下的确定性操作：
 
@@ -213,6 +224,24 @@ Fast Lane 冻结为“一个逻辑双 outbox、两个物理单向私有 reposito
 - 每个方向的提交绑定 repository identity；RelaySupervisor 以原子 CAS 维护唯一 active
   cycle 和下一合法 sequence；
 - 消费者只出站轮询，不开放从外部直接进入宿主机或 VM 的控制端口。
+
+固定 outbox runner 只接受 onboarding/policy 绑定的 repository numeric ID、node ID、
+`refs/heads/main` 与 pinned genesis；每次 poll/append 还需当前且未过期的 protection
+observation、精确 Git/SSH/key/known-hosts hash、owner-marked local state/lock，以及线性
+fast-forward history。它限制单轮消息数、运行时和输出大小，清空继承的 credential/
+askpass/SSH 环境，并终止超时进程树。payload、日志和自由文本永远不进入命令行。
+
+protection observation 不是信任锚。runner 同时要求位于独立 operator workspace 的
+`control-protection-trust` owner marker、当前 receipt-specific authority assertion、
+由外部 provisioning 固定的 assertion SHA-256 与 authority-binding token。assertion
+精确绑定 repository numeric/node identity、ref、policy、observation hash、receipt ID、
+有效期和 previous-receipt hash；receipt/state/relay 不能提供调用方的 expected 值。轮换
+时先暂停两端任务，再 provision 新 assertion 与 task hash/token binding，验证单调链后
+才能恢复。
+GitHub 三个官方 SSH host key 固定在 DevelopmentOnly 的
+`operator/fast-lane/trust/github-known-hosts`；policy、inventory 与 manifest 交叉绑定其
+SHA-256，并独立固定 Git、OpenSSH、PowerShell 7 和 Windows PowerShell。设备本地 deploy
+key 的 hash 只能来自 provisioning receipt 和暂停任务绑定，不能来自 relay payload。
 
 低延迟需要可由只读、确定性 watcher 监视 control ref 的变化，在完整验证新消息后
 触发受限的 `codex exec resume`。watcher 不能解释 payload、执行其中命令或持有产品
@@ -270,13 +299,13 @@ TEST_FAILED | TEST_BLOCKED
 |---|---|---|
 | `TEST_REQUEST` | HostCoordinator | 冻结本轮精确输入、范围、runbook 和 expiry |
 | `VM_ACK` | VmTester | 声明确认请求，但尚未测试 |
-| `SNAPSHOT_READY` | HypervisorSupervisor | 仅在策略要求外部恢复时提供 snapshot receipt |
+| `SNAPSHOT_READY` | HostCoordinator | 仅在独立外部核验后转发 snapshot receipt 的 hash 与 supervisor authority binding |
 | `CLEAN_READY` | VmTester | 提供 guest reset receipt，或核验并绑定 snapshot receipt |
 | `TEST_STARTED` | VmTester | 声明全部前置核验通过并开始固定 runbook |
 | `TEST_RESULT` | VmTester | 回传 PASS/FAIL/BLOCKED 与 evidence 引用 |
 | `HOST_ACK` | HostCoordinator | 声明结果已验真、已接收或已拒绝 |
 | `FIX_READY` | HostCoordinator | 冻结新 commit 和新校准包/新 P10B candidate |
-| `STOP` | Human/HypervisorSupervisor | 停止当前 cycle，不授权隐式恢复或继续 |
+| `STOP` | HostCoordinator | 转发已在本地建立的 Human/HypervisorSupervisor 停止决定，不授权隐式恢复或继续 |
 
 非法跳转、重复终态、分叉 sequence、过期消息、未知 sender、前序 hash 不匹配或同一
 输入的并行 active cycle 都必须 fail closed。`STOP` 后必须创建新 CycleId，不能在旧
@@ -417,6 +446,20 @@ runner，按 frozen allow-list 依序：
 8. 生成经 control identity 认证的 `CLEAN_READY` receipt 后才允许测试；Formal Lane
    还必须对 receipt 签名。
 
+宿主机已实现该流程的 pure/fake 合同、VM-only dispatcher/provider boundary、精确五类
+resource descriptor、device/command trust policy、preflight/postcondition/action receipt
+binding 和 fail-closed escalation。onboarding bundle 只交付固定代码与 hash，不携带
+device private key，也不证明具体 VM 已 provision。实际 provider/device attestation、
+synthetic owned-resource mutation、idempotence 和 clean receipt 必须在 disposable VM
+完成 `reset-smoke.md` 后才能记为 `VmResetReady`；宿主机和 CI 不得进入该 Live 路径。
+外部 supervisor 还必须为每次执行签发 SYSTEM-owned one-shot anchor/grant pair。anchor
+绑定 VM/image、consumer SID、grant id/path/hash、execution nonce 与全部 trust/input；
+grant JSON 绑定 nonce、cycle/policy/plan/ownership/resource/control-auth/time。provider
+在注册 runtime 前独占验真并原子删除 grant，且 supervisor ACL receipt 必须证明 consumer
+不能在父目录 create/replace；provider 同时验证该目录由 SYSTEM 拥有且没有非受信 mutation
+ACE。每次 Live（包括幂等复跑）都用全新的 pair；进程内 consumed map 或可重写文件不能
+充当跨进程 one-shot 证据。
+
 receipt 至少绑定 CycleId、VM identity、image SHA-256、reset policy/allow-list hash、
 前后 baseline digest、每项动作和资源 receipt、开始/结束时间、cleanup failure count、
 unknown mutation count、secret scan count 和认证身份；Formal Lane 另含签名。所有
@@ -443,10 +486,14 @@ immutable snapshot、启动指定 VM 与独立测试用户，并生成签名 sna
 receipt 至少绑定 hypervisor identity、VM identity、image SHA-256、snapshot ID、
 snapshot generation、restore operation ID、CycleId、完成时间和启动 nonce。
 
-HypervisorSupervisor 通过 `SNAPSHOT_READY` 提交 receipt；VmTester 核验其与
-`TEST_REQUEST` 一致，再生成引用该 receipt 的 `CLEAN_READY`。无法验证时返回
-BLOCKED。snapshot restore 后仍可清理本轮新建的 owner-marked 目录，但不得把该
-guest 清理当成 snapshot receipt 的替代。
+HypervisorSupervisor 在 relay 外生成 receipt。独立 verifier 必须通过不来自 relay
+message 的受保护路径，向 consumer 提供预期 snapshot receipt SHA-256 与 supervisor
+authority-binding token。HostCoordinator 只能在这两个外部值已经建立后通过
+`SNAPSHOT_READY` 转发 receipt 引用；VmTester 必须同时核验消息与外部预期值、并确认
+其与 `TEST_REQUEST` 一致，再生成引用该 receipt 的 `CLEAN_READY`。`SenderRole` 与
+payload 内的自我声明都不能替代外部权威核验。无法验证时返回 BLOCKED。snapshot
+restore 后仍可清理本轮新建的 owner-marked 目录，但不得把该 guest 清理当成
+snapshot receipt 的替代。
 
 ## TEST_RESULT 与 evidence bundle
 
@@ -493,10 +540,11 @@ receipt。
 
 正常通信路径是两个单向私有 control repository 组成的逻辑双 outbox 与两端自动监控，
 不需要用户逐轮复制请求、结果或 `FIX_READY`。两端只对已验证的新 message commit 作出
-反应。当前 canonical/schema/state validator、reset 合同、两端 prompt 模板、纯
-synthetic dry rehearsal 与真实 private repository pair 已实现；protected history、
-最小凭据、VM runner adapter、VM task、安全启用 host heartbeat 和无人值守验收仍是
-外部部署工作，不能直接在现有宿主机进入产品 Live。
+反应。当前 canonical/schema/state validator、固定 Git outbox runner、readiness、
+deterministic onboarding、VM-only reset boundary、两端 prompt/runbook、synthetic dry
+rehearsal 与真实 private repository pair 已实现。宿主实现达到 bootstrap ready；
+protected history、最小凭据、VM device/provider evidence、VM task 安全绑定、启用 host
+heartbeat 和无人值守验收仍是外部 integration 工作，不能直接在现有宿主机进入产品 Live。
 
 ### Codex automation
 
@@ -506,7 +554,13 @@ synthetic dry rehearsal 与真实 private repository pair 已实现；protected 
 Live。`operator/fast-lane/prompts/host-poll.md` 和 `vm-poll.md` 是固定模板；宿主机
 heartbeat `cddsi-fast-lane-hostcoordinator-minute-poll` 已按分钟创建，但在 protected
 history 与窄凭据就绪前保持暂停。本机 Codex 没有 VM project，VM task 必须从 VM
-设备创建。当前未完成两端无人值守证明。
+设备创建并先保持暂停；policy/onboarding manifest 冻结两端初始状态为 `PAUSED`。
+bootstrap 阶段的 protection assertion/hash/token 明确标为 `UNPROVISIONED`，因此任务
+只能 fail closed，不能轮询。bootstrap 只允许 bundle 校验、VM 本地 key provisioning、
+工具 hash 回报和 paused task staging；它不允许轮询 control ref 或运行产品测试。
+VM 必须生成三把不可跨库复用的 repository-scoped key：product read、host-to-VM read、
+VM-to-host append；单一 deploy key 不能覆盖这三个物理私库。
+当前未完成两端无人值守证明。
 
 - 宿主机 minute-based scheduled task 在现有开发任务中轮询 `vm-to-host/`；收到合法
   `TEST_RESULT` 后验证诊断附件/evidence，自动恢复 HostCoordinator 任务进入分析、
@@ -538,9 +592,11 @@ message hash；发现新消息后触发 `codex exec resume` 恢复对应任务�
 当脚本。
 
 两种方案都必须提供：单实例锁、最大运行时、重试上限、输出大小上限、消息去重、
-审计日志脱敏、STOP 处理和人工接管。protected history、凭据发放、VM task、host
-heartbeat 启用和 unattended acceptance 属于外部 operator 工作，不改变产品 Live
-授权边界。
+审计日志脱敏、STOP 处理和人工接管。固定 Git runner 已实现这些 bounded contract；
+protected history、凭据发放、VM device provisioning、两端 paused task 的安全启用和
+unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授权边界。
+任何 protection receipt rotation 都要求先暂停 task、外部更新 authority assertion 与
+固定 hash/token，再恢复；不得把观察到的新 receipt 当作新的信任配置。
 
 ## 手工降级流程
 
@@ -598,10 +654,16 @@ heartbeat 启用和 unattended acceptance 属于外部 operator 工作，不改�
 已经部署为前置；Fast Lane report 明确为 diagnostic。可选 watcher/`codex exec resume`
 也不是 MVP 阻塞项。
 
-当前完成了本地合同、prompt 模板、纯 synthetic rehearsal，以及三个 private
-repositories 与两个 `outbox/` 的 bootstrap。宿主机 task 仅为暂停模板；GitHub private
-ruleset、remote credential 权限测试、真实 VM reset adapter、VM 分钟级 task 和无人值守
-闭环均未满足。因此 P10A-0A 仍处于进行中。
+当前完成了本地合同、固定 outbox/runtime、readiness、deterministic onboarding、
+VM-only reset boundary、prompt/runbook、纯 synthetic rehearsal，以及三个 private
+repositories 与两个 `outbox/` 的 bootstrap。宿主机 minute task 已创建且暂停；宿主机
+实现可交付 immutable onboarding，因此 `CanStartVmBootstrap` 可以为 true。VM task 必须
+从 VM device 创建并先暂停。
+
+GitHub private ruleset 当前返回 HTTP 403，protected history 与 narrow credentials
+尚未满足，因此 `CanStartVmIntegration` 必须保持 false。remote credential 负向测试、
+VM reset 实测、两端任务安全启用和 unattended 闭环也尚未满足；`P10A0AComplete`
+仍为 false。
 
 ### P10A-0B Formal Lane gate
 
@@ -619,6 +681,10 @@ ruleset、remote credential 权限测试、真实 VM reset adapter、VM 分钟�
 P10A-0A 完成后可以运行 Fast Lane 日常诊断闭环；它不授权真实 P10A。只有 P10A-0B
 的权限/攻击测试、Formal message 测试、CAS 并发测试、证据上传测试和 snapshot
 receipt 演练全部通过，用户才可在 disposable VM 开始首次窄校准。
+
+首次 P10A 不是 guest-reset smoke：外部 hypervisor supervisor 必须先恢复请求绑定的
+clean snapshot 并签发可验证 receipt，Formal Lane 还必须验证独立 CAS 和角色签名。
+任何 Fast Lane PASS、control repository commit 或 onboarding hash 都不能替代这些门。
 
 ### 可进入 P11
 

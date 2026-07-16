@@ -272,13 +272,19 @@ HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并
 - `lib/vm-reset.ps1` 实现 owner receipt、冻结 allow-list、baseline、升级判定和
   `CLEAN_READY` 的纯合同，TestSafe/DryRun 只消费 fake provider，Scaffold Live 在
   provider dispatch 前失败；
-- `operator/fast-lane/*` 保存两端固定 prompt 和纯 synthetic 双 outbox 演练。
+- `lib/vm-fast-lane-readiness.ps1` 分开派生 VM bootstrap、integration、P10A-0A 与
+  Formal readiness；
+- `operator/fast-lane/*` 保存固定 Git outbox runtime、deterministic onboarding builder、
+  VM-only guest-reset dispatcher/provider boundary、两端 prompt/runbook 和 synthetic 演练。
 
 这些文件属于 OperatorCoordination development plane，不进入默认 bootstrap、
 ProductCore 或 Release 包。三个 private repositories 已创建，产品旧 `main` 已推送，
 两个 control `outbox/` 已初始化；这只完成 transport bootstrap，不等于角色授权。
-当前没有真实系统 reset adapter 或无人值守执行授权。自由文本只是不受信数据，固定
-prompt 不包含 deploy key、token 或其他凭据。
+Windows reset adapter boundary 已实现精确 resource/provider allow-list、device/command
+trust、preflight/postcondition、action receipt 与 fail-closed escalation，但尚无 disposable
+VM 的 device provisioning、Live mutation、idempotence 或 clean-receipt evidence；它不能
+在宿主机/CI 执行，也不进入产品包。自由文本只是不受信数据，固定 prompt 不包含 deploy
+key、token 或其他凭据。
 
 private protected history（或等效 transport 强制）、两个方向的最小角色凭据、VM 产品
 remote 只读负向验证、real guest reset、VM automation、安全启用当前暂停的 host

@@ -11,22 +11,26 @@ BIOS 虚拟化或 Claude 的安全授权。
 
 产品工作流仍是 `Scaffold`，真实安装器尚未实现。P1-P9 纯/fake 合同、P10A
 evidence/consumption 合同以及 P10B frozen facts、helper release、deterministic
-双候选和 detached sidecar 宿主机支撑合同已经实现。P10A-0A 的本地
-TestSafe/DryRun 合同切片也已实现，包括 `DirectionalRepositoryPair`、
-relay/state/hash、fake reset 与 `CLEAN_READY`、两端轮询 prompts、synthetic rehearsal，
-以及只归入 `DevelopmentOnlyFiles` 的 operator coordination plane。
+双候选和 detached sidecar 宿主机支撑合同已经实现。P10A-0A 的宿主机 bootstrap
+实现也已完成，包括 `DirectionalRepositoryPair`、固定 Git outbox runtime、
+relay/state/hash、readiness resolver、deterministic onboarding bundle、fake reset、
+VM-only Windows guest-reset dispatcher/provider boundary、两端分钟级 prompts/runbooks
+与 synthetic rehearsal；这些 operator coordination 文件只归入 `DevelopmentOnlyFiles`。
 
 Fast Lane 采用一个逻辑双 outbox、两个物理单向私有 control repos。私有产品 remote
 与两个 control repos 已创建并初始化；GitHub 当前套餐拒绝 private ruleset，最小权限
-角色凭据、VM 对产品 remote 的负向写验证、真实 VM reset adapter、VM Scheduled Task
-与无人值守闭环尚未部署。宿主机分钟级 heartbeat 已创建但保持暂停。因此不能宣称
+角色凭据、VM 对产品 remote 的负向写验证、reset provider 的 VM device/Live evidence、
+VM Scheduled Task 与无人值守闭环尚未部署。宿主机分钟级 heartbeat 已创建但保持暂停。
+宿主机实现已达到 VM bootstrap ready，但 integration 仍 fail closed，因此不能宣称
 P10A-0A 完成。Formal Lane
 才为 P10A/P11 接入 CAS、签名与外部快照。本地质量门使用不可缺省
 ExecutionContext、default-deny fake provider、owner-marked HostSandbox、双引擎
 worker evidence 和 Release Simulation。
 
-所有现有入口固定运行 TestSafe；系统操作、网络请求、配置写入和进程控制均未
-实现，`-Live` 无条件 fail closed。
+所有产品入口仍固定运行 TestSafe；产品系统操作、网络请求、配置写入和进程控制均未
+实现，产品 `-Live` 无条件 fail closed。DevelopmentOnly 的 Windows guest-reset provider
+只允许在 disposable VM 经外部 trust/ownership/one-shot authorization 后进入其 operator
+Live 路径，不由默认 bootstrap 或 Release 加载，宿主机与 CI 不得执行。
 
 当前 `config/deepseek-desktop.defaults.json`、desired state、15 项 Windows
 `REG_SZ` serializer、官方 fixture 和 synthetic source precedence 已同步。配置
@@ -115,7 +119,7 @@ HOME/Git 配置的直跑命令。
 - 窄范围 VM 校准：`docs/VM_CALIBRATION_PLAN.md`
 - 后续全面 VM 验收：`docs/VM_ACCEPTANCE_PLAN.md`
 
-下一对话从 `docs/HANDOFF.md` 记录的 P10A-0A 外部部署门继续：为现有私有 remotes
-补齐 protected history、最小权限凭据、真实 VM reset adapter 与 VM 分钟级任务，并
-安全启用已暂停的宿主机 heartbeat，不需要重新从零调研。宿主机
+下一对话从 `docs/HANDOFF.md` 记录的 P10A-0A VM bootstrap/integration 门继续：在 VM
+验 immutable onboarding、配置最小权限凭据与 device-bound reset trust、创建仍暂停的
+VM 分钟级任务，并在 protected history 门满足后安全启用两端任务，不需要重新从零调研。宿主机
 不得执行 Live，VM 不得修改产品代码。

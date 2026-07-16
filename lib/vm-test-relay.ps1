@@ -6,6 +6,7 @@
 
 $script:CddsiVmTestRelayProtocolVersion = 'cddsi-vm-test-relay-v1'
 $script:CddsiVmTestRelayStateVersion = 'cddsi-vm-test-relay-state-v1'
+$script:CddsiVmTestRelayRepositoryIdentityPattern = '^(?:github\.com/[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}|synthetic/[A-Za-z0-9][A-Za-z0-9._-]{0,95})$'
 $script:CddsiVmTestRelayEnvelopeProperties = @(
     'SchemaVersion', 'ProtocolVersion', 'Lane', 'MessageId', 'CycleId',
     'Sequence', 'MessageType', 'SenderRole', 'HostToVmRepositoryIdentity',
@@ -45,19 +46,17 @@ $script:CddsiVmTestRelayMessageTypes = @(
 $script:CddsiVmTestRelayMessageRoles = @{
     TEST_REQUEST   = @('HostCoordinator')
     VM_ACK         = @('VmTester')
-    SNAPSHOT_READY = @('HypervisorSupervisor')
+    SNAPSHOT_READY = @('HostCoordinator')
     CLEAN_READY    = @('VmTester')
     TEST_STARTED   = @('VmTester')
     TEST_RESULT    = @('VmTester')
     HOST_ACK       = @('HostCoordinator')
     FIX_READY      = @('HostCoordinator')
-    STOP           = @('Human', 'HypervisorSupervisor')
+    STOP           = @('HostCoordinator')
 }
 $script:CddsiVmTestRelayMessageOutboxes = @{
-    HostCoordinator      = 'host-to-vm'
-    VmTester             = 'vm-to-host'
-    Human                = 'host-to-vm'
-    HypervisorSupervisor = 'host-to-vm'
+    HostCoordinator = 'host-to-vm'
+    VmTester        = 'vm-to-host'
 }
 $script:CddsiVmTestRelayMessageStatuses = @{
     VM_ACK         = @('VM_ACKED')
@@ -228,11 +227,13 @@ function Test-CddsiVmTestRelayEnvelope {
         [Parameter(Mandatory = $true)][string]$ExpectedVmToHostRepositoryIdentity,
         [Parameter(Mandatory = $true)][string]$ExpectedProductRepositoryIdentity,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('HostCoordinator', 'VmTester', 'Human', 'HypervisorSupervisor')]
+        [ValidateSet('HostCoordinator', 'VmTester')]
         [string]$AuthenticatedSenderRole,
         [Parameter(Mandatory = $true)]
         [ValidateSet('host-to-vm', 'vm-to-host')]
         [string]$AuthenticatedOutbox,
+        [AllowNull()][string]$ExternallyVerifiedSnapshotReceiptSha256 = $null,
+        [AllowNull()][string]$ExternallyVerifiedSnapshotAuthorityBindingToken = $null,
         [ValidateRange(1, 86400)][int]$MaximumAgeSeconds = 900,
         [ValidateRange(0, 300)][int]$MaximumClockSkewSeconds = 60,
         [ValidateRange(64, 1048576)][int]$MaximumMessageBodyBytes = 65536
@@ -255,8 +256,8 @@ function Test-CddsiVmTestRelayEnvelope {
     $isRepositoryIdentity = {
         param([AllowNull()]$Value)
         return (
-            $Value -is [string] -and $Value.Length -le 160 -and
-            [regex]::IsMatch($Value, '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$')
+            $Value -is [string] -and $Value.Length -le 192 -and
+            [regex]::IsMatch($Value, $script:CddsiVmTestRelayRepositoryIdentityPattern)
         )
     }
     $isNonNegativeInteger = {
@@ -398,6 +399,26 @@ function Test-CddsiVmTestRelayEnvelope {
         }
         else { return $false }
     }
+    elseif ($Envelope.MessageType -ceq 'SNAPSHOT_READY') {
+        $expected = @(
+            'SchemaVersion', 'ContractVersion', 'Code', 'ExternalReceiptAuthority',
+            'ExternalReceiptAuthorityBindingToken'
+        )
+        if (-not (Test-CddsiExactPropertySet -InputObject $Payload -Expected $expected)) { return $false }
+        if (
+            $Payload.SchemaVersion -cne '1' -or
+            $Payload.ContractVersion -cne 'cddsi-vm-test-relay-snapshot-ready-v1' -or
+            $Payload.Code -cne 'EXTERNAL_SNAPSHOT_VERIFIED' -or
+            $Payload.ExternalReceiptAuthority -cne 'HypervisorSupervisor' -or
+            -not (& $isSha256 $Payload.ExternalReceiptAuthorityBindingToken $false) -or
+            -not (& $isSha256 $ExternallyVerifiedSnapshotReceiptSha256 $false) -or
+            -not (& $isSha256 $ExternallyVerifiedSnapshotAuthorityBindingToken $false) -or
+            $Envelope.SnapshotReceiptSha256 -cne $ExternallyVerifiedSnapshotReceiptSha256 -or
+            $Payload.ExternalReceiptAuthorityBindingToken -cne
+                $ExternallyVerifiedSnapshotAuthorityBindingToken -or
+            $Envelope.Status -cne 'ENVIRONMENT_PREPARING'
+        ) { return $false }
+    }
     elseif ($Envelope.MessageType -ceq 'TEST_RESULT') {
         $expected = @(
             'SchemaVersion', 'ContractVersion', 'CycleId', 'RunId', 'Phase',
@@ -473,14 +494,13 @@ function New-CddsiVmTestRelayState {
         [Parameter(Mandatory = $true)][string]$ProductRepositoryIdentity
     )
 
-    $pattern = '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$'
     if (
-        $HostToVmRepositoryIdentity.Length -gt 160 -or
-        $VmToHostRepositoryIdentity.Length -gt 160 -or
-        $ProductRepositoryIdentity.Length -gt 160 -or
-        -not [regex]::IsMatch($HostToVmRepositoryIdentity, $pattern) -or
-        -not [regex]::IsMatch($VmToHostRepositoryIdentity, $pattern) -or
-        -not [regex]::IsMatch($ProductRepositoryIdentity, $pattern) -or
+        $HostToVmRepositoryIdentity.Length -gt 192 -or
+        $VmToHostRepositoryIdentity.Length -gt 192 -or
+        $ProductRepositoryIdentity.Length -gt 192 -or
+        -not [regex]::IsMatch($HostToVmRepositoryIdentity, $script:CddsiVmTestRelayRepositoryIdentityPattern) -or
+        -not [regex]::IsMatch($VmToHostRepositoryIdentity, $script:CddsiVmTestRelayRepositoryIdentityPattern) -or
+        -not [regex]::IsMatch($ProductRepositoryIdentity, $script:CddsiVmTestRelayRepositoryIdentityPattern) -or
         $HostToVmRepositoryIdentity -ceq $VmToHostRepositoryIdentity -or
         $HostToVmRepositoryIdentity -ceq $ProductRepositoryIdentity -or
         $VmToHostRepositoryIdentity -ceq $ProductRepositoryIdentity
@@ -532,14 +552,13 @@ function Test-CddsiVmTestRelayState {
     }
     catch { return $false }
 
-    $repositoryPattern = '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$'
     if (
         $State.HostToVmRepositoryIdentity -isnot [string] -or
         $State.VmToHostRepositoryIdentity -isnot [string] -or
         $State.ProductRepositoryIdentity -isnot [string] -or
-        -not [regex]::IsMatch($State.HostToVmRepositoryIdentity, $repositoryPattern) -or
-        -not [regex]::IsMatch($State.VmToHostRepositoryIdentity, $repositoryPattern) -or
-        -not [regex]::IsMatch($State.ProductRepositoryIdentity, $repositoryPattern) -or
+        -not [regex]::IsMatch($State.HostToVmRepositoryIdentity, $script:CddsiVmTestRelayRepositoryIdentityPattern) -or
+        -not [regex]::IsMatch($State.VmToHostRepositoryIdentity, $script:CddsiVmTestRelayRepositoryIdentityPattern) -or
+        -not [regex]::IsMatch($State.ProductRepositoryIdentity, $script:CddsiVmTestRelayRepositoryIdentityPattern) -or
         $State.HostToVmRepositoryIdentity -ceq $State.VmToHostRepositoryIdentity -or
         $State.HostToVmRepositoryIdentity -ceq $State.ProductRepositoryIdentity -or
         $State.VmToHostRepositoryIdentity -ceq $State.ProductRepositoryIdentity
@@ -625,11 +644,13 @@ function Resolve-CddsiVmTestRelayTransition {
         [Parameter(Mandatory = $true)]$Payload,
         [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('HostCoordinator', 'VmTester', 'Human', 'HypervisorSupervisor')]
+        [ValidateSet('HostCoordinator', 'VmTester')]
         [string]$AuthenticatedSenderRole,
         [Parameter(Mandatory = $true)]
         [ValidateSet('host-to-vm', 'vm-to-host')]
         [string]$AuthenticatedOutbox,
+        [AllowNull()][string]$ExternallyVerifiedSnapshotReceiptSha256 = $null,
+        [AllowNull()][string]$ExternallyVerifiedSnapshotAuthorityBindingToken = $null,
         [ValidateRange(1, 86400)][int]$MaximumAgeSeconds = 900,
         [ValidateRange(0, 300)][int]$MaximumClockSkewSeconds = 60,
         [ValidateRange(64, 1048576)][int]$MaximumMessageBodyBytes = 65536
@@ -658,6 +679,8 @@ function Resolve-CddsiVmTestRelayTransition {
         -ExpectedProductRepositoryIdentity $State.ProductRepositoryIdentity `
         -AuthenticatedSenderRole $AuthenticatedSenderRole `
         -AuthenticatedOutbox $AuthenticatedOutbox `
+        -ExternallyVerifiedSnapshotReceiptSha256 $ExternallyVerifiedSnapshotReceiptSha256 `
+        -ExternallyVerifiedSnapshotAuthorityBindingToken $ExternallyVerifiedSnapshotAuthorityBindingToken `
         -MaximumAgeSeconds $MaximumAgeSeconds `
         -MaximumClockSkewSeconds $MaximumClockSkewSeconds `
         -MaximumMessageBodyBytes $MaximumMessageBodyBytes)) {

@@ -1,6 +1,6 @@
 # 安全设计
 
-更新日期：2026-07-15
+更新日期：2026-07-16
 
 ## 安全目标
 
@@ -33,10 +33,11 @@
   expiry 和交互确认，但不冒充 OS 级 VM 身份证明。
 - `VM_TEST_RELAY.md` 定义的 monitor/control repo 属于独立 operator coordination
   plane，不扩展产品 Live 权限，也不能用消息、通知或 automation 绕过 grant。
-- 截至 2026-07-15，`config/fast-lane-policy.psd1`、`lib/vm-test-relay.ps1`、
-  `lib/vm-reset.ps1` 和 `operator/fast-lane/*` 只实现本地 pure/fake 合同与 synthetic
-  演练；它们不进入 bootstrap、ProductCore 或 Release，也没有真实 transport、系统
-  adapter 或无人值守执行授权。
+- 截至 2026-07-16，`config/fast-lane-policy.psd1`、`lib/vm-test-relay.ps1`、
+  `lib/vm-fast-lane-readiness.ps1`、`lib/vm-reset.ps1` 和 `operator/fast-lane/*` 已实现
+  DevelopmentOnly 的固定 Git transport、确定性 onboarding、VM-only reset 边界与
+  synthetic 演练。它们不进入 bootstrap、ProductCore 或 Release；也不因代码存在而
+  获得宿主机 Live、VM product-write、remote credential 或无人值守执行授权。
 
 ## 宿主机保护
 
@@ -208,8 +209,8 @@ repository-scoped、不是 path-scoped；因此 GitHub transport 不能用同一
 内的两个目录和两把 writable deploy key 声称精确方向隔离。当前冻结拓扑使用两个
   物理单向 private repository：HostCoordinator 只写 host-to-VM repository，VmTester
   只写 VM-to-host repository，并分别只读另一方向。三个 private repositories 与两个
-  control `outbox/` 已 bootstrap；GitHub 当前套餐拒绝 private ruleset，因此尚未发放
-  writer 凭据。未来由两端分钟级 Codex Scheduled Tasks 轮询 inbox；可增加低延迟
+  control `outbox/` 已 bootstrap；GitHub 当前套餐以 HTTP 403 拒绝 private ruleset，
+  因此尚未发放 writer 凭据。两端分钟级 Codex Scheduled Tasks 最终轮询 inbox；可增加低延迟
   watcher 触发受限 `codex exec`/resume，但 transport 和自动化均不进入产品信任根。
 
 本地实现边界如下：
@@ -218,10 +219,31 @@ repository-scoped、不是 path-scoped；因此 GitHub transport 不能用同一
   reset 与禁止 promotion 的安全策略；
 - `lib/vm-test-relay.ps1` 只做 canonical validation、双向身份、hash chain、CAS、
   单 active cycle、STOP 和状态迁移，没有 Git/network transport；
+- `operator/fast-lane/invoke-git-outbox.ps1` 绑定固定 Git/SSH/key/known-hosts hash，
+  清空继承环境并限制进程树、runtime、output 和 message 数量；它验证 repository
+  数字/node identity、当前 protection evidence、pinned genesis、linear history 与
+  fast-forward-only CAS，不解释 payload；protection evidence 还必须匹配隔离的
+  operator trust root、owner marker、receipt-specific authority assertion、独立预置的
+  assertion SHA-256/authority token 和 previous-receipt chain，不能由 relay、receipt
+  或 state root 自举；state root 使用固定短叶名 `fl-<32 lowercase hex>`，Git
+  long-path 支持只作为 command-local config 注入，失败信息不包含 stderr 或本地路径；
+- `operator/fast-lane/build-vm-onboarding.ps1` 只在 owner-marked HostSandbox 从 clean
+  exact commit 生成确定性 diagnostic ZIP，绑定 tree/blob/working bytes、工具 hash 和
+  runbook。bundle 不包含 credential、用户路径或 Formal evidence；
 - `lib/vm-reset.ps1` 只做 owner receipt、allow-list、baseline、升级判定和
   `CLEAN_READY` 的 pure/fake 合同；TestSafe/DryRun 使用 fake provider，Scaffold
   Live 在 provider dispatch 前 fail closed；
-- `operator/fast-lane/*` 只包含固定 prompt 和 pure synthetic rehearsal。prompt 中不
+- VM-only reset dispatcher/provider 还要求精确 VM/device/command trust、preflight、
+  postcondition 与 receipt 绑定；宿主机/CI、伪造上下文、未知 mutation 或里程碑场景
+  在 mutation 前 fail closed 或升级外部 snapshot；
+- 每次 VM reset Live authorization 还必须消费 supervisor 签发的 SYSTEM-owned one-shot
+  anchor/grant pair。anchor 绑定 VM/image、consumer SID、grant id/path/hash、execution
+  nonce 与本轮全部 trust/input；grant JSON 绑定 nonce、cycle/policy/plan/ownership/
+  resource/control-auth/time。consumer 对 grant 只有 Read+Delete，且 supervisor ACL
+  receipt 必须证明其不能在父目录 create/replace；provider 还会验证父目录 SYSTEM owner
+  与无非受信 mutation ACE，并在注册 runtime 前独占复验、原子删除 grant。进程内标志、
+  可写 grant 或仅自洽 hash 都不是防重放证据；
+- `operator/fast-lane/*` 还包含固定 prompt 和 pure synthetic rehearsal。prompt 中不
   放 deploy key、token 或其他凭据；relay message、日志、Markdown 和模型自由文本
   全部是不受信数据，不能直接执行。
 
@@ -270,11 +292,19 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
 - detached sidecar 必须验证真实签名字节和外部固定信任身份；P11 receipt 不存在时
   P12 promotion 必须保持 fail closed。
 - Fast Lane 本地 policy、relay/reset pure/fake contract、固定 prompt 和 synthetic
-  rehearsal 已实现，但不能据此宣称 P10A-0A 完成。
+  rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现；这只足以进入 VM
+  bootstrap，不足以宣称 P10A-0A 完成。
 - private repositories 已创建，但 private protected history、两个方向的最小角色凭据、
-  VM 产品 remote 只读负向验证、real guest reset、VM automation、安全启用暂停的 host
-  heartbeat、两端无人值守执行和外部 hypervisor receipt 流程仍未完成；这些证据完成前
-  双机自动闭环保持阻断。
+  VM 产品 remote 只读负向验证、real guest reset 证据、VM automation、安全启用两端
+  paused tasks、无人值守执行和外部 hypervisor receipt 流程仍未完成；这些证据完成前
+  integration 与双机自动闭环保持阻断。private ruleset 的当前外部失败为 HTTP 403；
+  不得把仓库改为 public 或复用 bootstrap admin 作为降级。
+- protection receipt 轮换必须 fail closed：先暂停消费者，由外部 provisioner 生成下一
+  authority assertion 并把其 hash/token 写入固定 task binding，再允许恢复；自动化不得
+  从新 receipt、relay payload 或旧本地 state 学习新的信任值。
+- 首次 P10A、P10A 事实冻结轮、正式 P11 PASS 和发布里程碑必须由 VM 外部 supervisor
+  恢复 clean snapshot 并签发 receipt，且 Formal Lane 使用独立 CAS 与签名。guest
+  reset、Fast Lane PASS 或 control-repo commit 均不能替代。
 - `disableDeploymentModeChooser`、Standard/Offline MSIX 的 VM 行为未验证。
 - DPAPI 恢复材料生命周期和 ACL 尚未实现。
 - LICENSE copyright holder 尚未确定。

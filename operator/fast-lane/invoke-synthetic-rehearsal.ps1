@@ -276,10 +276,10 @@ function Invoke-CddsiFastLaneSyntheticRehearsal {
     $stopPayload = New-CddsiFastLaneSyntheticPayload STOP $stopCycle $stopRun
     $stopEnvelope = New-CddsiFastLaneSyntheticEnvelope -State $requestTransition.State -Payload $stopPayload `
         -MessageId '92000000-0000-4000-8000-000000000031' -CycleId $stopCycle -Sequence 2 `
-        -MessageType STOP -SenderRole Human -Outbox host-to-vm -Status STOPPED -RunId $stopRun `
+        -MessageType STOP -SenderRole HostCoordinator -Outbox host-to-vm -Status STOPPED -RunId $stopRun `
         -PreviousMessageSha256 $requestTransition.MessageSha256 -Nonce '93000000-0000-4000-8000-000000000031'
     $stopTransition = Invoke-SyntheticDelivery $requestTransition.State $stopEnvelope $stopPayload `
-        '031-stop.json' host-to-vm Human host-to-vm
+        '031-stop.json' host-to-vm HostCoordinator host-to-vm
     $stopPassed = $stopTransition.Accepted -and $stopTransition.State.StoppedCycleIds -ccontains $stopCycle
     [void]$caseRecords.Add([pscustomobject][ordered]@{
         Name = 'stop_closes_cycle'; ExpectedDisposition = 'ACCEPT'; ObservedDisposition = $(if ($stopTransition.Accepted) { 'ACCEPT' } else { 'REJECT' })

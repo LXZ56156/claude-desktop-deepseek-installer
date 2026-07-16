@@ -1490,6 +1490,10 @@ try {
         $boundaryManifestPath
         '-DependencyManifestPath'
         $dependencyManifestPath
+        '-GitExecutablePath'
+        $gitGrant.Path
+        '-GitGrantSha256'
+        $gitGrant.Sha256
     )
     $powerShell7WorkerArguments = $workerCommonArguments + @(
         '-EngineId', 'PowerShell7',

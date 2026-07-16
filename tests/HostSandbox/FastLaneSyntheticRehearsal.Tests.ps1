@@ -22,6 +22,9 @@ Describe 'P10A-0A fully synthetic Fast Lane rehearsal' {
             Should -BeExactly 'CYCLE_CLOSED'
         (@($evidence.Cases | Where-Object Name -eq 'duplicate_message')[0]).ErrorCode |
             Should -BeExactly 'MESSAGE_REPLAY'
+        $stopMessage = [IO.File]::ReadAllText((Join-Path $root 'host-to-vm\031-stop.json')) |
+            ConvertFrom-Json
+        $stopMessage.Envelope.SenderRole | Should -BeExactly 'HostCoordinator'
 
         @($evidence.Outboxes.Name) -join '|' | Should -BeExactly 'host-to-vm|vm-to-host'
         ($evidence.Outboxes | Measure-Object -Property MessageCount -Sum).Sum | Should -BeGreaterThan 2
