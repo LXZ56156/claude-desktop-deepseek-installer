@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 ## 定位
 
@@ -28,7 +28,7 @@ OperatorCoordination (separate development plane)
   -> Fast Lane policy + pure relay state machine + readiness
      -> deterministic onboarding + bounded directional Git transport
         -> pure/fake reset + VM-only provider boundary + synthetic rehearsal
-           -> external protected history, credentials, paused tasks and VM evidence
+           -> external protection assertion, credentials, paused tasks and VM evidence
 ~~~
 
 ### Entrypoints
@@ -99,19 +99,20 @@ Feature、Service、Credential、Clock。
 双机测试闭环属于独立 OperatorCoordination development plane，权威合同见
 `VM_TEST_RELAY.md`。它不进入产品 bootstrap、ProductCore、Release 或 trusted
 harness runtime；trusted harness 仅可从自己的 allow-listed 测试入口调用其
-synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-16，宿主机侧
-transport/runtime、onboarding 和 readiness 合同已实现，但外部保护/凭据、VM 设备
-provisioning 和无人值守双机验证尚未完成：
+synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-17，宿主机侧
+transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
+服务端 protected history 已部署；窄角色凭据、VM 设备 provisioning 和无人值守双机
+验证尚未完成：
 
 ~~~text
 Fast Lane logical control plane:
-  HostCoordinator -> private host-to-VM repository -> VmTester (read only)
-  HostCoordinator <- private VM-to-host repository <- VmTester (write only)
+  HostCoordinator -> public protected host-to-VM repository -> VmTester (read only)
+  HostCoordinator <- public protected VM-to-host repository <- VmTester (write only)
 Formal Lane: external clean snapshot + exact artifact
              -> independent CAS/signature/receipt validators
 ~~~
 
-- `config/fast-lane-policy.psd1` 冻结两个物理单向 private repository、产品 remote、
+- `config/fast-lane-policy.psd1` 冻结两个物理单向 public protected repository、产品 remote、
   角色、分钟级轮询、reset allow-list 和禁止 promotion 的策略。之所以不用同一仓库
   两个目录，是因为 GitHub deploy key 是 repository-scoped，不提供 path-scoped 写
   capability。
@@ -157,13 +158,14 @@ Formal Lane: external clean snapshot + exact artifact
   不能恢复自身快照。
 - relay 只传输状态、脱敏结果和证据引用，不替代 WORM/CAS、签名、snapshot receipt
   或 acceptance receipt；消息正文和日志永不作为 shell/PowerShell 指令执行。
-- product/control repositories 已创建并初始化且当前均为 private；旧 commit
-  `3e843912...` 曾完成 VM bootstrap finalization，host heartbeat 已创建且暂停。当前
-  tracked 文档与 public-visibility 工作包改变 commit/tree 或 binding，新 HEAD 重新完成
-  finalization 前 `CanStartVmBootstrap=false`。GitHub Free 对 private ruleset 返回 HTTP
-  403；用户已接受存量公开风险，public visibility 合同升版、服务端保护、
-  最小角色凭据、VM 产品 remote 只读负向验证、real guest reset、两端任务和 unattended
-  执行仍是 integration 阻断项。VM bootstrap 不等于 P10A-0A 完成。
+- product/control repositories 均已切换为 public；三个 active ruleset 已对 control
+  `main`、产品 `main` 与 `codex/repair/*` 实际施加禁止删除、禁止非快进和线性历史，
+  且没有 bypass actor。public-contract/cutover 质量锚为 `a09130f2...`；旧 commit
+  `3e843912...` 的 bootstrap bundle 与 task binding 仍只是历史。包含本说明的最终
+  tracked HEAD 重新完成全树门、18-entry bundle、暂停 heartbeat hash binding 和 CI 前，
+  `CanStartVmBootstrap=false`。最小角色凭据、运行时 protection assertion、VM 产品 remote
+  只读负向验证、real guest reset、两端任务和 unattended 执行仍是 integration 阻断项。
+  VM bootstrap 不等于 P10A-0A 完成。
 
 ## 当前加载顺序
 

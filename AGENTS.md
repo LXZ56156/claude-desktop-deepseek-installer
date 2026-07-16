@@ -70,7 +70,9 @@
   PowerShell、shell、Codex prompt 或操作指令直接执行。Fast Lane 消费方必须验证
   schema、control-repo 身份、hash、序号、前序消息和过期时间；Formal Lane 还必须
   验证 CAS 内容和签名。所有回传都必须先脱敏。
-- Fast Lane 首选共享私有 control repo 的宿主机/VM 双向 outbox，由两端
+- Fast Lane 首选两个物理单向、公开且受 protected-history ruleset 约束的 control
+  repos 组成宿主机/VM 双向 outbox；公开仓库内的所有 envelope 与诊断都必须满足
+  public-safe 字段白名单，且任何匿名读取都不产生 sender authority。两端由
   minute-based Codex Scheduled Tasks 自动轮询；需要低延迟时可加窄权限 watcher，
   并只用已验证 envelope 触发固定 `codex exec resume` 路径。日常循环使用 guest 内
   deterministic reset，不把 WORM、逐消息签名或每轮外部快照设为前置，正常路径

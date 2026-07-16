@@ -1,9 +1,9 @@
 # 外部合同与调研基线
 
-最后核验：2026-07-16
+最后核验：2026-07-17
 
-项目影响更新：2026-07-16（同步 public visibility 预检、双机 Codex operator
-coordination、自动轮询与 clean-start 分层策略）
+项目影响更新：2026-07-17（同步 public visibility/protected-history cutover、双机
+Codex operator coordination、自动轮询与 clean-start 分层策略）
 
 本文件是 Anthropic、DeepSeek、Windows、Git 和 OpenAI Codex 外部事实的唯一项目内
 来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和实物证据
@@ -54,12 +54,14 @@ CAS/receipts/signatures。
 
 若 control plane 由 GitHub 承载，可利用 ruleset/protected-ref 和 repository-scoped
 deploy key 收窄每个物理 repository 的权限；deploy key 不是 path-scoped capability，
-所以方向隔离来自两个 repository 与两套最小角色凭据，而不是目录约定。2026-07-15
-实测当前个人账号对 private repository 创建 ruleset 返回 HTTP 403，要求升级 GitHub
-Pro 或公开仓库。三个远端当前仍为 private；2026-07-16 用户选择 GitHub Free public
-方案，并接受现有 history/metadata 与未来 public outbox 可见性且不重写历史。它不是配置
-级降级，仍须先完成版本化合同迁移，再一并切换三仓、立即启用并验证服务端保护。迁移完成前 private 合同继续 fail
-closed。GitHub 只提供一种可选实现，项目不能把它限定为唯一 transport，也不能把 Git
+所以方向隔离来自两个 repository 与两套最小角色凭据，而不是目录约定。
+2026-07-15 当时实测个人账号对 private repository 创建 ruleset 返回 HTTP 403；
+2026-07-16 用户选择
+GitHub Free public 方案，并接受现有 history/metadata 与未来 public outbox 可见性且不
+重写历史。版本化 public 合同通过后，三仓已于 2026-07-17 切换为 public，并分别启用
+ruleset `19068339`、`19068292`、`19068313`。服务端已验证无 bypass actor，且对目标 refs
+实际施加 deletion、non-fast-forward 与 linear-history 约束；private 套餐的 HTTP 403
+不再是当前阻塞。GitHub 只提供一种可选实现，项目不能把它限定为唯一 transport，也不能把 Git
 remote 当作 WORM/CAS 或签名/receipt 服务。
 
 public control repository 的所有历史 envelope、ACK 与脱敏诊断对互联网可读。合同必须
@@ -286,7 +288,7 @@ HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并
   VM-only guest-reset dispatcher/provider boundary、两端 prompt/runbook 和 synthetic 演练。
 
 这些文件属于 OperatorCoordination development plane，不进入默认 bootstrap、
-ProductCore 或 Release 包。三个 private repositories 已创建，产品旧 `main` 已推送，
+ProductCore 或 Release 包。三个 public protected repositories 已部署，产品旧 `main` 已推送，
 两个 control `outbox/` 已初始化；这只完成 transport bootstrap，不等于角色授权。
 Windows reset adapter boundary 已实现精确 resource/provider allow-list、device/command
 trust、preflight/postcondition、action receipt 与 fail-closed escalation，但尚无 disposable
@@ -294,8 +296,8 @@ VM 的 device provisioning、Live mutation、idempotence 或 clean-receipt evide
 在宿主机/CI 执行，也不进入产品包。自由文本只是不受信数据，固定 prompt 不包含 deploy
 key、token 或其他凭据。
 
-private protected history（或等效 transport 强制）、两个方向的最小角色凭据、VM 产品
-remote 只读负向验证、real guest reset、VM automation、安全启用当前暂停的 host
+protected history 已部署并验证；两个方向的最小角色凭据、runtime protection assertion、
+VM 产品 remote 只读负向验证、real guest reset、VM automation、安全启用当前暂停的 host
 heartbeat 与两端无人值守闭环仍是外部阻断项。宿主机不得执行 product Live，VM 不得
 编辑、提交或推送产品代码。在这些证据完成前不得宣称 P10A-0A 完成。relay 仍只传输
 状态与诊断引用；正式判断消费独立 CAS、签名和 receipt。

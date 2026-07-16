@@ -1,6 +1,6 @@
 # 决策记录
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
 才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。
@@ -287,7 +287,8 @@ compensation；分层状态不能掩盖部分系统修改。
 - VM Codex 对产品仓库只读，只测试、分析和回传；它可以向独立 control repo 的 VM
   outbox 写结构化结果，但不得修改源码、ZIP、runbook 或 fixture。
 - Fast Lane（日常自动修复）MVP 使用两个物理 control repositories 的双向隔离
-  outbox；冻结实现当前为 private。envelope 绑定 CycleId、单调 sequence 和内容 hash，
+  outbox；2026-07-15 最初冻结的部署实例为 private，现已由 D-021 的 public protected
+  transport 实例替代。envelope 绑定 CycleId、单调 sequence 和内容 hash，
   由两端分钟级 Codex Scheduled Tasks 自动轮询。可用低延迟 watcher 触发受限
   `codex exec`/resume，不要求用户人工搬文件；transport 可替换，不限定 GitHub。
 - P10A 固定精确 commit/calibration artifact；P11 固定 P10B candidate exact
@@ -306,10 +307,10 @@ compensation；分层状态不能掩盖部分系统修改。
 
 ## D-021：GitHub Free public visibility 迁移
 
-**状态：冻结目标（2026-07-16；待部署）**
+**状态：冻结并已部署（2026-07-17）**
 
-用户选择不升级 GitHub Pro，并要求评估把产品与两个 control repositories 改为 public。
-当前远端仍为 private；用户已作出以下不可逆风险选择：
+用户选择不升级 GitHub Pro，并把产品与两个 control repositories 改为 public；切换前
+已明确确认不可逆公开风险，并作出以下选择：
 
 - `PrivacyDecision=ACCEPTED`：接受 commit metadata、历史运营信息和未来 public outbox
   对互联网可见。
@@ -317,11 +318,14 @@ compensation；分层状态不能掩盖部分系统修改。
 - `ResidualPrivacyAudit=NOT_PERFORMED_ACCEPTED_RISK`：Actions logs/artifacts、远端未枚举
   refs/tags 和 control author metadata 不再作为 visibility cutover 前置门。
 
-以下代码与保护门仍必须关闭后才能修改 visibility：
-- 升版 visibility/protection receipt、policy/readiness/outbox/onboarding、prompts/runbook
-  与测试，明确 `PUBLIC`，不得伪报 `Private=true`。
-- 把三个 repositories 一并切换，立即部署禁止删除、禁止 force-push、线性历史与角色限制，
-  并以真实负向测试验证；任一仓未保护时继续 fail closed。
-- 从新 clean exact commit 重新运行统一门、重建 onboarding bundle、重绑仍暂停的 heartbeat
-  并等待 CI。D-021 只有在这些证据完成后才能转为冻结并替代 D-020 的 private transport
-  实例；宿主机 Live、VM 只读产品代码和 Formal Lane 边界不变。
+版本化 visibility/protection receipt、policy/readiness/outbox/onboarding、prompts/runbook
+与测试已在 `a09130f2afadb6dcf4cfc60a61a72095dc41faa6` 明确冻结 `PUBLIC` 和
+public-safe envelope。2026-07-17 三仓均已切换为 public 并启用
+`cddsi-public-protected-history-v1`：产品 ruleset `19068339`，host-to-VM
+`19068292`，VM-to-host `19068313`。三个 ruleset 均无 bypass actor，规则精确为
+禁止删除、禁止非快进和要求线性历史；effective-rules 已覆盖三仓 `main` 与产品
+`codex/repair/*`。D-021 因而替代 D-020 的 private transport 实例。
+
+当前仍须从包含最新交接文档的 clean exact commit 重新运行统一门、重建 onboarding
+bundle、重绑仍暂停的 heartbeat 并等待最终 CI。角色限制继续由尚未发放的窄凭据和
+真实负向权限测试完成；宿主机 Live、VM 只读产品代码和 Formal Lane 边界不变。

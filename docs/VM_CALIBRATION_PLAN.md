@@ -1,6 +1,6 @@
 # P10A disposable VM 窄校准计划
 
-更新日期：2026-07-15
+更新日期：2026-07-17
 
 ## 定位
 
@@ -16,7 +16,7 @@ P10A 只解决无法在开发宿主机 synthetic 证明、但冻结 P10B 最终�
 双机角色、消息状态机、清洁启动和证据转交以 `VM_TEST_RELAY.md` 为 operator
 coordination 权威。宿主机 Codex 是唯一代码写入者，负责本地门、提交、推送和候选
 重建；VM Codex 只测试、分析和回传，不得修改源码、ZIP、runbook 或 fixture。
-日常预检/缺陷复现走 Fast Lane：私有 control repo 双 outbox、CycleId/sequence/hash、
+日常预检/缺陷复现走 Fast Lane：public protected control repo 双 outbox、CycleId/sequence/hash、
 两端分钟级 Codex Scheduled Tasks 和 deterministic guest reset；其结果只用于诊断。
 本文件产生可消费 P10A evidence 的运行属于 Formal Lane，必须使用独立 CAS/receipt/
 signature 和外部 clean snapshot。

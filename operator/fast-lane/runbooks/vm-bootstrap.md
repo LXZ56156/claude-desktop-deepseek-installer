@@ -39,9 +39,10 @@ the product remote, execute a product test, or run reset Live.
    policy, runner, product commit/tree, bundle, and manifest hashes.
    Also bind the OpenSSH/known-hosts hashes and the three distinct credential
    profile receipts; none may be inferred from a message. Freeze
-   `VmInitialStatus=PAUSED`. Until repository protection is provisioned, bind
-   the protection assertion/hash/token fields as explicitly `UNPROVISIONED`
-   so the task can only return `BLOCKED`.
+   `VmInitialStatus=PAUSED`. Until the current out-of-band runtime protection
+   assertion/hash/token is independently provisioned and bound to this task,
+   bind those fields as explicitly `UNPROVISIONED` so the task can only return
+   `BLOCKED`. This does not mean that the server ruleset is absent.
 5. Stop at `VM_BOOTSTRAP_STAGED`. This state authorizes no repository polling,
    product test, product Live, or product-code mutation.
 

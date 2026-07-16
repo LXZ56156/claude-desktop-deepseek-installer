@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 ## 核心原则
 
@@ -79,14 +79,15 @@ bootstrap 加载，也不进入 Release。trusted harness 只按精确 allow-lis
 owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测试连接 remote、
 加载真实 credential 或进入 VM/system Live。这不把 operator modules 变成产品依赖：
 
-- Fast Lane（日常自动修复）MVP 使用一个逻辑双 outbox、两个物理单向私有 control
+- Fast Lane（日常自动修复）MVP 使用一个逻辑双 outbox、两个物理单向 public protected control
   repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，`vm-to-host` 仅 VM 写/
   HostCoordinator 读。envelope 绑定 repository identity、CycleId、单调 sequence、
   previous hash 和内容 hash。
 - 分钟级 Codex automation 是外部 operator coordination，不是产品创建或管理的
-  Windows Scheduled Task，也不授予产品 Live。private repository pair 已创建，宿主机
+  Windows Scheduled Task，也不授予产品 Live。public protected repository pair 已创建，宿主机
   heartbeat 已按分钟创建但保持暂停；VM task 必须由 VM Codex 设备创建并同样先暂停。
-  protected history、最小 credentials、VM 负向权限验证、安全启用与 unattended
+  protected history 已通过真实 ruleset/effective-rules receipt；最小 credentials、runtime
+  assertion、VM 负向权限验证、安全启用与 unattended
   acceptance 尚未完成。
 - Formal Lane 的 append-only/WORM CAS、独立签名、外部 snapshot supervisor 和正式
   acceptance validator 尚未实现；Fast Lane synthetic PASS 不能替代这些门。
@@ -133,17 +134,18 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
 
-上述映射曾证明旧 commit `3e843912...` 可制作 VM onboarding；当前 tracked 变更重新
-finalization 前 `CanStartVmBootstrap=false`。它不证明 protected history、角色 credential、
-VM reset 或 unattended loop 已通过。若采用 GitHub Free public 三仓，必须先增加
-public-protected 正向、visibility mismatch、缺保护、force-push/delete/rewrite 和错误角色
-写入负向测试；旧 private-only 断言不得静默删除或伪造 `Private=true`。两端 minute tasks
+上述映射曾证明旧 commit `3e843912...` 可制作 VM onboarding；public-contract/cutover
+提交 `a09130f2...` 又以双引擎各 430 项和全部 zero metrics 验证 PUBLIC 合同。当前 tracked
+文档提交重新 finalization 前 `CanStartVmBootstrap=false`。真实 ruleset/effective-rules
+receipt 已证明 protected history 生效；本地测试覆盖 public-protected 正向、visibility
+mismatch、缺保护、public-outbox secret 与错误角色写入负向合同，但仍不证明窄角色
+credential、VM reset 或 unattended loop 已通过。两端 minute tasks
 在这些 integration gates 完成前都必须保持暂停。首次 P10A 另需外部 snapshot receipt、
 独立 CAS 与签名，Fast Lane 测试绝不能替代。
 
 Release secret scanner 只证明当前 PackageFiles 的 source/staging/ZIP/extracted bytes；它不
 覆盖 Git history/metadata、DevelopmentOnly 文档、PR、Actions logs/artifacts 或 control-repo
-history。用户已接受未审计的存量范围，不把它们作为 cutover 门；但 public outbox 对
+history。用户已接受未审计的存量范围且 cutover 已完成；public outbox 对
 credential/Authorization/secret 和未脱敏自由文本的禁令及负向测试仍必须通过。
 
 ## 本地依赖

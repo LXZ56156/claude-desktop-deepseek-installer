@@ -1,6 +1,6 @@
 # 宿主机与 VM Codex 测试中继协议
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 ## 定位与权威范围
 
@@ -12,7 +12,7 @@
 Release ZIP、默认 bootstrap 或 trusted test harness。relay 是独立的 operator
 coordination plane；产品平面、测试执行平面、证据平面和协调平面必须分离记账。
 
-截至 2026-07-16，本仓库已经实现 Fast Lane 的宿主机侧 bootstrap 合同与 runtime：
+截至 2026-07-17，本仓库已经实现 Fast Lane 的宿主机侧 bootstrap 合同与 runtime：
 `lib/vm-test-relay.ps1` 提供 canonical JSON、hash、envelope/state/transition 的纯函数
 合同；`lib/vm-reset.ps1` 提供 fake/TestSafe/DryRun 的 ownership、baseline、plan、
 receipt 与 fail-closed reset 合同；`lib/vm-fast-lane-readiness.ps1` 分开计算 VM
@@ -22,14 +22,14 @@ boundary、两端轮询模板、runbook 与本地双 outbox synthetic rehearsal�
 DevelopmentOnly 的 operator coordination material，不由默认 bootstrap 加载，也不进入
 Release ZIP。
 
-私有产品 remote 与两个 control repository 已创建，产品旧 `main` 基线已推送，两个
-`outbox/` 已初始化。宿主实现可从 clean exact commit 生成 immutable diagnostic onboarding
-ZIP。旧 commit `3e843912df2543c1da05b09061970faff511d016` 已完成最终统一门、实际
-18-entry ZIP、暂停 heartbeat hash binding 与 PR CI；本次 tracked 文档/public-visibility
-工作包会产生新 commit/tree 或改变 policy binding，所以旧 ZIP 只作历史 anchor。新 HEAD
-重新 finalization 前，`CanStartVmBootstrap=false`。GitHub 当前套餐以 HTTP 403 拒绝
-private ruleset；窄
-HostCoordinator/VmTester credentials、VM 只读身份及负向写验证、VM reset 设备信任/实测、
+public 产品 remote 与两个 public control repository 已部署，产品旧 `main` 基线已推送，
+两个 `outbox/` 已初始化。三个无 bypass protected-history ruleset 已对目标 refs 实际施加
+禁止删除、禁止非快进和线性历史。宿主实现可从 clean exact commit 生成 immutable
+diagnostic onboarding ZIP。旧 commit `3e843912df2543c1da05b09061970faff511d016` 的
+18-entry ZIP/task binding 是历史 anchor；public-contract/cutover 质量锚 `a09130f2...`
+通过双引擎各 430 项、Release DryRun 和 PR CI，但包含本说明的最终 tracked HEAD 仍须
+重新 finalization，所以 `CanStartVmBootstrap=false`。窄 HostCoordinator/VmTester
+credentials、runtime protection assertion、VM 只读身份及负向写验证、VM reset 设备信任/实测、
 任务安全启用和无人值守闭环仍未完成，所以 **VM integration blocked**。宿主机 heartbeat
 已创建并保持暂停；当前变更提交后必须重绑到新最终值。VM task 必须从 VM 设备创建且
 初始也必须暂停。Formal Lane 的 CAS、签名和外部 snapshot supervisor 也未实现。因此
@@ -71,7 +71,7 @@ HostCoordinator/VmTester credentials、VM 只读身份及负向写验证、VM re
 Fast Lane 是优先落地的高效率 MVP，用于开发期缺陷定位、宿主修复和快速回归。其
 最低基础设施只有：
 
-- 一个逻辑 control plane，由两个物理单向私有 repository 组成；
+- 一个逻辑 control plane，由两个物理单向 public protected repository 组成；
 - `host-to-vm` 只允许 HostCoordinator 写、VmTester 读；
 - `vm-to-host` 只允许 VmTester 写、HostCoordinator 读；
 - Git 托管认证、路径权限、禁止 force-push/改写历史；
@@ -191,10 +191,11 @@ tag、release、issue、PR 或 workflow dispatch 的权限。
 
 ### 产品代码 remote
 
-产品代码使用私有 Git remote `LXZ56156/claude-desktop-deepseek-installer`，本轮 repair
+产品代码使用 public protected Git remote `LXZ56156/claude-desktop-deepseek-installer`，本轮 repair
 ref 是 `codex/repair/p10a-0a-fast-lane`。宿主机最终只能向受保护的 repair branch 推送，
-VM 使用独立只读 deploy key 或等效细粒度凭据。当前 GitHub 套餐拒绝 private ruleset，
-所以这项服务端强制与角色凭据仍未满足；交互式 bootstrap admin 不得交给 automation。
+VM 使用独立只读 deploy key 或等效细粒度凭据。产品 ruleset `19068339` 已对 `main` 与
+`codex/repair/*` 实际施加历史保护；角色凭据与 runtime assertion 仍未满足，交互式
+bootstrap admin 不得交给 automation。
 onboarding manifest 另绑定产品 repository numeric ID/node ID、精确 commit/tree 与固定
 Git 工具 hash；显示名或 remote URL 不能单独替代身份验证。
 
@@ -216,7 +217,7 @@ source commit 和签名策略。
 
 ### control repository 与双 outbox
 
-Fast Lane 冻结为“一个逻辑双 outbox、两个物理单向私有 repository”：
+Fast Lane 冻结为“一个逻辑双 outbox、两个物理单向 public protected repository”：
 `LXZ56156/cddsi-host-to-vm` 与 `LXZ56156/cddsi-vm-to-host` 已创建并初始化。两个 repository
 都与产品代码 remote 分离；该拆分是实际权限边界，不是部署细节。两端 Codex automation
 最终通过出站轮询消费各自 inbox，正常路径无需用户逐轮搬运文件：
@@ -541,14 +542,14 @@ receipt。
 
 ## 自动化实现状态
 
-正常通信路径是两个单向私有 control repository 组成的逻辑双 outbox 与两端自动监控，
+正常通信路径是两个单向 public protected control repository 组成的逻辑双 outbox 与两端自动监控，
 不需要用户逐轮复制请求、结果或 `FIX_READY`。两端只对已验证的新 message commit 作出
 反应。当前 canonical/schema/state validator、固定 Git outbox runner、readiness、
 deterministic onboarding、VM-only reset boundary、两端 prompt/runbook、synthetic dry
-rehearsal 与真实 private repository pair 已实现。旧 finalization anchor 已完成；当前
-文档/public-visibility 工作包完成并对新 HEAD 重建 bundle、重绑暂停 heartbeat 后才再次
-bootstrap ready。protected
-history、最小凭据、VM device/provider evidence、VM task 安全绑定、启用 host heartbeat
+rehearsal 与真实 public protected repository pair 已实现。旧 finalization anchor 已完成；
+当前文档更新提交并对新 HEAD 重建 bundle、重绑暂停 heartbeat 后才再次 bootstrap ready。
+服务端 protected history 已完成；最小凭据、runtime assertion、VM device/provider evidence、
+VM task 安全绑定、启用 host heartbeat
 和无人值守验收仍是外部 integration 工作，不能直接在现有宿主机进入产品 Live。
 
 ### Codex automation
@@ -557,14 +558,15 @@ history、最小凭据、VM device/provider evidence、VM task 安全绑定、�
 创建、枚举或管理的 Windows Scheduled Task，也不得进入产品 provider 或 Release。它
 不会授予 operation grant，不会扩大宿主机权限；宿主机 automation 永远不得执行产品
 Live。`operator/fast-lane/prompts/host-poll.md` 和 `vm-poll.md` 是固定模板；宿主机
-heartbeat `cddsi-fast-lane-hostcoordinator-minute-poll` 已按分钟创建，但在 protected
-history 与窄凭据就绪前保持暂停。本机 Codex 没有 VM project，VM task 必须从 VM
+heartbeat `cddsi-fast-lane-hostcoordinator-minute-poll` 已按分钟创建；服务端 protected
+history 已就绪，但它仍须在最终 bundle hash binding、runtime assertion 与窄凭据就绪前
+保持暂停。本机 Codex 没有 VM project，VM task 必须从 VM
 设备创建并先保持暂停；policy/onboarding manifest 冻结两端初始状态为 `PAUSED`。
 bootstrap 阶段的 protection assertion/hash/token 明确标为 `UNPROVISIONED`，因此任务
 只能 fail closed，不能轮询。bootstrap 只允许 bundle 校验、VM 本地 key provisioning、
 工具 hash 回报和 paused task staging；它不允许轮询 control ref 或运行产品测试。
 VM 必须生成三把不可跨库复用的 repository-scoped key：product read、host-to-VM read、
-VM-to-host append；单一 deploy key 不能覆盖这三个物理私库。
+VM-to-host append；单一 deploy key 不能覆盖这三个物理仓库。
 当前未完成两端无人值守证明。
 
 - 宿主机 minute-based scheduled task 在现有开发任务中轮询 `vm-to-host/`；收到合法
@@ -598,7 +600,8 @@ message hash；发现新消息后触发 `codex exec resume` 恢复对应任务�
 
 两种方案都必须提供：单实例锁、最大运行时、重试上限、输出大小上限、消息去重、
 审计日志脱敏、STOP 处理和人工接管。固定 Git runner 已实现这些 bounded contract；
-protected history、凭据发放、VM device provisioning、两端 paused task 的安全启用和
+服务端 protected history 已部署；凭据发放、runtime assertion、VM device provisioning、
+两端 paused task 的安全启用和
 unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授权边界。
 任何 protection receipt rotation 都要求先暂停 task、外部更新 authority assertion 与
 固定 hash/token，再恢复；不得把观察到的新 receipt 当作新的信任配置。
@@ -646,8 +649,8 @@ unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授
 
 先用最小基础设施打通高效率日常闭环：
 
-- 配置私有产品 remote、repair branch protection 与 VM 只读身份；
-- 创建两个单向私有 control repository：`host-to-vm` 仅 HostCoordinator 写、VM 读，
+- 配置 public protected 产品 remote、repair branch protection 与 VM 只读身份；
+- 创建两个单向 public protected control repository：`host-to-vm` 仅 HostCoordinator 写、VM 读，
   `vm-to-host` 仅 VM 写、HostCoordinator 读，并禁止 force-push 和历史改写；
 - 实现 canonical schema、CycleId、sequence、previous hash、单 active cycle 和 STOP；
 - 配置宿主机与 VM 的 minute-based Codex Scheduled Tasks；
@@ -660,23 +663,23 @@ unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授
 也不是 MVP 阻塞项。
 
 当前完成了本地合同、固定 outbox/runtime、readiness、deterministic onboarding、
-VM-only reset boundary、prompt/runbook、纯 synthetic rehearsal，以及三个 private
+VM-only reset boundary、prompt/runbook、纯 synthetic rehearsal，以及三个 public protected
 repositories 与两个 `outbox/` 的 bootstrap。旧 commit `3e843912...` 的宿主机
-finalization 已通过；当前 tracked 变更使其成为历史 anchor，因此新全树门、Release
+finalization 已通过；`a09130f2...` 又完成 PUBLIC 合同门与远端 cutover。当前 tracked
+文档提交后仍须以最终 HEAD 完成新全树门、Release
 DryRun、clean commit/push、实际 immutable bundle、暂停 task binding 与 CI 完成前，
 `CanStartVmBootstrap=false`。VM task 必须从 VM device 创建并先暂停。
 
-GitHub private ruleset 当前返回 HTTP 403，protected history 与 narrow credentials
+三个 active ruleset 已验证 protected history；narrow credentials 与 runtime assertion
 尚未满足，因此 `CanStartVmIntegration` 必须保持 false。remote credential 负向测试、
 VM reset 实测、两端任务安全启用和 unattended 闭环也尚未满足；`P10A0AComplete`
 仍为 false。
 
-用户提出用 GitHub Free public repositories 代替 Pro。当前 private visibility 是
-policy/readiness/outbox receipt/onboarding/prompt/runbook/tests 的旧合同。用户已接受现有
-history/metadata 和未来 public outbox 可见性、不重写历史，并把剩余存量审计标为 accepted
-risk。迁移仍必须先冻结 public-safe schema/禁止 secret 内容，升版合同并通过 public-protected 正向、
-visibility mismatch 与敏感字段负向测试，再一并切换三仓、立即配置服务端保护并重新
-finalization。
+用户选择用 GitHub Free public repositories 代替 Pro，并接受现有 history/metadata 和未来
+public outbox 可见性、不重写历史；剩余存量审计为 accepted risk。public-safe schema、
+禁止 secret 内容、PUBLIC policy/readiness/outbox receipt/onboarding/prompt/runbook/tests
+及正负向合同已在切换前升版。三仓现已 public，ruleset IDs 为产品 `19068339`、
+host-to-VM `19068292`、VM-to-host `19068313`；最终 tracked HEAD 仍须重新 finalization。
 
 ### P10A-0B Formal Lane gate
 

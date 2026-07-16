@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -60,6 +60,8 @@ Scaffold 已可执行 Live。
   `config/execution-boundaries.psd1`。
 - 固定 Pester 来源、整树 hash 和 isolation suite 计数：
   `config/dev-dependencies.psd1`。
+- Fast Lane 的预期 PUBLIC 双仓身份、角色、服务端保护要求和初始 `PAUSED` 状态：
+  `config/fast-lane-policy.psd1`；真实远端部署 receipt 只记录在当前 `docs/HANDOFF.md`。
 - Release 文件分类：`scripts/release-manifest.psd1`。
 - 当前安全默认值：`config/deepseek-desktop.defaults.json`。
 - 实际 Git 状态：只通过标准 HostSandbox 质量门中的隔离 Git inventory 核验，
@@ -67,8 +69,8 @@ Scaffold 已可执行 Live。
 
 P2-P10A 已把配置、环境、供应链、credential、恢复、重启、fake 编排、synthetic
 验收与 VM calibration evidence 建成纯/fake 合同；P10B 宿主机支撑合同也已通过
-统一门。P10A-0A 的宿主机侧 Fast Lane 实现现已包括私有产品 remote、两个物理单向
-private control repositories、固定 Git outbox runtime、readiness resolver、确定性 VM
+统一门。P10A-0A 的宿主机侧 Fast Lane 实现现已包括 public protected 产品 remote、
+两个物理单向 public protected control repositories、固定 Git outbox runtime、readiness resolver、确定性 VM
 onboarding builder、VM-only reset 边界以及两端分钟级 prompt/runbook。宿主机 task 已
 创建且暂停；VM task 必须从 VM 设备创建并同样先保持暂停。当前精确收尾状态只以
 `docs/HANDOFF.md` 为准。
@@ -80,13 +82,13 @@ finalization 前；本次文档一致性修复使最终 HEAD/tree 与旧锚点�
 历史锚点，不能作为新 HEAD 的 VM 输入。新 HEAD 重新通过统一门、提交/推送、bundle
 校验、暂停任务重绑和 CI 前，`CanStartVmBootstrap=false`。
 
-三个 GitHub repositories 当前仍为 private；当前代码、policy、prompts、readiness、
-onboarding 和测试均把 private visibility 冻结为 fail-closed 合同，不能先把远端改 public
-再补实现。当前套餐对 private ruleset 返回 HTTP 403，窄权限角色凭据也尚未发放，因此
-**VM integration 仍阻断**。首次 P10A 还必须经过外部 clean snapshot receipt、独立 CAS
+三个 GitHub repositories 已全部切换为 public；版本化合同明确要求 `PUBLIC`，三个
+protected-history ruleset 已无 bypass 地对目标 refs 实际施加禁止删除、禁止非快进和
+线性历史。窄权限角色凭据、runtime protection assertion 与 VM 负向权限证据尚未发放，
+因此 **VM integration 仍阻断**。首次 P10A 还必须经过外部 clean snapshot receipt、独立 CAS
 与签名的 Formal Lane。整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
 
-公开前预检对产品仓库当前已获取 repair ref（含已获取 main 历史）可达对象的常见凭据
+2026-07-16 公开前预检对产品仓库当时已获取 repair ref（含已获取 main 历史）可达对象的常见凭据
 模式扫描为零。用户已明确接受提交元数据、历史运营信息和未来 public outbox 全网可读，
 不重写历史；剩余存量审计标记为 accepted risk，不再阻断 cutover。credential、Authorization
 数据和未脱敏 secret 仍绝对禁止进入 public repositories。

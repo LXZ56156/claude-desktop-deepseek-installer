@@ -35,15 +35,17 @@
 - 增加随包 `USER_GUIDE.md`、`TROUBLESHOOTING.md` 和 `PRIVACY.md`，明确当前仅为
   Scaffold、未来正式包流程与隐私边界。
 - 冻结 P10A-0A 双机 VM 测试中继方案：宿主机 Codex 独占代码写入，VM Codex
-  只测试、分析和回传；Fast Lane 的一个逻辑双 outbox 由两个物理单向私有 control
-  repos 承载，两端定时轮询并在 guest 内执行确定性 reset；Formal Lane 再为
+  只测试、分析和回传；Fast Lane 的一个逻辑双 outbox 由两个物理单向 public
+  protected control repos 承载，两端定时轮询并在 guest 内执行确定性 reset；Formal Lane 再为
   P10A/P11 接入 CAS、签名和外部快照，且 P11 只验收精确不可变候选。
 - 完成 P10A-0A 本地 TestSafe/DryRun 合同切片：增加 `DirectionalRepositoryPair`、
   relay/state/hash、fake reset/`CLEAN_READY`、两端轮询 prompts、synthetic rehearsal，
   并把 operator coordination plane 隔离为 `DevelopmentOnlyFiles`。
-- 创建私有产品 remote 与两个物理单向 control repos，推送旧 `main` 基线并初始化两个
-  `outbox/`；创建暂停的宿主机分钟级 heartbeat。当前 GitHub 套餐拒绝 private ruleset，
-  角色最小权限凭据、VM 产品 remote 负向写验证、真实 VM reset adapter、VM task 与
+- 创建产品 remote 与两个物理单向 control repos，推送旧 `main` 基线并初始化两个
+  `outbox/`；2026-07-17 三仓已公开，并分别启用无 bypass 的 protected-history
+  ruleset `19068339`、`19068292`、`19068313`，目标 refs 的禁止删除、禁止非快进和
+  线性历史已实际生效；创建暂停的宿主机分钟级 heartbeat。角色最小权限凭据、runtime
+  protection assertion、VM 产品 remote 负向写验证、真实 VM reset adapter、VM task 与
   无人值守闭环仍未部署，不能宣称 P10A-0A 完成。
 - 产品工作流仍保持 Scaffold；未执行任何宿主机 Live、真实系统探测或 VM 验收。
 

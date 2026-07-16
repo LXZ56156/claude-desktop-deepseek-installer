@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -53,13 +53,12 @@ pinned genesis 的诊断 onboarding ZIP。旧 commit `3e843912...` 已完成 cle
 前 `CanStartVmBootstrap=false`。完成后也只允许 VM 离线核验、设备本地密钥生成和创建
 仍暂停的 VM task。
 
-真实 protected history 当前被 private GitHub 套餐以 HTTP 403 阻断，窄权限角色凭据、
-VM 负向权限证据、VM provider/device trust、reset smoke 与 unattended acceptance 尚未
-完成，所以 **VM integration 仍 fail closed**。这些 operator runtime 不解除宿主机
+真实 protected history 已通过 public ruleset/effective-rules receipt 部署；窄权限角色凭据、
+runtime protection assertion、VM 负向权限证据、VM provider/device trust、reset smoke 与
+unattended acceptance 尚未完成，所以 **VM integration 仍 fail closed**。这些 operator runtime 不解除宿主机
 Live 边界，也不授权 VM 修改产品代码。Formal Lane 的外部 snapshot receipt、独立
 CAS/signature/receipt authority 仍未就绪，不能据此声称 P10A-0A 或 P10A 完成。三个
-远端当前仍为 private；用户已接受存量公开风险，但在 public visibility 合同升版、测试与
-服务端保护部署完成前，不得先改 public。
+远端现均为 public；公开不放松 secret、Authorization、credential 或宿主机零接触边界。
 
 ## 零接触定义
 
@@ -320,8 +319,8 @@ Fake 层必须覆盖：
 - 两端分钟级 Codex automation 属于外部 operator coordination，不是产品 Scheduled
   Task，不能扩大宿主机 Live 或让 VM 修改产品代码。repository pair、固定
   outbox runtime、prompt、onboarding 和 synthetic 演练已实现；宿主机 heartbeat 已
-  创建且暂停。VM task 必须从 VM 设备创建并先保持暂停。protected history、
-  最小 credentials、任务安全启用和 unattended acceptance 尚未完成。
+  创建且暂停。VM task 必须从 VM 设备创建并先保持暂停。protected history 已部署；
+  最小 credentials、runtime assertion、任务安全启用和 unattended acceptance 尚未完成。
 - Formal Lane 用于 P10A/P11 正式证据，必须由 VM 外部的 hypervisor supervisor
   恢复固定快照并签发 receipt，并使用独立 CAS/receipts/signatures。VMP/重启/卸载、
   补偿未知、baseline drift 或 reset 失败必须从 Fast Lane 升级；VM Codex 不能恢复

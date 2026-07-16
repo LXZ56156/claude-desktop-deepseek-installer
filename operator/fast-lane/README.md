@@ -66,37 +66,42 @@ The VM may test, analyze, reset only allow-listed owned test resources, and
 append diagnostic results to its one control repository; it must not edit,
 commit, or push product code, change runbooks, or build candidates.
 
-Current deployment state (2026-07-16):
+Current deployment state (2026-07-17):
 
-- Product code: `LXZ56156/claude-desktop-deepseek-installer` (private;
-  repository ID `1301870422`, node ID `R_kgDOTZj3Vg`).
-- Host to VM: `LXZ56156/cddsi-host-to-vm` (private; repository ID
+- Product code: `LXZ56156/claude-desktop-deepseek-installer` (public;
+  repository ID `1301870422`, node ID `R_kgDOTZj3Vg`, protected-history
+  ruleset ID `19068339` covering `main` and `codex/repair/*`).
+- Host to VM: `LXZ56156/cddsi-host-to-vm` (public; repository ID
   `1301870499`, node ID `R_kgDOTZj3ow`, ref `refs/heads/main`, genesis
-  `179cb95df432392e6ecd901c9008c01e4b41003e`).
-- VM to host: `LXZ56156/cddsi-vm-to-host` (private; repository ID
+  `179cb95df432392e6ecd901c9008c01e4b41003e`, protected-history ruleset
+  ID `19068292`).
+- VM to host: `LXZ56156/cddsi-vm-to-host` (public; repository ID
   `1301870545`, node ID `R_kgDOTZj30Q`, ref `refs/heads/main`, genesis
-  `d88fe54d624bb5699751522e80e1cc4cd367ec33`).
-- The host-side diagnostic implementation is feature-complete. Commit
-  `3e843912df2543c1da05b09061970faff511d016` completed the full dual-engine
-  gates, Release DryRun, one immutable 18-entry ZIP, paused heartbeat hash
-  binding, and PR CI. The current tracked documentation/public-visibility work
-  changes the commit/tree or policy binding, so that ZIP is now a historical
-  anchor. A new clean commit must repeat finalization before VM bootstrap is
-  authorized. This never authorizes polling or a product test.
-- Host Codex heartbeat: `cddsi-fast-lane-hostcoordinator-minute-poll`, paused
-  until a narrow HostCoordinator credential, append-only server protection,
-  and its protected authority assertion are verified.
+  `d88fe54d624bb5699751522e80e1cc4cd367ec33`, protected-history ruleset
+  ID `19068313`).
+- All three rulesets are active with no bypass actor and apply deletion,
+  non-fast-forward, and required-linear-history rules to their effective refs.
+- The host-side diagnostic implementation is feature-complete. Public-contract
+  commit `a09130f2afadb6dcf4cfc60a61a72095dc41faa6` passed both 430-test
+  engines, Release DryRun, and PR CI, then the three-repository cutover was
+  verified. The current tracked handoff update changes the tree, so a new clean
+  commit must repeat finalization and produce a new 18-entry bundle before VM
+  bootstrap is authorized. This never authorizes polling or a product test.
+- Host Codex heartbeat: `cddsi-fast-lane-hostcoordinator-minute-poll`, paused.
+  Server protection is verified; the task still requires the final bundle hash
+  binding, a narrow HostCoordinator credential, and its protected authority
+  assertion before any polling.
 - VM Codex task: not created; it must be created from the VM Codex device after
   bundle verification and must initially be paused. It may be activated only
   after three distinct repository-scoped identities (product read,
   host-to-VM read, and VM-to-host append) pass negative permission tests, the
   current protection assertion/hash/token is independently provisioned, and
   the VM reset authority/device/anchor-grant trust gates are ready.
-- GitHub rejected private-repository rulesets for the current account plan.
-  The user accepted the existing history/metadata exposure and chose public
-  transport without history rewrite. All three remotes remain private until the
-  versioned PUBLIC contract passes its gates; then they must change together,
-  receive immediate server protection, and be re-finalized.
+- GitHub rejected private-repository rulesets for the account plan. The user
+  accepted the irreversible history/metadata exposure and chose public transport
+  without history rewrite. The versioned PUBLIC contract passed first; all three
+  remotes are now public and protected, but the final tracked commit still needs
+  its own bundle/task/CI finalization.
 - Narrow, non-admin credentials for both roles remain an external integration
   gate. The interactive bootstrap administrator credential must never be used
   by either minute task.
@@ -108,9 +113,10 @@ The readiness states are deliberately separate:
   and a newly hash-bound, still-paused host heartbeat. Bootstrap remains limited
   to offline bundle verification, VM-local key creation, tool/hash reporting,
   and creation of the still-paused VM task.
-- `CanStartVmIntegration`: no until protected history and the narrow
-  HostCoordinator credential are independently evidenced. VM polling, remote
-  negative-permission tests, reset smoke, and unattended smoke remain pending.
+- `CanStartVmIntegration`: no. Protected history is independently evidenced;
+  the narrow HostCoordinator credential and runtime authority assertion are
+  not. VM polling, remote negative-permission tests, reset smoke, and
+  unattended smoke remain pending.
 - `P10A0AComplete` and `CanStartFormalP10A`: no. The first Formal P10A run also
   requires an external clean-snapshot receipt, independent CAS, and signatures.
 

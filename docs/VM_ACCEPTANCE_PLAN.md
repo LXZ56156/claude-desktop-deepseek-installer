@@ -1,6 +1,6 @@
 # 后续虚拟机 Codex 验收计划
 
-更新日期：2026-07-15
+更新日期：2026-07-17
 
 ## 状态
 
@@ -18,7 +18,7 @@ P10A 已对部分 MSIX、Git、helper/chooser 和 HKCU 行为做过限域实物�
 代码写入者，负责修复、本地门、提交、推送和 P10B 候选重建；VM Codex 只测试、
 分析和回传，不能修改源码、ZIP、runbook 或 fixture。
 
-日常缺陷复现和修复反馈走 Fast Lane：私有 control repo 双 outbox、
+日常缺陷复现和修复反馈走 Fast Lane：public protected control repo 双 outbox、
 CycleId/sequence/hash、两端分钟级 Codex Scheduled Tasks 与 deterministic guest
 reset；它不要求每轮 WORM/message signing/整机快照，也不能产生 P11 PASS。本计划
 定义的是 Formal Lane，正式证据使用独立 CAS/receipt/signature 和外部 clean snapshot。

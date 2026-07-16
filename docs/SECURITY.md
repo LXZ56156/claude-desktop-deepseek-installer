@@ -1,6 +1,6 @@
 # 安全设计
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 ## 安全目标
 
@@ -207,10 +207,10 @@ hash”的矛盾要求。
 Fast Lane 的逻辑 control plane 与产品仓库分离。GitHub deploy key 是
 repository-scoped、不是 path-scoped；因此 GitHub transport 不能用同一 repository
 内的两个目录和两把 writable deploy key 声称精确方向隔离。当前冻结拓扑使用两个
-  物理单向 private repository：HostCoordinator 只写 host-to-VM repository，VmTester
-  只写 VM-to-host repository，并分别只读另一方向。三个 private repositories 与两个
-  control `outbox/` 已 bootstrap；GitHub 当前套餐以 HTTP 403 拒绝 private ruleset，
-  因此尚未发放 writer 凭据。两端分钟级 Codex Scheduled Tasks 最终轮询 inbox；可增加低延迟
+物理单向 public protected repository：HostCoordinator 只写 host-to-VM repository，
+VmTester 只写 VM-to-host repository，并分别只读另一方向。三个 repositories 与两个
+control `outbox/` 已 bootstrap；三个无 bypass ruleset 已实际施加删除、非快进和线性历史
+约束，但方向隔离 writer 凭据尚未发放。两端分钟级 Codex Scheduled Tasks 最终轮询 inbox；可增加低延迟
   watcher 触发受限 `codex exec`/resume，但 transport 和自动化均不进入产品信任根。
 
 本地实现边界如下：
@@ -295,10 +295,11 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
   rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现。旧 commit
   `3e843912...` 曾完成 VM bootstrap finalization；当前 tracked 变更重新 finalization 前
   `CanStartVmBootstrap=false`，且 bootstrap 本身不足以宣称 P10A-0A 完成。
-- 三个 repositories 当前均为 private，private ruleset 的外部失败为 HTTP 403。改用
-  GitHub Free public repositories 不是单纯配置切换：必须先升版 visibility/protection
-  receipt、policy、readiness、outbox/onboarding、prompt/runbook 和测试合同，随后一并切换三仓并立即部署、
-  负向验证服务端历史保护。迁移完成前不得修改 visibility，也不得复用 bootstrap admin。
+- GitHub Free public 迁移不是单纯配置切换：visibility/protection receipt、policy、
+  readiness、outbox/onboarding、prompt/runbook 和测试合同已先升版；三仓随后一并公开，
+  并以 ruleset/effective-rules receipt 验证服务端历史保护。产品 ruleset 为 `19068339`，
+  host-to-VM 为 `19068292`，VM-to-host 为 `19068313`，均无 bypass actor。交互式 bootstrap
+  admin 仍不得交给 automation。
 - 用户已设置 `PrivacyDecision=ACCEPTED`、`HistoryRewrite=NO`、
   `ResidualPrivacyAudit=NOT_PERFORMED_ACCEPTED_RISK`。这些选择只接受存量个人/运营信息
   暴露，不放松 credential、Authorization、API key、未脱敏日志或配置进入 public outbox

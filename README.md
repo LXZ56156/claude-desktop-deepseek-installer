@@ -17,12 +17,14 @@ relay/state/hash、readiness resolver、deterministic onboarding bundle、fake r
 VM-only Windows guest-reset dispatcher/provider boundary、两端分钟级 prompts/runbooks
 与 synthetic rehearsal；这些 operator coordination 文件只归入 `DevelopmentOnlyFiles`。
 
-Fast Lane 采用一个逻辑双 outbox、两个物理单向私有 control repos。私有产品 remote
-与两个 control repos 已创建并初始化；GitHub 当前套餐拒绝 private ruleset，最小权限
-角色凭据、VM 对产品 remote 的负向写验证、reset provider 的 VM device/Live evidence、
-VM Scheduled Task 与无人值守闭环尚未部署。宿主机分钟级 heartbeat 已创建但保持暂停。
-宿主机实现已达到 VM bootstrap ready，但 integration 仍 fail closed，因此不能宣称
-P10A-0A 完成。Formal Lane
+Fast Lane 采用一个逻辑双 outbox、两个物理单向 public control repos。产品 remote
+与两个 control repos 已公开；三仓均已启用禁止删除、禁止非快进并要求线性历史的
+protected-history ruleset，且无 bypass actor。最小权限角色凭据、VM 对产品 remote 的
+负向写验证、reset provider 的 VM device/Live evidence、VM Scheduled Task 与无人值守
+闭环尚未部署。宿主机分钟级 heartbeat 已创建但保持暂停。当前 tracked 文档提交仍须
+完成最终全树门、18-entry onboarding bundle、暂停 task hash binding 与最终 CI，完成前
+`CanStartVmBootstrap=false`；integration 继续 fail closed，因此不能宣称 P10A-0A 完成。
+Formal Lane
 才为 P10A/P11 接入 CAS、签名与外部快照。本地质量门使用不可缺省
 ExecutionContext、default-deny fake provider、owner-marked HostSandbox、双引擎
 worker evidence 和 Release Simulation。
@@ -119,7 +121,8 @@ HOME/Git 配置的直跑命令。
 - 窄范围 VM 校准：`docs/VM_CALIBRATION_PLAN.md`
 - 后续全面 VM 验收：`docs/VM_ACCEPTANCE_PLAN.md`
 
-下一对话从 `docs/HANDOFF.md` 记录的 P10A-0A VM bootstrap/integration 门继续：在 VM
-验 immutable onboarding、配置最小权限凭据与 device-bound reset trust、创建仍暂停的
-VM 分钟级任务，并在 protected history 门满足后安全启用两端任务，不需要重新从零调研。宿主机
-不得执行 Live，VM 不得修改产品代码。
+下一任务从 `docs/HANDOFF.md` 记录的 P10A-0A 宿主机 finalization 继续：先对最终
+clean exact commit 重跑全树门、构造 immutable onboarding、重绑仍暂停的宿主机任务并
+等待最终 CI；只有 `CanStartVmBootstrap=true` 后才进入 VM 做离线 bundle 校验、设备本地
+密钥与暂停 VM 分钟级任务。protected history 已部署；窄凭据、device-bound reset trust、
+负向权限与无人值守闭环仍是 integration 门。宿主机不得执行 Live，VM 不得修改产品代码。
