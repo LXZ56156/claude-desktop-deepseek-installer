@@ -66,7 +66,7 @@ The VM may test, analyze, reset only allow-listed owned test resources, and
 append diagnostic results to its one control repository; it must not edit,
 commit, or push product code, change runbooks, or build candidates.
 
-Current deployment state (2026-07-17):
+Current deployment state (2026-07-18):
 
 - Product code: `LXZ56156/claude-desktop-deepseek-installer` (public;
   repository ID `1301870422`, node ID `R_kgDOTZj3Vg`, protected-history
@@ -81,16 +81,15 @@ Current deployment state (2026-07-17):
   ID `19068313`).
 - All three rulesets are active with no bypass actor and apply deletion,
   non-fast-forward, and required-linear-history rules to their effective refs.
-- The host-side diagnostic implementation is feature-complete. Public-contract
-  commit `a09130f2afadb6dcf4cfc60a61a72095dc41faa6` passed both 430-test
-  engines, Release DryRun, and PR CI, then the three-repository cutover was
-  verified. The current tracked handoff update changes the tree, so a new clean
-  commit must repeat finalization and produce a new 18-entry bundle before VM
-  bootstrap is authorized. This never authorizes polling or a product test.
+- The host-side diagnostic implementation is feature-complete. Tracked
+  documentation does not embed a self-referential final commit/tree/hash. The
+  current clean HEAD is bootstrap-only ready only when the same paused
+  automation, PR CI, actual Git/remote, and a validated 18-entry immutable
+  bundle all bind that HEAD. This never authorizes polling or a product test.
 - Host Codex heartbeat: `cddsi-fast-lane-hostcoordinator-minute-poll`, paused.
-  Server protection is verified; the task still requires the final bundle hash
-  binding, a narrow HostCoordinator credential, and its protected authority
-  assertion before any polling.
+  Its post-commit bundle/runtime/prompt bindings must be verified outside tracked
+  documentation. A narrow HostCoordinator credential and the runtime protection
+  authority assertion are still required before any polling.
 - VM Codex task: not created; it must be created from the VM Codex device after
   bundle verification and must initially be paused. It may be activated only
   after three distinct repository-scoped identities (product read,
@@ -100,19 +99,18 @@ Current deployment state (2026-07-17):
 - GitHub rejected private-repository rulesets for the account plan. The user
   accepted the irreversible history/metadata exposure and chose public transport
   without history rewrite. The versioned PUBLIC contract passed first; all three
-  remotes are now public and protected, but the final tracked commit still needs
-  its own bundle/task/CI finalization.
+  remotes are now public and protected. Each new tracked commit still requires
+  its own externally verified bundle/task/CI finalization.
 - Narrow, non-admin credentials for both roles remain an external integration
   gate. The interactive bootstrap administrator credential must never be used
   by either minute task.
 
 The readiness states are deliberately separate:
 
-- `CanStartVmBootstrap`: no for the current working tree. The old finalized
-  anchor is recorded below, but any new commit requires a new immutable bundle
-  and a newly hash-bound, still-paused host heartbeat. Bootstrap remains limited
-  to offline bundle verification, VM-local key creation, tool/hash reporting,
-  and creation of the still-paused VM task.
+- `CanStartVmBootstrap`: true only when the current clean HEAD has the matching
+  external bundle/task/CI/Git finalization facts. Bootstrap remains limited to
+  offline bundle verification, VM-local key creation, tool/hash reporting, and
+  creation of the still-paused VM task.
 - `CanStartVmIntegration`: no. Protected history is independently evidenced;
   the narrow HostCoordinator credential and runtime authority assertion are
   not. VM polling, remote negative-permission tests, reset smoke, and

@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-17
+更新日期：2026-07-18
 
 ## 定位
 
@@ -160,12 +160,12 @@ Formal Lane: external clean snapshot + exact artifact
   或 acceptance receipt；消息正文和日志永不作为 shell/PowerShell 指令执行。
 - product/control repositories 均已切换为 public；三个 active ruleset 已对 control
   `main`、产品 `main` 与 `codex/repair/*` 实际施加禁止删除、禁止非快进和线性历史，
-  且没有 bypass actor。public-contract/cutover 质量锚为 `a09130f2...`；旧 commit
-  `3e843912...` 的 bootstrap bundle 与 task binding 仍只是历史。包含本说明的最终
-  tracked HEAD 重新完成全树门、18-entry bundle、暂停 heartbeat hash binding 和 CI 前，
-  `CanStartVmBootstrap=false`。最小角色凭据、运行时 protection assertion、VM 产品 remote
-  只读负向验证、real guest reset、两端任务和 unattended 执行仍是 integration 阻断项。
-  VM bootstrap 不等于 P10A-0A 完成。
+  且没有 bypass actor。tracked 文档不嵌入会自引用的最终 commit/tree/hash；当前 clean
+  HEAD 只有在同一暂停 automation、PR CI、实际 Git/remote 与 immutable bundle 的外部
+  机器事实全部匹配时，才派生 `CanStartVmBootstrap=true`，且只授权 bootstrap-only。
+  最小角色凭据、运行时 protection assertion、VM 产品 remote 只读负向验证、real guest
+  reset、两端任务和 unattended 执行仍是 integration 阻断项。VM bootstrap 不等于
+  P10A-0A 完成。
 
 ## 当前加载顺序
 

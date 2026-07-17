@@ -1,6 +1,6 @@
 # 安全设计
 
-更新日期：2026-07-17
+更新日期：2026-07-18
 
 ## 安全目标
 
@@ -292,9 +292,10 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
 - detached sidecar 必须验证真实签名字节和外部固定信任身份；P11 receipt 不存在时
   P12 promotion 必须保持 fail closed。
 - Fast Lane 本地 policy、relay/reset pure/fake contract、固定 prompt 和 synthetic
-  rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现。旧 commit
-  `3e843912...` 曾完成 VM bootstrap finalization；当前 tracked 变更重新 finalization 前
-  `CanStartVmBootstrap=false`，且 bootstrap 本身不足以宣称 P10A-0A 完成。
+  rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现。最终 post-commit
+  commit/tree/hash 不写回 tracked 文档，而由同一暂停 automation、PR CI、实际 Git/remote
+  与 immutable bundle 的外部机器事实共同核验；全部匹配时只派生 bootstrap-only 的
+  `CanStartVmBootstrap=true`，且 bootstrap 本身不足以宣称 P10A-0A 完成。
 - GitHub Free public 迁移不是单纯配置切换：visibility/protection receipt、policy、
   readiness、outbox/onboarding、prompt/runbook 和测试合同已先升版；三仓随后一并公开，
   并以 ruleset/effective-rules receipt 验证服务端历史保护。产品 ruleset 为 `19068339`，

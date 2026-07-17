@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-17
+更新日期：2026-07-18
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -47,17 +47,22 @@ runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
 dispatcher/provider 边界、两端 prompt/runbook 和 synthetic rehearsal。它们位于独立
 OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release。宿主机侧实现
 可以生成绑定精确 commit/tree、文件/blob/tool hash、repository 数字/node identity 与
-pinned genesis 的诊断 onboarding ZIP。旧 commit `3e843912...` 已完成 clean commit、
-统一门、实际 18-entry immutable ZIP、暂停 heartbeat hash binding 与 CI；本次 tracked
-文档/public-visibility 工作包使旧 ZIP 成为历史 anchor。新 HEAD 重新完成相同 finalization
-前 `CanStartVmBootstrap=false`。完成后也只允许 VM 离线核验、设备本地密钥生成和创建
-仍暂停的 VM task。
+pinned genesis 的诊断 onboarding ZIP。包含文档闭环的最终 clean HEAD 只有在统一门、
+Release DryRun、immutable onboarding ZIP 自校验、暂停 heartbeat binding 和 remote/PR/CI
+均由外部事实核验后，才派生 `CanStartVmBootstrap=true`，且只允许 VM 离线核验、设备本地
+密钥生成和创建仍暂停的 VM task。为避免 tracked 自引用，精确 commit/tree、bundle/
+manifest/inventory/hash/token 和 CI run 不在本文固化，只从 retained owner-marked bundle
+output、暂停 automation、既有 PR/CI 与实际 Git/remote 四方交叉核验。任何后续 tracked
+修改都会使该 readiness 失效，直到从新
+clean exact HEAD 重新完成相同 finalization。
 
 真实 protected history 已通过 public ruleset/effective-rules receipt 部署；窄权限角色凭据、
 runtime protection assertion、VM 负向权限证据、VM provider/device trust、reset smoke 与
-unattended acceptance 尚未完成，所以 **VM integration 仍 fail closed**。这些 operator runtime 不解除宿主机
-Live 边界，也不授权 VM 修改产品代码。Formal Lane 的外部 snapshot receipt、独立
-CAS/signature/receipt authority 仍未就绪，不能据此声称 P10A-0A 或 P10A 完成。三个
+unattended acceptance 尚未完成，所以 `CanStartVmIntegration=false`；VM task 也尚未从 VM
+设备创建，所以 `P10A0AComplete=false`。这些 operator runtime 不解除宿主机 Live 边界，
+也不授权 VM 修改产品代码。Formal Lane 的外部 snapshot receipt、独立
+CAS/signature/receipt authority 仍未就绪，`CanStartFormalP10A=false`，不能据此声称
+P10A-0A 或 P10A 完成。三个
 远端现均为 public；公开不放松 secret、Authorization、credential 或宿主机零接触边界。
 
 ## 零接触定义

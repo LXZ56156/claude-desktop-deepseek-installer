@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-17
+更新日期：2026-07-18
 
 ## 核心原则
 
@@ -134,10 +134,11 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
 
-上述映射曾证明旧 commit `3e843912...` 可制作 VM onboarding；public-contract/cutover
-提交 `a09130f2...` 又以双引擎各 430 项和全部 zero metrics 验证 PUBLIC 合同。当前 tracked
-文档提交重新 finalization 前 `CanStartVmBootstrap=false`。真实 ruleset/effective-rules
-receipt 已证明 protected history 生效；本地测试覆盖 public-protected 正向、visibility
+上述映射已证明 clean exact commit 可制作 VM onboarding，双引擎各 430 项和全部 zero
+metrics 可验证 PUBLIC 合同。tracked 文档不嵌入会自引用的最终 commit/tree/hash；只有同一
+暂停 automation、PR CI、实际 Git/remote 与 immutable bundle 的外部机器事实全部匹配，
+才派生 bootstrap-only 的 `CanStartVmBootstrap=true`。真实 ruleset/effective-rules receipt
+已证明 protected history 生效；本地测试覆盖 public-protected 正向、visibility
 mismatch、缺保护、public-outbox secret 与错误角色写入负向合同，但仍不证明窄角色
 credential、VM reset 或 unattended loop 已通过。两端 minute tasks
 在这些 integration gates 完成前都必须保持暂停。首次 P10A 另需外部 snapshot receipt、

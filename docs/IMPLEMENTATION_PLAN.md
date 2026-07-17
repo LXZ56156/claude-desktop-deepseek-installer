@@ -1,6 +1,6 @@
 # 实现计划
 
-更新日期：2026-07-17
+更新日期：2026-07-18
 
 ## 总目标
 
@@ -28,7 +28,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
-| P10A-0A | 双机 Fast Lane MVP 前置门 | 宿主实现与 public/protected cutover 已齐；最终 tracked HEAD 仍须重新 finalization；integration 受外部门阻断 | 新 HEAD bundle/task binding 后 bootstrap；角色权限、真实 VM reset 与两端无人值守闭环通过 |
+| P10A-0A | 双机 Fast Lane MVP 前置门 | 宿主机实现与文档内容已就绪；bootstrap readiness 由外部 finalization 事实派生，integration 受窄凭据、VM 证据和任务门阻断 | 外部精确锚核验后仅执行 VM bootstrap；角色权限、真实 VM reset 与两端无人值守闭环通过 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -434,7 +434,7 @@ fake executor/orchestrator 已实现；真实 adapter 源码仍是未完成交�
 - `Success=true` 只可能对应全部三项 readiness 为 `READY` 的 `SUCCEEDED`。
 - 产品自身不内置 Desktop UI 自动化；真实 UI E2E 只在 P11。
 
-## P10A-0A：双机 Fast Lane MVP 前置门（public/protected 已齐；re-finalization / integration blocked）
+## P10A-0A：双机 Fast Lane MVP 前置门（bootstrap-only ready；integration blocked）
 
 ### 目标
 
@@ -476,9 +476,11 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
   VM 仍需独立 read-only credential；VM 对产品 remote 的负向写验证不能由本地 fake
   合同代替。
 - 宿主机分钟级 heartbeat 已创建为
-  `cddsi-fast-lane-hostcoordinator-minute-poll`。protected history 已就绪；该任务仍须在
-  最终 bundle hash binding、窄凭据和 runtime assertion 就绪前保持暂停；本机没有 VM
-  Codex project，VM task 必须在 VM 设备上创建并先保持暂停。
+  `cddsi-fast-lane-hostcoordinator-minute-poll`。宿主机 finalization 后它已绑定当次精确
+  commit/tree、bundle 和 runtime material，并继续保持 `PAUSED`；精确值只从实际 Git、
+  既有 PR/CI 和该暂停 automation 的当前配置交叉核验，不写回 tracked 文档。窄凭据与
+  runtime assertion 仍为 `UNPROVISIONED`，任务因此在网络、Git 或代码修改前 fail closed。
+  本机没有 VM Codex project，VM task 必须在 VM 设备上创建并先保持暂停。
 - Formal Lane 继续使用独立 append-only/WORM evidence store、签名和受信 receipt；
   它属于 P10A/P11 正式门，不阻塞 Fast Lane 自动修复 MVP。
 - VM provider/device trust 部署并实测后，日常重测只允许按冻结 allow-list 清除本项目拥有的安装物、
@@ -506,12 +508,14 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
 
 ### 退出条件
 
-- 当前宿主实现已满足 VM bootstrap 的代码侧条件；旧 commit `3e843912...` 已完成一次
-  finalization，public-contract/cutover 提交 `a09130f2...` 已完成双引擎各 430 项、Release
-  DryRun、三仓切换与 CI。当前 tracked 交接更新仍会改变 commit/tree，因此新 clean commit
-  重新生成并复验 immutable onboarding bundle、且
-  host task 仍为 hash-bound `PAUSED` 前，`CanStartVmBootstrap=false`。bootstrap 始终
-  不允许 control polling、产品测试、reset Live 或产品代码修改。
+- 文档闭环提交后，只有最终 clean exact HEAD 通过双引擎全树门、Release DryRun、
+  diff/编码门和 PR CI，immutable onboarding bundle 已重新生成、自校验，host task 已精确
+  绑定且保持 `PAUSED`，才由四方持久事实交叉核验派生 `CanStartVmBootstrap=true`。精确 commit/tree、
+  bundle/manifest/inventory/hash/token 与 CI run 必须从 retained owner-marked bundle output、
+  暂停 automation、既有 PR/CI 和实际 Git/remote 四方交叉核验，不能由 tracked 文档自证。
+  任何后续 tracked 修改都会使该状态失效，直到从新的
+  clean exact HEAD 重新完成同一 finalization。即使为 true 也只允许 bootstrap-only，始终不
+  允许 control polling、产品测试、reset Live 或产品代码修改。
 - 三个 repositories 的 protected history 已部署并验证。VM integration 另要求窄
   HostCoordinator credential、runtime protection assertion 和随后 VM 侧 credential/
   negative-permission evidence；不得复用 bootstrap administrator credential 作为降级。
@@ -543,8 +547,8 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
 
 ### 尚未完成
 
-- P10A-0A protected history、最小角色凭据及负向权限验证、VM provider/device trust 与
-  deterministic reset 实测、从 VM 设备创建并初始暂停的 Codex Scheduled Task、安全
+- P10A-0A 最小角色凭据及负向权限验证、VM provider/device trust 与 deterministic
+  reset 实测、从 VM 设备创建并初始暂停的 Codex Scheduled Task、安全
   启用两端任务与无人值守 runner；以及 Formal Lane evidence store、receipt authority
   与外部快照 supervisor。
 - 实际 P10A VM runner/provider 与 evidence 导出/提交流程。
@@ -642,12 +646,15 @@ CHANGELOG、文件名内容或 ZIP metadata。
 
 P3-P4、P5-P7 纯合同、P8 fake orchestrator、P9 synthetic、P10A
 evidence/consumption、P10B 宿主机支撑合同和 P10A-0A 本地 TestSafe/DryRun 合同切片
-均已实现。P10A-0A 宿主机侧又完成固定 Git outbox、readiness、deterministic onboarding
-和 VM-only reset boundary。旧 commit `3e843912df2543c1da05b09061970faff511d016`
-曾完成双引擎 427/427、Release DryRun、18-entry bundle、暂停 task binding 与 PR CI。
-PUBLIC 合同提交 `a09130f2afadb6dcf4cfc60a61a72095dc41faa6` 随后完成双引擎
-430/430、Release DryRun、diff/编码门和 PR CI，并作为三仓 cutover 的质量锚；当前 tracked
-交接更新又改变 tree，因此最终 HEAD 仍必须重新 finalization。
+均已实现。P10A-0A 宿主机侧又完成固定 Git outbox、readiness、deterministic onboarding 和
+VM-only reset boundary。包含本节的文档闭环提交必须再从最终 clean HEAD 完成双引擎全树门、
+Release DryRun、diff/编码门、immutable onboarding bundle、自校验、暂停 heartbeat binding
+及 remote/PR/CI 核验；全部外部事实匹配后才派生 `CanStartVmBootstrap=true`，且仅允许
+bootstrap-only。为避免 tracked 自引用，精确 commit/tree、bundle/manifest/inventory/content
+digest、token、retained path 和 CI run 不在本文固化；交接时必须从 retained owner-marked
+bundle output、暂停 automation、既有 PR/CI 与实际 Git/remote 四方交叉核验。任何后续
+tracked 修改都会使该结论失效并要求从新
+clean exact HEAD 重新 finalization。
 
 2026-07-16 公开预检确认 repair ref 可达对象的常见凭据模式扫描为零；用户设置
 `PrivacyDecision=ACCEPTED`、`HistoryRewrite=NO` 和
@@ -658,35 +665,28 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
 
 下一工作包严格按以下依赖顺序推进：
 
-1. 把本轮真实 public/protection facts 与交接文档正常提交、fast-forward 推送到既有
-   repair branch；不得创建重复 PR、merge、发布或 promotion。
-2. 从新的 clean exact commit 重新运行统一门、Release DryRun 与 diff/编码门，生成并复验
-   immutable onboarding bundle，把既有宿主机 heartbeat
-   绑定到新 commit/tree、bundle/manifest/inventory、policy、prompts、runner、known-hosts、
-   工具和 repository identity/hash，保持 `PAUSED`，最后核对既有 PR 与 CI。以上任一步
-   未完成时 `CanStartVmBootstrap=false`。
-3. 只有新宿主机 finalization 全部完成后，VM 才只执行 bootstrap：
+1. VM 只执行 bootstrap：
    离线验 manifest/inventory/hash、生成 VM-local keys、回报 public fingerprints/tool hash，
-   并从 VM Codex 设备创建初始为 paused 的 minute task。不得轮询、测试或运行 reset Live。
-4. 发放窄 HostCoordinator/VmTester credentials：宿主机只写 repair ref 与 host-to-VM，
+   并从 VM Codex 设备创建初始为 `PAUSED` 的 minute task。不得轮询、测试或运行 reset Live。
+2. 发放窄 HostCoordinator/VmTester credentials：宿主机只写 repair ref 与 host-to-VM，
    VM 只读产品和 host-to-VM、只写 VM-to-host；用真实 remote 负向证明错向写、产品写、
    force-push/delete/rewrite 和 broad admin capability 均被拒绝。
-5. 在 VM provision 并验证固定 deterministic reset provider/device trust；只处理
+3. 在 VM provision 并验证固定 deterministic reset provider/device trust；只处理
    owner-marked allow-list，未知状态升级到 guest 外 snapshot restore。TestSafe、DryRun、
    development-retest Live 与幂等 reset smoke 依序通过前不得记为 ready。
-6. 重新确认两端 minute tasks 均为 paused 且绑定精确 runtime/prompt/bundle hash，随后按
+4. 重新确认两端 minute tasks 均为 paused 且绑定精确 runtime/prompt/bundle hash，随后按
    runbook 安全启用并用实际 remotes 证明无人值守失败/修复/重测闭环。普通 push 不能
    替代 acknowledgement，relay 不能替代正式 evidence receipt，VM 不得修改产品代码。
-7. 准备 Formal Lane：P10A 专用 disposable VM、限域 runner/provider、evidence
+5. 准备 Formal Lane：P10A 专用 disposable VM、限域 runner/provider、evidence
    exporter、外部 snapshot supervisor 与受控 submission，以及外部 CAS
    authority/commit service。
-8. 由外部 supervisor 恢复 clean snapshot 并签发 receipt，再按
+6. 由外部 supervisor 恢复 clean snapshot 并签发 receipt，再按
    `VM_CALIBRATION_PLAN.md` 执行首次窄 VM 校准，获取真实 Standard/Offline、MSIX、
    Git、helper/chooser、HKCU 与 cleanup evidence。
-9. 由独立 CAS/签名 authority 原子提交并消费 evidence，生成唯一 frozen facts。
-10. 回到 P10B，在 clean commit、固定工具链、实际 helper PE 和独立签名服务下构建
+7. 由独立 CAS/签名 authority 原子提交并消费 evidence，生成唯一 frozen facts。
+8. 回到 P10B，在 clean commit、固定工具链、实际 helper PE 和独立签名服务下构建
    并冻结 `VmAcceptance`/`UserLive` 双候选。
-11. 只有两个候选的精确字节冻结后，才进入 P11 全面 disposable VM；每次失败修复
+9. 只有两个候选的精确字节冻结后，才进入 P11 全面 disposable VM；每次失败修复
    都必须生成新 candidate identity/hash 并从外部恢复的干净快照重测。
 
 宿主机不得加载或执行真实下载、registry、MSIX/Git 安装、VMP、API、Claude 配置、
@@ -695,9 +695,9 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
 
 ## 当前外部阻塞
 
-- 当前 tracked HEAD 尚缺最终双引擎全树门、Release DryRun、18-entry bundle、暂停
-  heartbeat hash binding 与最终 remote/PR/CI 核验；完成前 `CanStartVmBootstrap=false`。
-  服务端 protected history 已完成，不再列为外部阻塞。
+- 服务端 protected history 已完成。bootstrap-only 的宿主机门不是长期外部阻塞：当 clean
+  HEAD、bundle、暂停 task、remote/PR/CI 的外部事实全部匹配时派生
+  `CanStartVmBootstrap=true`；任一不匹配则为 false。这不等于 integration 或正式 VM 门已通过。
 - 宿主机限 repair-ref/host-to-VM、VM 产品 read-only/VM-to-host 的窄 credentials，以及
   产品写、错向写、force/delete/rewrite 和 broad-admin 负向证据。
 - VM provider/device trust、真实 deterministic reset smoke、从 VM device 创建并保持

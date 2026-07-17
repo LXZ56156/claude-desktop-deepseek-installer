@@ -1,6 +1,6 @@
 # 宿主机与 VM Codex 测试中继协议
 
-更新日期：2026-07-17
+更新日期：2026-07-18
 
 ## 定位与权威范围
 
@@ -25,15 +25,19 @@ Release ZIP。
 public 产品 remote 与两个 public control repository 已部署，产品旧 `main` 基线已推送，
 两个 `outbox/` 已初始化。三个无 bypass protected-history ruleset 已对目标 refs 实际施加
 禁止删除、禁止非快进和线性历史。宿主实现可从 clean exact commit 生成 immutable
-diagnostic onboarding ZIP。旧 commit `3e843912df2543c1da05b09061970faff511d016` 的
-18-entry ZIP/task binding 是历史 anchor；public-contract/cutover 质量锚 `a09130f2...`
-通过双引擎各 430 项、Release DryRun 和 PR CI，但包含本说明的最终 tracked HEAD 仍须
-重新 finalization，所以 `CanStartVmBootstrap=false`。窄 HostCoordinator/VmTester
-credentials、runtime protection assertion、VM 只读身份及负向写验证、VM reset 设备信任/实测、
-任务安全启用和无人值守闭环仍未完成，所以 **VM integration blocked**。宿主机 heartbeat
-已创建并保持暂停；当前变更提交后必须重绑到新最终值。VM task 必须从 VM 设备创建且
-初始也必须暂停。Formal Lane 的 CAS、签名和外部 snapshot supervisor 也未实现。因此
-当前不能宣称 P10A-0A 完成，更不能开始真实 P10A/P11。
+diagnostic onboarding ZIP。包含文档闭环的最终 clean HEAD 只有通过双引擎全树门、Release
+DryRun、immutable onboarding bundle 自校验、暂停 heartbeat binding 与 remote/PR/CI 核验，
+才由四方持久事实交叉核验派生 `CanStartVmBootstrap=true`，且仅允许 bootstrap-only。为避免
+tracked 自引用，精确 commit/tree、bundle/manifest/inventory/hash/token 和 CI run 只从
+retained owner-marked bundle output、暂停 automation、既有 PR/CI 与实际 Git/remote 四方
+交叉核验；任何后续 tracked 修改都会使
+readiness 失效并要求从新 clean exact HEAD 重新 finalization。
+窄 HostCoordinator/VmTester credentials、runtime protection assertion、VM 只读身份及
+负向写验证、VM reset 设备信任/实测、VM task、安全启用和无人值守闭环仍未完成，所以
+`CanStartVmIntegration=false` 且 `P10A0AComplete=false`。宿主机 heartbeat 已创建、精确
+绑定并保持暂停；VM task 必须从 VM 设备创建且初始也必须暂停。Formal Lane 的 CAS、签名
+和外部 snapshot supervisor 也未实现，所以 `CanStartFormalP10A=false`，不能开始真实
+P10A/P11。
 
 ## 不可变原则
 
@@ -546,8 +550,8 @@ receipt。
 不需要用户逐轮复制请求、结果或 `FIX_READY`。两端只对已验证的新 message commit 作出
 反应。当前 canonical/schema/state validator、固定 Git outbox runner、readiness、
 deterministic onboarding、VM-only reset boundary、两端 prompt/runbook、synthetic dry
-rehearsal 与真实 public protected repository pair 已实现。旧 finalization anchor 已完成；
-当前文档更新提交并对新 HEAD 重建 bundle、重绑暂停 heartbeat 后才再次 bootstrap ready。
+rehearsal 与真实 public protected repository pair 已实现。宿主机 finalization 与文档闭环
+是否 bootstrap-only ready，按本文开头所述由 clean HEAD 的外部状态核验，不由本文自证。
 服务端 protected history 已完成；最小凭据、runtime assertion、VM device/provider evidence、
 VM task 安全绑定、启用 host heartbeat
 和无人值守验收仍是外部 integration 工作，不能直接在现有宿主机进入产品 Live。
@@ -559,8 +563,8 @@ VM task 安全绑定、启用 host heartbeat
 不会授予 operation grant，不会扩大宿主机权限；宿主机 automation 永远不得执行产品
 Live。`operator/fast-lane/prompts/host-poll.md` 和 `vm-poll.md` 是固定模板；宿主机
 heartbeat `cddsi-fast-lane-hostcoordinator-minute-poll` 已按分钟创建；服务端 protected
-history 已就绪，但它仍须在最终 bundle hash binding、runtime assertion 与窄凭据就绪前
-保持暂停。本机 Codex 没有 VM project，VM task 必须从 VM
+history 已就绪，最终 bundle hash binding 必须从四方持久事实外部核验。即使 binding 匹配，
+它仍须在 runtime assertion 与窄凭据就绪前保持暂停。本机 Codex 没有 VM project，VM task 必须从 VM
 设备创建并先保持暂停；policy/onboarding manifest 冻结两端初始状态为 `PAUSED`。
 bootstrap 阶段的 protection assertion/hash/token 明确标为 `UNPROVISIONED`，因此任务
 只能 fail closed，不能轮询。bootstrap 只允许 bundle 校验、VM 本地 key provisioning、
@@ -664,22 +668,23 @@ unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授
 
 当前完成了本地合同、固定 outbox/runtime、readiness、deterministic onboarding、
 VM-only reset boundary、prompt/runbook、纯 synthetic rehearsal，以及三个 public protected
-repositories 与两个 `outbox/` 的 bootstrap。旧 commit `3e843912...` 的宿主机
-finalization 已通过；`a09130f2...` 又完成 PUBLIC 合同门与远端 cutover。当前 tracked
-文档提交后仍须以最终 HEAD 完成新全树门、Release
-DryRun、clean commit/push、实际 immutable bundle、暂停 task binding 与 CI 完成前，
-`CanStartVmBootstrap=false`。VM task 必须从 VM device 创建并先暂停。
+repositories 与两个 `outbox/` 的 bootstrap。包含文档闭环的 clean HEAD 只有在 retained
+owner-marked bundle output、暂停 automation、既有 PR/CI 与实际 Git/remote 四方事实全部
+匹配后，才派生
+`CanStartVmBootstrap=true`；此时也只允许 VM 离线校验、设备本地窄 key provisioning、
+工具 hash 回报和创建初始为 `PAUSED` 的 VM task，且 VM task 必须从 VM device 创建。
 
 三个 active ruleset 已验证 protected history；narrow credentials 与 runtime assertion
 尚未满足，因此 `CanStartVmIntegration` 必须保持 false。remote credential 负向测试、
 VM reset 实测、两端任务安全启用和 unattended 闭环也尚未满足；`P10A0AComplete`
-仍为 false。
+仍为 false。Formal Lane 的 snapshot/CAS/signature/receipt evidence 尚未满足，
+`CanStartFormalP10A` 仍为 false。
 
 用户选择用 GitHub Free public repositories 代替 Pro，并接受现有 history/metadata 和未来
 public outbox 可见性、不重写历史；剩余存量审计为 accepted risk。public-safe schema、
 禁止 secret 内容、PUBLIC policy/readiness/outbox receipt/onboarding/prompt/runbook/tests
 及正负向合同已在切换前升版。三仓现已 public，ruleset IDs 为产品 `19068339`、
-host-to-VM `19068292`、VM-to-host `19068313`；最终 tracked HEAD 仍须重新 finalization。
+host-to-VM `19068292`、VM-to-host `19068313`。
 
 ### P10A-0B Formal Lane gate
 
