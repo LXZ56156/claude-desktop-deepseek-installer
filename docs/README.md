@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-18
+更新日期：2026-07-19
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -26,6 +26,12 @@
 
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
+
+截至 2026-07-19，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前状态”与
+“下一工作包”。共享工作树正在收口 P10A-0A 一文件/一提示 bootstrap，仍有 tracked
+修改；dirty WIP 已通过标准双引擎全树门，但尚无新的 clean final anchor，
+`CanStartVmBootstrap=false`。本文及其他稳定设计
+文档中的“已实现”摘要若与该入口冲突，以 `HANDOFF.md` 和实际 Git/机器证据为准。
 
 未来正式包还携带根目录的 `USER_GUIDE.md`、`TROUBLESHOOTING.md` 与
 `PRIVACY.md`。三者是最终用户合同，不替代本目录的开发事实，也不表示当前
@@ -67,11 +73,15 @@ Scaffold 已可执行 Live。
 - 实际 Git 状态：只通过标准 HostSandbox 质量门中的隔离 Git inventory 核验，
   不得只相信交接中的旧哈希，也不得在外部直跑继承用户配置的 Git。
 
-P2-P10B 的纯/fake 合同与宿主机支撑已经建立；P10A-0A 的宿主机侧 Fast Lane 包括
-public protected 产品 remote、两个物理单向 public protected control repositories、固定
-Git outbox runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
-边界以及两端分钟级 prompt/runbook。宿主机 HostCoordinator automation 已创建且保持
-暂停；VM automation 必须从 VM 设备创建并同样先保持暂停。
+P2-P10B 的纯/fake 合同与宿主机支撑已经建立；P10A-0A 的 public protected repositories、
+固定 Git outbox、readiness、onboarding、reset 和 automation 合同已建立。当前 dirty
+worktree 已把 VM bootstrap 收缩为唯一 phase2 operator 入口和真实本机 automation TOML
+readback；phase2-only builder/loader、execution boundary、HostSandbox path binding、
+semantic ACL、captured-byte load、atomic/idempotent state、no-reparse 非递归 cleanup 与
+完整正负测试均已落盘并通过 dirty WIP 标准双引擎全树门；包含文档同步的 clean exact
+commit 仍须重新完成统一门与 finalization。宿主机 HostCoordinator
+automation 已创建且保持暂停；VM automation 只能在最终 host finalization 后从 VM 设备
+创建或原位更新，并先保持暂停。
 
 `docs/HANDOFF.md` 只保存当前逻辑状态、下一工作包与停止线，不在 tracked 文档中复制
 最终 commit/tree、bundle digest、测试 RunId 等 post-commit 精确锚点，避免文档提交改变
@@ -82,9 +92,11 @@ readiness，且下一任务不需要依赖聊天记录。
 
 三个 repositories 的 public 与 protected-history 合同已经建立；公开前审计的剩余存量风险
 已按既定决策接受，但 credential、Authorization 数据和未脱敏 secret 仍绝对禁止进入公开
-仓库。窄权限角色凭据、runtime protection assertion、VM 负向权限、reset 与 unattended
-evidence 尚未完成，因此 VM integration 继续阻断；Formal Lane 仍要求外部 clean snapshot
-receipt、独立 CAS 与签名。整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
+仓库。窄权限角色凭据、runtime protection assertion、VM 负向权限、真实双向交换、reset
+与 unattended evidence 尚未完成，因此 VM integration 继续阻断；Formal Lane 仍要求外部
+clean snapshot receipt、独立 CAS 与签名。普通用户的目标流程是“一份 ZIP、一次提示”后
+由两端 Codex 自动配置和循环测试，但网络工具安装、GitHub 一次性管理授权及最终发布确认
+不能被静默假定。整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
 
 其他文档可以保留便于理解的稳定摘要；动态结论由 `docs/HANDOFF.md` 的条件式与 retained
 owner-marked bundle output、同一暂停 automation、PR CI、实际 Git/remote 四方持久事实

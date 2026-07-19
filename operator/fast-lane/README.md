@@ -38,8 +38,9 @@ or Codex conversation.
 `trust/github-known-hosts` freezes the three GitHub SSH host keys returned by
 the official GitHub Meta API. Its SHA-256 is fixed in
 `config/fast-lane-policy.psd1` and cross-bound to the onboarding inventory.
-The onboarding manifest separately pins Git, OpenSSH, PowerShell 7, and Windows
-PowerShell. Device-local deploy-key hashes are added only by provisioning
+The version-3 onboarding manifest separately pins five tools: Git, OpenSSH,
+OpenSSH key generation, PowerShell 7, and Windows PowerShell. Device-local
+deploy-key hashes are added only by provisioning
 receipts and are never accepted from relay data.
 
 The outbox state root is a direct child of the separately owner-marked operator
@@ -66,7 +67,80 @@ The VM may test, analyze, reset only allow-listed owned test resources, and
 append diagnostic results to its one control repository; it must not edit,
 commit, or push product code, change runbooks, or build candidates.
 
-Current deployment state (2026-07-18):
+## One-prompt VM bootstrap
+
+For the current bootstrap, `supervisor` is just the normal VM application used
+to start the guest, and `baseline` is the guest's starting state. A Formal
+clean-snapshot receipt is not required now; it is a later Formal P10A/P11
+requirement.
+
+The ordinary user performs only four actions: start the disposable VM, install
+and sign in to Codex, put the single onboarding ZIP in a new empty folder and
+open that folder in Codex, then paste the final host handoff prompt once. The
+prompt carries the external expected ZIP hash/length, product commit/tree, and
+manifest/inventory/content tokens. It never asks the VM to inspect the host's
+retained path, host automation, PR/CI, worktree, or remote refs; host
+finalization already owns those checks.
+
+This four-action path assumes a prepared baseline already contains the exact
+manifest-pinned Git, OpenSSH, `ssh-keygen`, PowerShell 7, and Windows
+PowerShell binaries. The current bootstrap validates them and does not install
+or download them. A generic new Windows guest can therefore stop before any
+persistent write. Adding tool self-install requires separate user authority
+for bootstrap-time network/install plus pinned origin, hash, signature, path,
+and cleanup contracts.
+
+After the outer ZIP length and hash match with zero writes, VM Codex may use a
+new owner-marked bootstrap staging root to load only the manifest-bound reviewed
+runtime. The target side-effecting operator entry is
+`Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding`. It receives only the
+original ZIP, the eleven external ZIP/manifest/inventory/content/commit/tree
+anchors, `-BootstrapExecutionContext`, explicit roots, canonical `CodexHome`,
+the expected automation target token, and the acknowledgement. It reruns
+package/onboarding validation and reads the real local Codex automation TOML
+before constructing the public result. Canonical app-written identity keys are
+scanned without imposing the target schema on unrelated tasks; a matching ID,
+name, or target directory must then satisfy the exact target schema. Live also
+requires the TOML target thread to equal the process-local `CODEX_THREAD_ID`.
+Phase2 rescans after local staging even when the initial match count was zero;
+any zero-to-one change or invalid/duplicate rescan fails closed and compensates
+the roots created by that attempt. A successful readback is a point-in-time
+observation bound to the held TOML bytes, not a claim that an external actor
+cannot mutate the automation after return, so every Handoff invocation performs
+a fresh scan and readback while the task remains `PAUSED`.
+TestSafe/DryRun contexts bind every readable input to one owner-marked direct
+child of the harness temporary root, so a forged fake context cannot probe host
+paths. Caller-supplied result, prompt,
+observation, `ObservationJsonBase64`, or derived directories are forbidden.
+Plan/core, mutation, failure, and direct handoff helpers are internal and fail
+closed when called as operator entry points. Codex does not assemble substitute
+shell, Git, ACL, extraction, observation, or key-generation logic.
+
+The local runner is idempotent for one exact binding. It may create only its
+owner-marked VM-local state, stage three distinct keypairs, and create or update
+the unique `cddsi-fast-lane-vmtester-minute-poll` automation with a one-minute
+cadence and `PAUSED` status. New keys are `KEYPAIR_STAGED`, not credential-ready;
+registration and positive/negative remote permission tests happen later. A
+successful runner first returns `VM_BOOTSTRAP_LOCAL_STAGED`; only after the
+Codex automation update is persisted and phase2 proves the unique paused task
+from the authoritative TOML may the public redacted handoff return
+`VM_BOOTSTRAP_STAGED` and stop.
+
+Existing loader roots require current-user ownership, a protected DACL, and
+exactly current user plus SYSTEM explicit inheritable FullControl. Dependency
+hashing, parsing, and loading consume one captured byte sequence while its
+read handle remains open. New authority markers are create-only; state changes
+use verified same-directory atomic replacement and skip byte-identical updates.
+Failure cleanup first validates every descendant without following reparse
+points, then deletes files and directories deepest-first without recursive
+delete.
+
+The bootstrap runner's narrow local-write authority is not inherited by the
+poll task. While runtime protection assertion/hash/token is `UNPROVISIONED`, an
+accidental task invocation must return `BLOCKED` with zero network requests,
+zero Git operations, zero credential probes, and zero runtime-state writes.
+
+Current deployment state (2026-07-19):
 
 - Product code: `LXZ56156/claude-desktop-deepseek-installer` (public;
   repository ID `1301870422`, node ID `R_kgDOTZj3Vg`, protected-history
@@ -81,17 +155,23 @@ Current deployment state (2026-07-18):
   ID `19068313`).
 - All three rulesets are active with no bypass actor and apply deletion,
   non-fast-forward, and required-linear-history rules to their effective refs.
-- The host-side diagnostic implementation is feature-complete. Tracked
-  documentation does not embed a self-referential final commit/tree/hash. The
-  current clean HEAD is bootstrap-only ready only when the same paused
-  automation, PR CI, actual Git/remote, and a validated 18-entry immutable
-  bundle all bind that HEAD. This never authorizes polling or a product test.
+- The host-side diagnostic implementation is present and has passed its dirty
+  WIP gate; clean-commit and external finalization are pending. The shared
+  worktree has tracked changes based on commit
+  `809942943bfeb0547fa36f57aedb8e75e1d45e29`; phase2 tests, builder/loader
+  wiring, execution boundaries, HostSandbox path binding, semantic ACL,
+  captured-byte loading, atomic/idempotent state, and no-reparse non-recursive
+  cleanup are present and have passed the standard dual-engine full-tree gate
+  in the dirty WIP. The clean exact commit must still rerun that gate and finish
+  external finalization. No current clean final anchor exists and
+  `CanStartVmBootstrap=false`.
 - Host Codex heartbeat: `cddsi-fast-lane-hostcoordinator-minute-poll`, paused.
   Its post-commit bundle/runtime/prompt bindings must be verified outside tracked
   documentation. A narrow HostCoordinator credential and the runtime protection
   authority assertion are still required before any polling.
-- VM Codex task: not created; it must be created from the VM Codex device after
-  bundle verification and must initially be paused. It may be activated only
+- VM Codex task: the one-prompt bootstrap creates it from the VM Codex device,
+  or idempotently updates the same unique ID if it already exists, and verifies
+  it remains paused. It may be activated only
   after three distinct repository-scoped identities (product read,
   host-to-VM read, and VM-to-host append) pass negative permission tests, the
   current protection assertion/hash/token is independently provisioned, and
@@ -104,19 +184,28 @@ Current deployment state (2026-07-18):
 - Narrow, non-admin credentials for both roles remain an external integration
   gate. The interactive bootstrap administrator credential must never be used
   by either minute task.
+- The three VM keypairs are only `KEYPAIR_STAGED` until a one-time authorized
+  GitHub provisioner registers the public keys and real positive/negative
+  permission tests pass. That administrator identity is never stored as an
+  automation credential. Runtime assertion/hash/token also remain
+  `UNPROVISIONED`, so both tasks remain `PAUSED`.
 
 The readiness states are deliberately separate:
 
-- `CanStartVmBootstrap`: true only when the current clean HEAD has the matching
+- `CanStartVmBootstrap`: currently no. It becomes true only when the final clean HEAD has the matching
   external bundle/task/CI/Git finalization facts. Bootstrap remains limited to
-  offline bundle verification, VM-local key creation, tool/hash reporting, and
-  creation of the still-paused VM task.
+  offline bundle verification, owner-marked VM-local staging, three
+  `KEYPAIR_STAGED` keypairs, tool/hash reporting, and creation or update of the
+  same still-paused VM task. The VM consumes the external binding; it does not
+  repeat host-only finalization checks.
 - `CanStartVmIntegration`: no. Protected history is independently evidenced;
   the narrow HostCoordinator credential and runtime authority assertion are
   not. VM polling, remote negative-permission tests, reset smoke, and
   unattended smoke remain pending.
 - `P10A0AComplete` and `CanStartFormalP10A`: no. The first Formal P10A run also
   requires an external clean-snapshot receipt, independent CAS, and signatures.
+  None of those Formal items is a prerequisite for the current offline
+  bootstrap.
 
 Historical finalization anchor:
 

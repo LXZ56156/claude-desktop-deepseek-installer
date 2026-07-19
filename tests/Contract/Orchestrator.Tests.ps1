@@ -6,9 +6,84 @@
     . (Join-Path $script:RepoRoot 'lib\orchestrator.ps1')
 
     function Copy-CddsiSyntheticObject {
-        param([Parameter(Mandatory = $true)]$InputObject)
-        $serialized = [System.Management.Automation.PSSerializer]::Serialize($InputObject, 40)
-        return [System.Management.Automation.PSSerializer]::Deserialize($serialized)
+        param(
+            [Parameter(Mandatory = $true)]
+            [AllowNull()]
+            $InputObject,
+            [AllowNull()]
+            [System.Collections.ArrayList]$SourceReferences = $null,
+            [AllowNull()]
+            [System.Collections.ArrayList]$CopiedReferences = $null
+        )
+
+        if ($null -eq $InputObject) { return $null }
+        if ($InputObject -is [string] -or $InputObject.GetType().IsValueType) {
+            return $InputObject
+        }
+        if ($null -eq $SourceReferences) {
+            $SourceReferences = [System.Collections.ArrayList]::new()
+            $CopiedReferences = [System.Collections.ArrayList]::new()
+        }
+        for ($index = 0; $index -lt $SourceReferences.Count; $index++) {
+            if ([object]::ReferenceEquals($SourceReferences[$index], $InputObject)) {
+                return ,$CopiedReferences[$index]
+            }
+        }
+
+        if ($InputObject -is [System.Collections.Specialized.OrderedDictionary]) {
+            $copy = [ordered]@{}
+            [void]$SourceReferences.Add($InputObject)
+            [void]$CopiedReferences.Add($copy)
+            foreach ($key in $InputObject.Keys) {
+                $copy.Add($key, (Copy-CddsiSyntheticObject -InputObject $InputObject[$key] `
+                    -SourceReferences $SourceReferences -CopiedReferences $CopiedReferences))
+            }
+            return ,$copy
+        }
+        if ($InputObject -is [hashtable]) {
+            $copy = @{}
+            [void]$SourceReferences.Add($InputObject)
+            [void]$CopiedReferences.Add($copy)
+            foreach ($key in $InputObject.Keys) {
+                $copy[$key] = Copy-CddsiSyntheticObject -InputObject $InputObject[$key] `
+                    -SourceReferences $SourceReferences -CopiedReferences $CopiedReferences
+            }
+            return ,$copy
+        }
+        if ($InputObject.GetType().IsArray) {
+            $copy = [object[]]::new($InputObject.Count)
+            [void]$SourceReferences.Add($InputObject)
+            [void]$CopiedReferences.Add($copy)
+            for ($index = 0; $index -lt $InputObject.Count; $index++) {
+                $copy[$index] = Copy-CddsiSyntheticObject -InputObject $InputObject[$index] `
+                    -SourceReferences $SourceReferences -CopiedReferences $CopiedReferences
+            }
+            return ,$copy
+        }
+        if ($InputObject -is [System.Collections.IList]) {
+            $copy = [System.Collections.ArrayList]::new()
+            [void]$SourceReferences.Add($InputObject)
+            [void]$CopiedReferences.Add($copy)
+            foreach ($item in $InputObject) {
+                [void]$copy.Add((Copy-CddsiSyntheticObject -InputObject $item `
+                    -SourceReferences $SourceReferences -CopiedReferences $CopiedReferences))
+            }
+            return ,$copy
+        }
+
+        $copy = [pscustomobject][ordered]@{}
+        [void]$SourceReferences.Add($InputObject)
+        [void]$CopiedReferences.Add($copy)
+        foreach ($property in @($InputObject.PSObject.Properties | Where-Object {
+            $_.MemberType -in @('NoteProperty', 'Property')
+        })) {
+            $value = Copy-CddsiSyntheticObject -InputObject $property.Value `
+                -SourceReferences $SourceReferences -CopiedReferences $CopiedReferences
+            $copy.PSObject.Properties.Add(
+                [System.Management.Automation.PSNoteProperty]::new($property.Name, $value)
+            )
+        }
+        return ,$copy
     }
 
     function Get-CddsiSyntheticUtc {
@@ -251,11 +326,17 @@
         }
         return @($events | ForEach-Object { $_ })
     }
+
+    $script:CanonicalOrchestratorContext = New-CddsiSyntheticOrchestratorContext
+    $script:CanonicalSuccessfulTraceEvents = New-CddsiSyntheticTraceEvents `
+        -Context $script:CanonicalOrchestratorContext
+    $script:CanonicalEnsureGitFailureTraceEvents = New-CddsiSyntheticTraceEvents `
+        -Context $script:CanonicalOrchestratorContext -FailureStepId ensure_git
 }
 
 Describe 'bound install plan v2' {
     It 'binds the exact executable stage contexts and fixed forward plus compensation operations' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $context.PlanResult.Status | Should -BeExactly 'SUCCEEDED'
         $context.PlanResult.Changed | Should -BeFalse
         (Test-CddsiInstallPlan -Plan $context.Plan -StageManifest $context.Manifest `
@@ -272,7 +353,7 @@ Describe 'bound install plan v2' {
     }
 
     It 'fails closed outside VmAcceptance or UserLive and without exact grant coverage' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $calibrationManifest = Copy-CddsiSyntheticObject -InputObject $context.Manifest
         $calibrationManifest.Stage = 'VmCalibration'
         $calibrationManifest.ArtifactProfile = 'VmCalibration'
@@ -289,7 +370,7 @@ Describe 'bound install plan v2' {
     }
 
     It 'rejects locally rehashed run session step and operation-use drift' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         foreach ($mutation in @('Run', 'Step', 'UseKey')) {
             $tampered = Copy-CddsiSyntheticObject -InputObject $context.Plan
             if ($mutation -ceq 'Run') { $tampered.RunId = '20000000-0000-4000-8000-000000000999' }
@@ -309,8 +390,8 @@ Describe 'bound install plan v2' {
 
 Describe 'receipt-bound orchestrator trace v2' {
     It 'accepts only committed CLAIMED starts and matching terminal receipts' {
-        $context = New-CddsiSyntheticOrchestratorContext
-        $events = New-CddsiSyntheticTraceEvents -Context $context
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
+        $events = Copy-CddsiSyntheticObject -InputObject $script:CanonicalSuccessfulTraceEvents
         $trace = Resolve-CddsiOrchestratorTrace -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow `
@@ -323,8 +404,8 @@ Describe 'receipt-bound orchestrator trace v2' {
     }
 
     It 'stops at the primary failure and derives affected steps only from invoked mutation receipts' {
-        $context = New-CddsiSyntheticOrchestratorContext
-        $events = New-CddsiSyntheticTraceEvents -Context $context -FailureStepId ensure_git
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
+        $events = Copy-CddsiSyntheticObject -InputObject $script:CanonicalEnsureGitFailureTraceEvents
         $trace = Resolve-CddsiOrchestratorTrace -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow -Events $events
@@ -338,8 +419,8 @@ Describe 'receipt-bound orchestrator trace v2' {
     }
 
     It 'rejects cross-step receipt replay wrong time forged evidence and secret-bearing errors' {
-        $context = New-CddsiSyntheticOrchestratorContext
-        $events = New-CddsiSyntheticTraceEvents -Context $context
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
+        $events = Copy-CddsiSyntheticObject -InputObject $script:CanonicalSuccessfulTraceEvents
 
         $crossStep = Copy-CddsiSyntheticObject -InputObject $events
         $crossStep[6].OperationUseReceipt = $crossStep[4].OperationUseReceipt
@@ -391,7 +472,7 @@ Describe 'receipt-bound orchestrator trace v2' {
     }
 
     It 'rejects an attacker-rehashed plan before processing any event' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $tampered = Copy-CddsiSyntheticObject -InputObject $context.Plan
         $tampered.Steps[2].Operation = 'EnsureGit'
         $tampered.PlanId = Get-CddsiInstallPlanBindingToken -Plan $tampered
@@ -403,11 +484,11 @@ Describe 'receipt-bound orchestrator trace v2' {
 
 Describe 'receipt-bound compensation reducer v2' {
     It 'requires strict reverse proof and reports FULL only after all independent receipts complete' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $trace = Resolve-CddsiOrchestratorTrace -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow `
-            -Events (New-CddsiSyntheticTraceEvents -Context $context -FailureStepId ensure_git)
+            -Events (Copy-CddsiSyntheticObject -InputObject $script:CanonicalEnsureGitFailureTraceEvents)
         $compensation = $trace.CompensationPlan
         (Test-CddsiCompensationPlan -CompensationPlan $compensation -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
@@ -431,11 +512,11 @@ Describe 'receipt-bound compensation reducer v2' {
     }
 
     It 'reports FAILED on a proved compensation failure and never calls it FULL' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $trace = Resolve-CddsiOrchestratorTrace -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow `
-            -Events (New-CddsiSyntheticTraceEvents -Context $context -FailureStepId ensure_git)
+            -Events (Copy-CddsiSyntheticObject -InputObject $script:CanonicalEnsureGitFailureTraceEvents)
         $events = New-CddsiSyntheticCompensationEvents -Context $context `
             -CompensationPlan $trace.CompensationPlan -FailureSourceStepId ensure_git
         $result = Resolve-CddsiCompensationTrace -CompensationPlan $trace.CompensationPlan -Plan $context.Plan `
@@ -446,11 +527,11 @@ Describe 'receipt-bound compensation reducer v2' {
     }
 
     It 'rejects out-of-order missing-proof early replay and forged compensation evidence' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $trace = Resolve-CddsiOrchestratorTrace -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow `
-            -Events (New-CddsiSyntheticTraceEvents -Context $context -FailureStepId ensure_git)
+            -Events (Copy-CddsiSyntheticObject -InputObject $script:CanonicalEnsureGitFailureTraceEvents)
         $compensation = $trace.CompensationPlan
         $events = New-CddsiSyntheticCompensationEvents -Context $context -CompensationPlan $compensation
 
@@ -504,11 +585,11 @@ Describe 'receipt-bound compensation reducer v2' {
     }
 
     It 'rejects rehashed primary failure and PlanId drift in a compensation plan' {
-        $context = New-CddsiSyntheticOrchestratorContext
+        $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $trace = Resolve-CddsiOrchestratorTrace -Plan $context.Plan `
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow `
-            -Events (New-CddsiSyntheticTraceEvents -Context $context -FailureStepId ensure_git)
+            -Events (Copy-CddsiSyntheticObject -InputObject $script:CanonicalEnsureGitFailureTraceEvents)
 
         $primary = Copy-CddsiSyntheticObject -InputObject $trace.CompensationPlan
         $primary.PrimaryFailureReceiptBindingToken = ('9' * 64)

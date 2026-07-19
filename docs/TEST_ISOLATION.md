@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-18
+更新日期：2026-07-19
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -45,9 +45,15 @@ exit code。
 P10A-0A 现在包含 DevelopmentOnly 的 operator coordination 合同、固定 Git outbox
 runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
 dispatcher/provider 边界、两端 prompt/runbook 和 synthetic rehearsal。它们位于独立
-OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release。宿主机侧实现
-可以生成绑定精确 commit/tree、文件/blob/tool hash、repository 数字/node identity 与
-pinned genesis 的诊断 onboarding ZIP。包含文档闭环的最终 clean HEAD 只有在统一门、
+OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release。2026-07-19 的
+共享 dirty worktree 已把 bootstrap 收缩到唯一 phase2 operator 入口；phase2-only
+builder/loader、execution boundary、HostSandbox path binding、automation TOML readback
+正负测试与 loader semantic ACL/captured-byte load/atomic state/no-reparse 非递归 cleanup
+均已落盘并通过 dirty WIP 标准双引擎全树门；但包含文档同步的 clean exact commit 尚未完成
+统一门与 finalization，因此当前仍不得进入 VM。宿主机侧最终实现将从
+clean exact commit 生成绑定 commit/tree、
+文件/blob/tool hash、repository 数字/node identity 与 pinned genesis 的诊断 onboarding ZIP。
+包含文档闭环的最终 clean HEAD 只有在统一门、
 Release DryRun、immutable onboarding ZIP 自校验、暂停 heartbeat binding 和 remote/PR/CI
 均由外部事实核验后，才派生 `CanStartVmBootstrap=true`，且只允许 VM 离线核验、设备本地
 密钥生成和创建仍暂停的 VM task。为避免 tracked 自引用，精确 commit/tree、bundle/
@@ -55,6 +61,31 @@ manifest/inventory/hash/token 和 CI run 不在本文固化，只从 retained ow
 output、暂停 automation、既有 PR/CI 与实际 Git/remote 四方交叉核验。任何后续 tracked
 修改都会使该 readiness 失效，直到从新
 clean exact HEAD 重新完成相同 finalization。
+
+这四方核验属于宿主机 finalization；VM 不读取 retained path，也不检查宿主机 automation、
+PR/CI、worktree 或 remote。VM 只验证最终提示词带外提供的 ZIP SHA-256/length、product
+commit/tree、manifest/inventory binding token 与 content digest。普通用户只负责启动 VM、
+安装登录 Codex、把唯一 ZIP 放入新建空文件夹并打开、粘贴一次提示词。
+
+一次提示 bootstrap 的窄本地写权限与 minute poll task 必须分开记账。outer ZIP hash/length
+以零写入方式匹配后，用户显式启动的受审 onboarding runner 才可写新 owner-marked staging/
+state、按 manifest v3 固定的 Git/OpenSSH/`ssh-keygen`/两种 PowerShell 五工具生成三组
+`KEYPAIR_STAGED`，并创建或原位更新唯一 `PAUSED` VM task 后 readback。新 key 尚未注册，
+不能记为 credential ready。runtime protection assertion/hash/token 为 `UNPROVISIONED` 时，
+poll task 即使误触发也必须为零 network、零 Git、零 credential probe、零 runtime-state
+write；它不能继承 bootstrap runner 的本地写权限。
+
+该设计只在 prepared baseline 已经存在 manifest 固定的 Git、OpenSSH、`ssh-keygen`、
+PowerShell 7 与 Windows PowerShell 时满足“一份 ZIP、一次提示”。当前 bootstrap 不能联网
+下载或安装缺失工具；缺失/漂移必须在持久写入前 `BLOCKED`。若未来加入自举安装，必须先
+取得用户对 bootstrap-time network/install 的明确授权，并为每个下载固定来源、hash、签名、
+路径和失败清理合同；不能因追求少手工而扩大宿主机或 poll task 权限。
+
+同理，VM 本地生成的私钥只产生 `KEYPAIR_STAGED`。GitHub deploy-key 注册和窄权限授予
+需要一次外部授权；允许使用的交互式管理员身份不得写入 state、prompt、relay、报告或
+automation credential。未完成注册、正负向权限和 runtime assertion 前，两端 task 必须
+保持 `PAUSED`，且任何误触发在 network、Git、credential probe 和 runtime-state write 前
+fail closed。
 
 真实 protected history 已通过 public ruleset/effective-rules receipt 部署；窄权限角色凭据、
 runtime protection assertion、VM 负向权限证据、VM provider/device trust、reset smoke 与
@@ -324,12 +355,15 @@ Fake 层必须覆盖：
 - 两端分钟级 Codex automation 属于外部 operator coordination，不是产品 Scheduled
   Task，不能扩大宿主机 Live 或让 VM 修改产品代码。repository pair、固定
   outbox runtime、prompt、onboarding 和 synthetic 演练已实现；宿主机 heartbeat 已
-  创建且暂停。VM task 必须从 VM 设备创建并先保持暂停。protected history 已部署；
+  创建且暂停。VM task 必须从 VM 设备创建，或按同一 ID 原位更新，并先保持暂停；重复
+  ID/name 必须阻断。protected history 已部署；
   最小 credentials、runtime assertion、任务安全启用和 unattended acceptance 尚未完成。
 - Formal Lane 用于 P10A/P11 正式证据，必须由 VM 外部的 hypervisor supervisor
   恢复固定快照并签发 receipt，并使用独立 CAS/receipts/signatures。VMP/重启/卸载、
   补偿未知、baseline drift 或 reset 失败必须从 Fast Lane 升级；VM Codex 不能恢复
   自身正在运行的快照，正式 P11 PASS 必须绑定 clean-snapshot receipt。
+  这里 supervisor 就是普通 VM 软件或其外部自动化，baseline 是 VM 起始状态；上述
+  Formal clean-snapshot receipt 完全不是当前 bootstrap 的前置。
 - P11 失败后只能由宿主机修复、过门、提交/推送，再回到 P10B 重建并签名新候选；
   VM 不直接拉取修复源码重测。relay 消息不等于 CAS、签名或 acceptance receipt，
   也不得触发自动 merge/P12。

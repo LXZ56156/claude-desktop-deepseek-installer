@@ -53,6 +53,8 @@ $script:AstSyntaxErrorCount = $null
 $script:LiveAdapterFileCount = $null
 $script:SecretFindingCount = $null
 $script:RepositoryContentChanged = $null
+$script:RepositoryParseCache = @{}
+$script:InitialRepositoryHashByPath = @{}
 $script:CddsiWorkerMeasurementRuleVersion = 'cddsi-worker-measurement-rules-v2'
 
 function Get-RepositoryFiles {
@@ -100,9 +102,54 @@ function Get-RepositoryFiles {
 }
 
 function Get-RepositoryContentManifest {
-    return @((Get-RepositoryFiles) | ForEach-Object {
+    param(
+        [AllowNull()]
+        [object[]]$RepositoryFiles
+    )
+
+    $files = if ($PSBoundParameters.ContainsKey('RepositoryFiles')) {
+        @($RepositoryFiles)
+    }
+    else {
+        @(Get-RepositoryFiles)
+    }
+    return @($files | ForEach-Object {
         '{0}|{1}' -f $_.RelativePath, (Get-FileHash -LiteralPath $_.File.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     })
+}
+
+function Get-CddsiWorkerRepositoryParse {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not $fullPath.StartsWith($script:Root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Repository AST parse path escapes the source root.'
+    }
+    $relative = $fullPath.Substring($script:Root.Length + 1).Replace('\', '/')
+    if (Test-CddsiDevelopmentDependencyPath -RelativePath $relative) {
+        throw 'Development dependency AST parsing must not use the repository parse cache.'
+    }
+    if (-not $script:InitialRepositoryHashByPath.ContainsKey($relative)) {
+        throw "Repository AST parse path is absent from the validated initial inventory: $relative"
+    }
+
+    # The cache identity includes the exact initial content hash. The final
+    # repository inventory and content manifest are still read and hashed
+    # afresh after Pester, so any in-worker mutation remains a hard failure.
+    $cacheKey = '{0}|{1}' -f $relative, $script:InitialRepositoryHashByPath[$relative]
+    if (-not $script:RepositoryParseCache.ContainsKey($cacheKey)) {
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($fullPath, [ref]$tokens, [ref]$errors)
+        $script:RepositoryParseCache[$cacheKey] = [pscustomobject]@{
+            Ast    = $ast
+            Errors = @($errors)
+        }
+    }
+    return $script:RepositoryParseCache[$cacheKey]
 }
 
 function Invoke-CheckStep {
@@ -1041,7 +1088,13 @@ $engineGrantSha256Actual = Assert-CddsiWorkerEngineGrant
 $gitGrantActual = Assert-CddsiWorkerGitGrant
 $initialRepositoryFiles = @(Get-RepositoryFiles)
 $initialInventory = @($initialRepositoryFiles.RelativePath)
-$initialContentManifest = @(Get-RepositoryContentManifest)
+$initialContentManifest = @(Get-RepositoryContentManifest -RepositoryFiles $initialRepositoryFiles)
+foreach ($manifestEntry in $initialContentManifest) {
+    $separator = $manifestEntry.LastIndexOf('|')
+    if ($separator -lt 1) { throw 'Initial repository content manifest entry is malformed.' }
+    $relative = $manifestEntry.Substring(0, $separator)
+    $script:InitialRepositoryHashByPath[$relative] = $manifestEntry.Substring($separator + 1)
+}
 $initialContentManifestSha256 = Get-CddsiWorkerSequenceSha256 -Values $initialContentManifest
 $repositoryInventorySha256 = (Get-FileHash -LiteralPath ([System.IO.Path]::GetFullPath($RepositoryInventoryPath)) -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -1095,7 +1148,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     }
     $duplicates = @($classified | Group-Object | Where-Object Count -gt 1)
     if ($duplicates.Count -gt 0) { throw "Execution boundary duplicates: $($duplicates.Name -join ', ')" }
-    $actual = @((Get-RepositoryFiles) | Where-Object { $_.RelativePath -match '\.(ps1|psm1|psd1)$' } | ForEach-Object RelativePath | Sort-Object)
+    $actual = @($initialRepositoryFiles | Where-Object { $_.RelativePath -match '\.(ps1|psm1|psd1)$' } | ForEach-Object RelativePath | Sort-Object)
     $classificationDiff = @(Compare-Object -ReferenceObject $actual -DifferenceObject @($classified | Sort-Object))
     if ($classificationDiff.Count -gt 0) {
         $details = @($classificationDiff | ForEach-Object { '{0}:{1}' -f $_.SideIndicator, $_.InputObject }) -join ', '
@@ -1157,9 +1210,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     $forbiddenTypePrefixes = @($boundary.Rules.ProductForbiddenTypePrefixes)
 
     $bootstrapRelative = 'lib/bootstrap.ps1'
-    $bootstrapTokens = $null
-    $bootstrapErrors = $null
-    $bootstrapAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $bootstrapRelative), [ref]$bootstrapTokens, [ref]$bootstrapErrors)
+    $bootstrapParse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $bootstrapRelative)
+    $bootstrapErrors = $bootstrapParse.Errors
+    $bootstrapAst = $bootstrapParse.Ast
     if (@($bootstrapErrors).Count -gt 0) { throw 'lib/bootstrap.ps1 has PowerShell syntax errors.' }
     $loadOrderAssignments = @($bootstrapAst.FindAll({
         param($node)
@@ -1185,9 +1238,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     $actualProductDotSourceGraph = @{}
     foreach ($relative in @($boundary.Planes.ProductCore)) {
         if ($relative -notmatch '\.(ps1|psm1)$') { continue }
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $dotCommands = @($ast.FindAll({
             param($node)
@@ -1220,9 +1273,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         $boundary.Planes.TrustedHarness + $boundary.Planes.OperatorCoordination
     )) {
         if ($relative -notmatch '\.(ps1|psm1)$') { continue }
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $dotTargets = @(Get-CddsiStaticDotSourceTargets -Ast $ast -RelativePath $relative -BootstrapLibraryFiles $actualBootstrapFiles)
         foreach ($liveRelative in $expectedLiveAdapters) {
@@ -1247,9 +1300,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     }
 
     foreach ($relative in $expectedLiveAdapters) {
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $topLevelStatements = @($ast.EndBlock.Statements)
         if ($topLevelStatements.Count -eq 0 -or @($topLevelStatements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] }).Count -gt 0) {
@@ -1346,9 +1399,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
 
     foreach ($relative in @($boundary.Planes.ProductCore)) {
         if ($relative -notmatch '\.(ps1|psm1)$') { continue }
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
         $allowedCommands = @()
@@ -1372,9 +1425,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     }
 
     foreach ($relative in @($boundary.Rules.OperatorCoordinationLibraryFiles)) {
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $topLevelStatements = @($ast.EndBlock.Statements)
         $invalidTopLevel = @($topLevelStatements | Where-Object {
@@ -1425,7 +1478,10 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             'New-CddsiFastLaneVmOnboardingBundle'
             'Test-CddsiFastLaneVmOnboardingBundle'
         )
-        'operator/fast-lane/invoke-git-outbox.ps1' = @('Invoke-CddsiFastLaneGitOutbox')
+        'operator/fast-lane/invoke-git-outbox.ps1' = @(
+            'Invoke-CddsiFastLaneGitOutbox'
+            'Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding'
+        )
         'operator/fast-lane/invoke-vm-reset-live.ps1' = @('Invoke-CddsiVmResetLiveAdapter')
         'operator/fast-lane/providers/windows-vm-reset.ps1' = @(
             'Get-CddsiWindowsVmResetProviderOperationContract'
@@ -1439,10 +1495,10 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         )
     }
     foreach ($relative in $operatorRuntimeFiles) {
-        $tokens = $null
-        $errors = $null
         $fullRuntimePath = Join-Path $script:Root $relative
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($fullRuntimePath, [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path $fullRuntimePath
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
         $actualEntryPoints = @($boundary.Rules.OperatorRuntimeEntryPoints[$relative])
@@ -1500,9 +1556,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     }
     foreach ($relative in @($boundary.Planes.Tests)) {
         if ($relative -notmatch '\.(ps1|psm1)$') { continue }
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
         $commandHits = @($commands | ForEach-Object { Get-CddsiCommandName -CommandAst $_ } | Where-Object { $_ -and $testForbiddenCommands -contains $_ } | Sort-Object -Unique)
@@ -1542,9 +1598,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     $harnessNetworkCommands = @('Invoke-WebRequest', 'Invoke-RestMethod', 'Start-BitsTransfer', 'Save-Module', 'Install-Module', 'curl', 'curl.exe', 'wget', 'wget.exe')
     foreach ($relative in $trustedHarnessFiles) {
         if ($relative -notmatch '\.(ps1|psm1)$') { continue }
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
         $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
         $dynamicInvocations = @($commands | Where-Object {
@@ -1588,9 +1644,9 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         $boundary.Planes.TrustedHarness + $boundary.Planes.OperatorCoordination
     )) {
         if ($relative -notmatch '\.(ps1|psm1)$') { continue }
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         $commandText = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.Extent.Text }) -join "`n"
         if ($commandText -match $encodedCommandPattern -or $commandText -match $executionPolicyBypassPattern) {
             throw "$relative contains a prohibited child-shell invocation pattern."
@@ -1625,7 +1681,7 @@ Invoke-CheckStep -Name 'Release manifest classifies every repository file exactl
 
 Invoke-CheckStep -Name 'Documentation system is complete and discoverable' -Action {
     $manifest = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'release-manifest.psd1')
-    $documentation = @((Get-RepositoryFiles) | Where-Object { $_.RelativePath -match '^docs/.+\.md$' })
+    $documentation = @($initialRepositoryFiles | Where-Object { $_.RelativePath -match '^docs/.+\.md$' })
     foreach ($item in $documentation) {
         $relative = $item.RelativePath
         $path = Join-Path $script:Root $relative
@@ -1644,7 +1700,7 @@ Invoke-CheckStep -Name 'Documentation system is complete and discoverable' -Acti
         if (-not $index.Contains($exactReference)) { throw "Documentation index does not reference the exact project path: $($item.RelativePath)" }
     }
 
-    foreach ($markdown in @((Get-RepositoryFiles) | Where-Object { $_.RelativePath -like '*.md' })) {
+    foreach ($markdown in @($initialRepositoryFiles | Where-Object { $_.RelativePath -like '*.md' })) {
         $content = Read-CddsiStrictUtf8Text -Path $markdown.File.FullName -DisplayPath $markdown.RelativePath
         $references = @([regex]::Matches($content, '(?<![A-Za-z0-9_./-])docs/[A-Za-z0-9_-]+\.md') | ForEach-Object { $_.Value } | Sort-Object -Unique)
         foreach ($reference in $references) {
@@ -1764,11 +1820,11 @@ Invoke-CheckStep -Name 'Test sources pass the baseline host-access pattern guard
         'HOME', 'PROFILE', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMDATA', 'HOMEDRIVE', 'HOMEPATH',
         'env:HOME', 'env:USERPROFILE', 'env:LOCALAPPDATA', 'env:APPDATA', 'env:PROGRAMDATA', 'env:HOMEDRIVE', 'env:HOMEPATH'
     )
-    $testFiles = @(Get-RepositoryFiles | Where-Object { $_.RelativePath -match '^tests/.+\.(ps1|psm1|psd1)$' })
+    $testFiles = @($initialRepositoryFiles | Where-Object { $_.RelativePath -match '^tests/.+\.(ps1|psm1|psd1)$' })
     foreach ($item in $testFiles) {
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($item.File.FullName, [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path $item.File.FullName
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object {
             $commandName = $_.GetCommandName()
             if ($commandName) { @($commandName -split '\\')[-1] }
@@ -1783,12 +1839,11 @@ Invoke-CheckStep -Name 'Test sources pass the baseline host-access pattern guard
 }
 
 Invoke-CheckStep -Name 'PowerShell AST syntax' -Action {
-    $powerShellFiles = @(Get-RepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -match '\.(ps1|psd1)$' })
+    $powerShellFiles = @($initialRepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -match '\.(ps1|psd1)$' })
     $allErrors = New-Object System.Collections.Generic.List[string]
     foreach ($item in $powerShellFiles) {
-        $tokens = $null
-        $errors = $null
-        [void][System.Management.Automation.Language.Parser]::ParseFile($item.File.FullName, [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path $item.File.FullName
+        $errors = $parse.Errors
         foreach ($parseError in @($errors)) {
             $allErrors.Add("$($item.RelativePath):$($parseError.Extent.StartLineNumber): $($parseError.Message)")
         }
@@ -1798,7 +1853,7 @@ Invoke-CheckStep -Name 'PowerShell AST syntax' -Action {
 }
 
 Invoke-CheckStep -Name 'JSON parsing and defaults contract' -Action {
-    $jsonFiles = @(Get-RepositoryFiles | Where-Object { $_.RelativePath -like '*.json' })
+    $jsonFiles = @($initialRepositoryFiles | Where-Object { $_.RelativePath -like '*.json' })
     foreach ($item in $jsonFiles) {
         $text = [System.IO.File]::ReadAllText($item.File.FullName, [System.Text.Encoding]::UTF8)
         try { $null = $text | ConvertFrom-Json -ErrorAction Stop } catch { throw "Invalid JSON: $($item.RelativePath)" }
@@ -1851,7 +1906,7 @@ Invoke-CheckStep -Name 'JSON parsing and defaults contract' -Action {
 }
 
 Invoke-CheckStep -Name 'Encoding and line-ending baseline' -Action {
-    foreach ($item in @(Get-RepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -like '*.cmd' })) {
+    foreach ($item in @($initialRepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -like '*.cmd' })) {
         $bytes = [System.IO.File]::ReadAllBytes($item.File.FullName)
         if (@($bytes | Where-Object { $_ -gt 127 }).Count -gt 0) { throw "CMD is not ASCII: $($item.RelativePath)" }
         if ($bytes.Count -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw "CMD has UTF-8 BOM: $($item.RelativePath)" }
@@ -1863,7 +1918,7 @@ Invoke-CheckStep -Name 'Encoding and line-ending baseline' -Action {
         if (-not $text.EndsWith("`r`n") -or $text.Substring(0, $text.Length - 2).EndsWith("`r`n")) { throw "CMD must have exactly one final newline: $($item.RelativePath)" }
         if ([regex]::IsMatch($text, '(?m)[ \t]+(?=\r?$)')) { throw "CMD has trailing whitespace: $($item.RelativePath)" }
     }
-    foreach ($item in @(Get-RepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -match '\.(ps1|psd1)$' })) {
+    foreach ($item in @($initialRepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -match '\.(ps1|psd1)$' })) {
         $bytes = [System.IO.File]::ReadAllBytes($item.File.FullName)
         if ($bytes.Count -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) { throw "PowerShell file must be UTF-8 BOM for Windows PowerShell 5.1: $($item.RelativePath)" }
         $text = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Count - 3)
@@ -1872,7 +1927,7 @@ Invoke-CheckStep -Name 'Encoding and line-ending baseline' -Action {
         if ([regex]::IsMatch($text, '(?m)[ \t]+(?=\r?$)')) { throw "PowerShell file has trailing whitespace: $($item.RelativePath)" }
     }
     $binaryExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.ico', '.zip', '.msix', '.exe', '.dll', '.pdb', '.pdf')
-    foreach ($item in @(Get-RepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -notmatch '\.(ps1|psd1|cmd)$' -and $binaryExtensions -notcontains $_.File.Extension.ToLowerInvariant() })) {
+    foreach ($item in @($initialRepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) -and $_.RelativePath -notmatch '\.(ps1|psd1|cmd)$' -and $binaryExtensions -notcontains $_.File.Extension.ToLowerInvariant() })) {
         $bytes = [System.IO.File]::ReadAllBytes($item.File.FullName)
         if ($bytes.Count -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw "Non-PowerShell text must not have UTF-8 BOM: $($item.RelativePath)" }
         $text = Read-CddsiStrictUtf8Text -Path $item.File.FullName -DisplayPath $item.RelativePath
@@ -1904,9 +1959,9 @@ Invoke-CheckStep -Name 'Public function contracts and side-effect-free module lo
     }
     $functionAstByName = @{}
     foreach ($entry in $publicContract.Files.GetEnumerator()) {
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $entry.Key), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $entry.Key)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         $functionNodes = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
         foreach ($functionNode in $functionNodes) {
             $functionAstByName[$functionNode.Name] = $functionNode
@@ -1982,9 +2037,9 @@ Invoke-CheckStep -Name 'Scaffold modules contain no real system-operation comman
     )
     $forbiddenTypes = @('System.Diagnostics.Process', 'System.Net.WebClient', 'System.Net.WebRequest', 'System.Net.Http.HttpClient', 'Microsoft.Win32.Registry', 'System.IO.File', 'System.IO.Directory')
     foreach ($relative in $scaffoldFiles) {
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root $relative), [ref]$tokens, [ref]$errors)
+        $parse = Get-CddsiWorkerRepositoryParse -Path (Join-Path $script:Root $relative)
+        $errors = $parse.Errors
+        $ast = $parse.Ast
         $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
         $hits = @($commands | Where-Object { $forbiddenCommands -contains $_ } | Sort-Object -Unique)
         if ($hits.Count -gt 0) { throw "$relative contains forbidden scaffold commands: $($hits -join ', ')" }
@@ -1997,7 +2052,7 @@ Invoke-CheckStep -Name 'Scaffold modules contain no real system-operation comman
 
 Invoke-CheckStep -Name 'Repository API Key leak scan' -Action {
     $findings = New-Object System.Collections.Generic.List[object]
-    foreach ($item in @(Get-RepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) })) {
+    foreach ($item in @($initialRepositoryFiles | Where-Object { -not (Test-CddsiDevelopmentDependencyPath -RelativePath $_.RelativePath) })) {
         foreach ($finding in @(Find-CddsiWorkerFileSecretFindings -Path $item.File.FullName -RelativePath $item.RelativePath)) { $findings.Add($finding) }
     }
     $script:SecretFindingCount = $findings.Count
@@ -2006,6 +2061,10 @@ Invoke-CheckStep -Name 'Repository API Key leak scan' -Action {
         throw "Potential secrets found: $safeDetails"
     }
 }
+
+# Static analysis is complete. Release cached AST references before the much
+# larger Pester run; the cache is never used for dependency or final evidence.
+$script:RepositoryParseCache.Clear()
 
 if (-not $SkipPester) {
     Invoke-CheckStep -Name 'Pester Unit and Contract suites' -Action {
@@ -2016,7 +2075,10 @@ if (-not $SkipPester) {
             -Value $gitGrantActual.Path -Option ReadOnly -Force
         Set-Variable -Name CddsiTrustedHarnessGitGrantSha256 -Scope Global `
             -Value $gitGrantActual.Sha256 -Option ReadOnly -Force
-        $result = Invoke-Pester -Path (Join-Path $script:Root 'tests') -Output Detailed -PassThru
+        # PassThru retains the complete per-test evidence. Normal avoids the
+        # cost of rendering every passing test while preserving container and
+        # failure progress for the trusted timeout diagnostic.
+        $result = Invoke-Pester -Path (Join-Path $script:Root 'tests') -Output Normal -PassThru
         $script:PesterResult = $result
         if ([string]$result.Result -ne 'Passed' -or $result.FailedCount -gt 0 -or $result.SkippedCount -gt 0 -or $result.NotRunCount -gt 0 -or $result.InconclusiveCount -gt 0) {
             $failedDetails = @(

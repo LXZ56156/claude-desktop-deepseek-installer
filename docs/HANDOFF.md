@@ -1,75 +1,50 @@
 # 新任务交接
 
-更新日期：2026-07-18
+更新日期：2026-07-19
 
 ## 一句话状态
 
-本项目已经越过旧交接所写的 P2/P3：P3 环境域模型、P4 供应链合同、P5-P7
-安全纯合同、P8 fake 编排器、P9 synthetic 验收以及 P10A evidence/consumption 合同均已
-实现。P10B 的宿主机支撑合同也已完成并通过统一门，包括 `release-facts`、
-`release-artifact`、`credential-helper-release` 和 fail-closed candidate assembler。
+**当前不能进入 VM。** 截至 2026-07-19，工作树有 20 个 tracked 文件处于未提交修改状态；
+针对包含本文同步的最终 clean commit 的宿主机 finalization 尚未开始。任何旧 commit、bundle、automation prompt、
+CI run 或历史 `CanStartVmBootstrap=true` 结论都已因 tracked edits 失效。因此当前精确状态是：
 
-`RunId=62ed01b0-7c51-411d-9931-206fbc28602f` 与每引擎 338 项 Pester 只是
-P10A-0A runtime 变更前的历史基线。2026-07-16 对 commit
-`3e843912df2543c1da05b09061970faff511d016` 完成过一次宿主机 finalization：
-HostSandbox 双引擎均为 427/427，Release Simulation DryRun、18-entry onboarding
-bundle、暂停 heartbeat 的最终 hash binding 和当时 PR CI 均通过，现只作历史锚。
+- `CanStartVmBootstrap=false`；
+- `CanStartVmIntegration=false`；
+- `P10A0AComplete=false`；
+- `CanStartFormalP10A=false`。
 
-2026-07-17 的 public-contract/cutover 质量锚为
-`a09130f2afadb6dcf4cfc60a61a72095dc41faa6`：标准 HostSandbox
-`RunId=8e6efa51-9980-4bb5-b60e-8512c08d0205` 在 PowerShell 7 与 Windows PowerShell
-均为 430/430，全部 zero metrics 为 0、repository unchanged、cleanup succeeded；
-Release Simulation 为 39 package files/39 ZIP entries、四层 inventory exact、
-`Changed=false`，diff/编码门和 PR CI 均通过。它证明 PUBLIC 合同可部署，但不是
-包含本交接更新的最终 onboarding bundle/task authorization。
+当前 P10A-0A dirty WIP 的行为测试闭环已通过，clean-commit finalization 仍待完成。新的唯一 phase2 入口
+`Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding`、builder/loader、execution boundary 和正负
+测试已经按目标合同落盘：不再接受 caller result/prompt/observation 或 derived roots；direct
+phase1/core/handoff/mutation surface 均为纯 fail-closed facade；真实目标 automation TOML 采用
+canonical identity scan、目标专用 exact schema、唯一 ID/name、prompt readback 和进程内
+`CODEX_THREAD_ID` 绑定。非 Live context 还必须把所有输入路径绑定到 owner-marked HostSandbox。
+loader 已采用 current-SID/protected-DACL 精确校验、同一已哈希字节解析/加载、create-only 与
+原子状态写、显式栈 deepest-first 非递归清理及幂等状态比较。
 
-随后在 2026-07-17 对 commit
-`615bbf3687caa862bd6077b2fc620e00bf0e7568` 完成过一次宿主机 finalization：
-HostSandbox `RunId=9c2fd721-56c7-41c3-adc0-870c644a5b3b` 双引擎均为
-430/430，Release Simulation 为 39/39，18-entry onboarding bundle、同一暂停
-heartbeat 的精确绑定、remote/PR 与最终 CI 均通过。该结果证明当时字节可进入
-bootstrap-only；由于 2026-07-18 文档闭环会改变 tracked tree，`615bbf3...` 与其
-bundle/task binding 现在也只作历史证据，不能授权包含本文的新 HEAD。
+这组 WIP 已完成一次标准 HostSandbox 双引擎全树 PASS：PowerShell 7 与 Windows PowerShell
+各 448/448，Failed/Skipped/NotRun/Inconclusive 均为 0；live/forbidden/outside/network/
+registry/secret/unexpected-ledger 与全部 mutation spy 均为 0，repository unchanged，cleanup
+为 `Succeeded`。此前 fail-closed 运行暴露的动态能力清单漂移、测试 reflection、WinPS
+`MAX_PATH` 原子临时名和 fixture Git 子进程/目录句柄生命周期均已修复根因，没有扩大 900 秒
+worker timeout。该 PASS 发生在本文最终同步与 commit 之前，只是 WIP 行为证据；仍须从包含
+本文的 clean exact commit 重跑标准门和完整 finalization，因此这不是 VM 授权。
 
-这些结果只证明纯合同、fake/synthetic、deterministic Release Simulation 和
-fail-closed assembler。P10A 真实 VM evidence、实际 helper PE/签名、frozen facts、
-P10B 双候选和 P11 全面 VM 验收均未产生，不能写成已完成。
+已完成且仍有效的外部历史事实只有：三个 public repositories 与无 bypass 的
+protected-history ruleset 已部署，产品旧 `main` 与两个 control outbox 已初始化；既有宿主机
+heartbeat 仍必须保持 `PAUSED`。2026-07-16/17 的 427/427、430/430、39/39、18-entry bundle
+和 CI 记录只说明当时精确字节通过，不能授权当前未提交工作树。详细历史锚保留在后文。
 
-双机 Codex 测试闭环的职责、消息、证据、清洁和重测合同已经写入
-`docs/VM_TEST_RELAY.md`。P10A-0A 宿主机侧现已实现：`DirectionalRepositoryPair`、
-relay/state/hash、固定 Git outbox runtime、readiness resolver、deterministic VM
-onboarding builder、fake reset 与 VM-only reset dispatcher/provider boundary、两端
-分钟级 prompt/runbook 和 synthetic rehearsal；整个 operator coordination plane 只归入
-`DevelopmentOnlyFiles`。
+项目较早阶段的 P3-P9 纯合同/fake/synthetic、P10A evidence/consumption 合同和 P10B 宿主机
+支撑合同已经实现；这不等于真实 VM evidence、helper PE/签名、frozen facts、P10B 双候选或
+P11 全面验收已经产生。产品运行阶段仍为 `Scaffold`，宿主机不得执行产品 Live。
 
-public 产品 remote 与两个物理单向 public control repos 已创建，产品 `main` 基线已推送，
-两个 `outbox/` 已初始化；三仓均已启用无 bypass 的 protected-history ruleset，目标 refs
-实际受禁止删除、禁止非快进和线性历史约束。宿主机分钟级 heartbeat 已创建并保持暂停。
-旧 `3e843912...`、`a09130f2...` 与 `615bbf3...` 均为历史锚，不能授权包含本交接更新的
-新 HEAD。文档提交后，必须对包含本文的 clean HEAD 重新完成完整质量门、Release
-Simulation、bundle 自校验、同一暂停 task 重绑以及 remote/PR/CI 核验。在这些闭环条件
-全部由外部机器事实确认前，`CanStartVmBootstrap=false`，不得携带旧 bundle 进入 VM；
-全部成立后才派生 `CanStartVmBootstrap=true`，且授权范围仅为 bootstrap-only。
-
-为避免 tracked 文档对自身 commit/tree/hash 产生不可能稳定的自引用，最终 exact
-commit/tree、bundle/manifest/inventory/content digest、task prompt hash 与 CI run 不嵌入
-本文。它们必须由 retained owner-marked bundle output 的 manifest/inventory/marker、同一
-`PAUSED` automation 的绑定、PR #1/最终 CI 和公开 Git/remote 状态四方相互核验；任一来源
-缺失或不一致即 fail closed。这样下一任务可从持久事实重建，不依赖本次聊天正文。
-
-**VM integration 仍被外部门阻断**：private ruleset HTTP 403 已由 PUBLIC cutover 与
-真实 protected-history receipts 解除，但窄 HostCoordinator/VmTester credentials、runtime
-protection assertion 尚未发放；VM 负向权限、provider/device trust、reset smoke、两端任务
-安全启用和 unattended loop 均尚未产生真实证据。Formal
-Lane 的外部 clean-snapshot receipt、CAS/WORM store、签名 authority 与 receipt validator
-也未就绪。因此无论 bootstrap-only 是否已经就绪，`CanStartVmIntegration=false`、
-`P10A0AComplete=false`、`CanStartFormalP10A=false`；不能宣称 P10A、P10B 真实候选
-或 P11 已完成。
-
-产品运行阶段仍是 `Scaffold`。产品 Release/default bootstrap 内没有可工作的真实 Live
-adapter、已构建的 credential helper PE、代码签名或冻结的 VM 事实；新增的 Windows
-guest-reset provider 仅属于 DevelopmentOnly 的 VM operator plane，不能进入产品包或在
-宿主机执行。宿主机也从未执行真实安装、配置、API、系统探测或进程控制。
+用户的端到端目标已经冻结：正常路径中，用户只启动 VM、安装并登录 Codex、放入一个宿主机
+交付文件、粘贴一段最终 prompt。之后由两端 Codex 与固定 runner 自动完成 VM 本地配置、
+窄凭据和双向通道 provisioning、宿主修复/VM 重测循环、场景矩阵、Formal evidence、候选
+构建与验收；最终发布仍默认需要用户人工确认。网络、官方工具安装和 GitHub 管理授权不是
+静默权限：若确有需要，只允许各请求一次明确确认，Codex 代为执行具体步骤，且交互式
+bootstrap-admin 会话不得保存或复用为 automation credential。
 
 ## 仓库与工作树
 
@@ -82,6 +57,9 @@ guest-reset provider 仅属于 DevelopmentOnly 的 VM operator plane，不能进
   （均为 PUBLIC；ruleset `19068292`、`19068313`）
 - 当前版本：`0.1.0-dev`
 - 产品运行阶段：`Scaffold`
+- 本次 WIP 基线 commit：`809942943bfeb0547fa36f57aedb8e75e1d45e29`；tree：
+  `423e740e9fc191a23959e8c37a9a16eb81776ef3`。这是 20 个 tracked 修改所基于的旧 HEAD，
+  不是最终 bundle/CI/VM 授权锚。
 - 历史宿主机锚：`3e843912...`、`a09130f2...`、`615bbf368...`；包含本文的最终
   clean HEAD 与其 bundle/task/CI 绑定必须从外部机器事实重新发现，任何历史锚都不能
   当成当前授权
@@ -369,63 +347,133 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
 这组 receipt 只证明版本化 PUBLIC 合同和服务端保护已部署。包含本节的 tracked 文档会
 产生新 commit/tree，因此它不是最终 VM onboarding authorization。
 
-## 2026-07-18 文档闭环、当前停点与 VM bootstrap-only 入口
+## 2026-07-19 当前停点、宿主机收口与 VM 目标入口
 
 本文提交本身会改变 commit/tree，所以不能在本文内写一个“最终 SHA”再声称它包含本文。
-宿主机必须在文档提交后对包含本文的 clean HEAD 完成以下 finalization；最终精确值只由
+当前可以进入提交与 clean-commit finalization，但仍不能进入 VM。phase2/loader 实现与正负
+测试已在 dirty WIP 的标准双引擎门通过；仍须对包含本文的 clean HEAD 完成以下闭环。最终精确值只由
 retained owner-marked bundle output、同一暂停 automation、PR/CI 与公开 Git/remote 四方
 持久事实核验：
 
-1. 把本轮文档更新只作为正常 fast-forward commit 推到既有
-   `codex/repair/p10a-0a-fast-lane` 与 PR #1；不得 force push、创建重复 PR、merge、
-   发布或 promotion。
-2. 从该最终 clean exact commit 运行标准 HostSandbox 双引擎全树门；当前预期每引擎
-   430 项，全部 zero metrics、repository unchanged 与 cleanup 必须成立。
-3. 运行 Release Simulation DryRun，要求 39 package files/39 ZIP entries、四层 inventory
+1. 已完成 dirty WIP 标准门：phase2 canonical TOML/唯一任务/prompt/current-task/HostSandbox
+   路径绑定正负测试、fail-closed facade、execution boundary 和 phase2-only builder/loader
+   均通过。
+2. 已完成 dirty WIP 双引擎回归：loader semantic ACL、captured-byte execution、atomic/
+   idempotent state、早期 failure cleanup 与显式栈非递归删除均通过，未扩大 timeout。
+3. 把全部 tracked 修改作为正常 commit fast-forward push 到既有
+   `codex/repair/p10a-0a-fast-lane` 与 PR #1；不得 force push、创建重复 PR、merge、发布或
+   promotion。
+4. 从该最终 clean exact commit 运行标准 HostSandbox 双引擎全树门；最终测试数以该 clean
+   HEAD 的机器结果为准，全部 Failed/Skipped/NotRun/Inconclusive 与 forbidden/live/outside/
+   network/registry/secret/unexpected-ledger/mutation 指标为 0，repository unchanged、cleanup
+   succeeded。
+5. 运行 Release Simulation DryRun，要求 39 package files/39 ZIP entries、四层 inventory
    exact、`Changed=false`、全部 forbidden/secret/mutation 指标为 0；再过 diff/编码门。
-4. 从最终 clean exact commit 生成并自校验 Store onboarding bundle：18 ZIP entries、
+6. 从最终 clean exact commit 生成并自校验 Store onboarding bundle：18 ZIP entries、
    inventory entries 16、timestamp 1980；记录 ZIP/manifest/inventory/content hashes、
    长度与 retained owner-marked path。
-5. 用 `codex_app__automation_update` 更新既有宿主机 heartbeat，保持同一 id、minute
+7. 用 Codex automation 更新既有宿主机 heartbeat，保持同一 id、minute
    cadence、target task 与 `PAUSED`，prompt 精确绑定最终 commit/tree/bundle、repository/
    protection/tool facts。凭据或 runtime assertion 仍为 `UNPROVISIONED` 时，误触发必须在
    任何网络、Git 或代码修改前返回 `BLOCKED`。
-6. 核对 remote ref、clean tree、PR #1 仍 OPEN/DRAFT 且最终 HEAD CI 全部成功。以上完成后
+8. 核对 remote ref、clean tree、PR #1 仍 OPEN/DRAFT 且最终 HEAD CI 全部成功。以上完成后
    才可令 `CanStartVmBootstrap=true` 并交付 VM bootstrap-only handoff；此前不得进入 VM。
-7. `CanStartVmIntegration=false`、`P10A0AComplete=false`、Formal readiness=false。
+9. `CanStartVmIntegration=false`、`P10A0AComplete=false`、Formal readiness=false。
    服务端 protected history 已完成；窄角色凭据、runtime assertion、VM negative-permission/
    reset/task/unattended evidence 仍缺失。
 
-状态判定不依赖本文编辑时的快照：上述 1–6 任一项未由外部事实证明时，
+状态判定不依赖本文编辑时的快照：上述 1–8 任一项未由外部事实证明时，
 `CanStartVmBootstrap=false`；全部成立时，`CanStartVmBootstrap=true`，但仅允许执行下面的
 bootstrap-only 工作。后一种状态也不改变
 `CanStartVmIntegration=false`、`P10A0AComplete=false`、`CanStartFormalP10A=false`。
 
+本次只需按平常方式启动准备好的 disposable VM，不需要用户制作或签发任何正式快照凭证。
+正式 P10A/P11 的快照、CAS 与签名证据是后续阶段的工作，不是本次 bootstrap 的前置。
+
+宿主机 finalization 负责核验 retained owner-marked path、宿主机 `PAUSED` automation、
+PR/CI、clean worktree、remote ref 和服务端保护。VM 看不到这些宿主机事实，也不得重复核验。
+宿主机生成器把 11 个最终外部锚点写入提示词：ZIP SHA-256/length，manifest
+SHA-256/length/binding token，inventory SHA-256/length/binding token，bundle content digest，
+product commit/tree。交付时还必须给出 loader source 与 prompt 各自的 SHA-256/length；tracked
+文档不写死这些易变值。VM 提示词不携带 ruleset ID，公开 repository/protection observation
+也不构成 sender authority。
+
 ### VM bootstrap-only 步骤
 
-1. 只在预定 disposable VM 基线启动后，取得 retained owner-marked output 中、并由同一
-   暂停 automation 精确绑定的 onboarding ZIP；先离线
-   校验 ZIP、manifest、inventory、content digest、长度、18 个 Store entries、16 个
-   inventory entries、1980 timestamp、product commit/tree、三个 repository identity/
-   genesis 与固定工具路径/hash。不得用本文中的历史锚替代外部精确绑定。
-2. 在 VM 本地生成三把彼此独立、不可复用的 repository-scoped key：product read、
-   host-to-VM read、VM-to-host append。只回传公钥与脱敏指纹；不得把私钥、token 或
-   broad-admin credential 写入 relay、日志、报告、仓库或宿主机交接正文。
-3. 只核对固定 Git、OpenSSH、PowerShell 的路径与 SHA-256；任一不匹配即 `BLOCKED`，
-   不得 fallback 到 `PATH`、全局配置或交互式 bootstrap-admin 身份。
-4. 只能从 VM 设备创建 `cddsi-fast-lane-vmtester-minute-poll`，保持固定一分钟 cadence、
-   初始并持续 `PAUSED`。runtime protection assertion/hash/token 未由外部 provisioner
-   提供前，prompt 必须在网络、Git、凭据探测或文件修改前返回 `BLOCKED`。
-5. 产出脱敏的 `VM_BOOTSTRAP_STAGED` handoff 后立即停止。bootstrap-only 阶段禁止 poll
-   control refs、fetch product、运行 negative-permission/reset/task/unattended 测试、执行
-   产品 Live、修改/提交/推送产品代码、构建候选或把 relay 当正式 evidence。
+以下是 host finalization 通过后交付给用户的目标流程，不是当前执行许可。当前 phase2 与
+loader 的 WIP 行为门已闭环，但 clean-commit/bundle/task/CI finalization 尚未完成，
+`CanStartVmBootstrap=false`。
 
-完成 bootstrap-only 仍不能进入 integration。后续必须由外部 provisioner 发放并绑定窄
-凭据与 runtime protection receipt，再在独立授权下执行负向权限、reset smoke、task 安全
-启用与 unattended loop；这些证据齐全前不得把 VM task 或宿主机 heartbeat 从 `PAUSED`
-改为运行态。
+普通用户只做四件事：
 
-### P10A-0A 已实现范围与剩余 integration 工作
+1. 用平时的 VM 软件启动 disposable VM；
+2. 在 VM 中安装 Codex 并登录；
+3. 把宿主机交付的唯一 onboarding ZIP 放进一个新建空文件夹，不解压、不改名，并让
+   Codex 打开该文件夹；
+4. 只粘贴一次宿主机给出的最终提示词。
+
+其余工作由 VM Codex 自治完成，不再让用户手动执行 hash、解压、PowerShell、Git、密钥或
+automation 命令：
+
+1. 准备好的 VM 起始镜像必须已经包含 bundle 精确固定的五个工具：Git、OpenSSH、
+   `ssh-keygen`、PowerShell 7、Windows PowerShell。bootstrap 不下载或安装工具；缺失或
+   hash/version 不匹配时，在持久状态写入前返回稳定的 `VM_BOOTSTRAP_PINNED_TOOL_*` blocker，
+   不让用户在本轮手工排障或补装。
+2. 第一段 PowerShell 只做零写入 outer preflight：打开的文件夹不得有 reparse ancestor，且
+   必须恰好只有一个普通 ZIP entry；以系统文件长度和 SHA-256 核对原始 ZIP 字节。任何不符
+   都在创建/删除文件、启动进程或访问网络前返回 `VM_BOOTSTRAP_BLOCKED`。
+3. outer preflight 通过后，Codex 使用自身 `apply_patch` 能力把提示词内的精确 loader source
+   写成 ZIP 同目录的固定 ASCII/LF 文件 `cddsi-vm-bootstrap-loader.ps1`；这是第一笔允许的写入，
+   不使用 shell 重定向，也不要求用户复制文件。随后运行宿主机生成的短 launcher；launcher
+   逐字节核对 loader ASCII、length、SHA-256 和 PowerShell parser 后才执行它。
+4. loader 在创建持久 VM-local state 前重新校验原始 ZIP 的 18 个 entry、manifest v3、16 个
+   inventory entry、11 个外部锚点和三个固定 runtime dependency；它只提取
+   `lib/common.ps1`、`lib/vm-test-relay.ps1` 与
+   `operator/fast-lane/invoke-git-outbox.ps1`。唯一带副作用的 operator 目标入口是
+   `Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding`；只接受原始 ZIP、11 个外部锚点、
+   `BootstrapExecutionContext`、固定 roots、canonical `CodexHome`、target token 和 ack。
+   caller result/prompt/observation、`ObservationJsonBase64`、派生目录、direct core/handoff
+   或 mutation/failure helper 一律禁止。
+5. phase2 Onboarding 只创建本轮 owner-marked VM-local state，
+   并生成 product-read、host-to-VM-read、VM-to-host-append 三组互不复用的 device-local
+   keypair。成功先返回 `VM_BOOTSTRAP_LOCAL_STAGED`；新 key 仅为 `KEYPAIR_STAGED`，不代表已
+   注册或 credential ready，私钥不得进入 prompt、对话、仓库、relay、日志或 public handoff。
+6. Codex 用自身 automation 能力查重并创建或原位更新唯一的
+   `cddsi-fast-lane-vmtester-minute-poll`，保持精确 id/kind/name、destination、target contract、
+   reconcile mode、一分钟 cadence 与 `PAUSED`。phase2 从固定 `CodexHome` 读取真实
+   automation TOML，核对 exact schema、唯一性、bindings、完整 prompt 与 prompt SHA-256；
+   不接受对话或 caller 构造的 observation，同 ID/name 多份即阻断。本地 staging 后即使
+   初扫为零也必须重扫，零到一漂移、重复或无效 readback 都补偿本轮自有 roots 后阻断。
+   成功 readback 是绑定持有 TOML 字节的时点 observation，不声称阻止返回后的外部修改；
+   每次 Handoff 都在 task 保持 `PAUSED` 时重新扫描和 readback。
+7. runtime protection assertion/hash/token 为 `UNPROVISIONED` 时，poll task 即使误触发也必须
+   在任何网络、Git、credential probe 或 runtime-state write 前返回 `BLOCKED`。这不影响用户
+   显式触发的 bootstrap runner 在 outer binding 匹配后使用上述窄本地写权限。
+8. automation readback 通过后，phase2 内部重新校验 package 并构造 handoff。成功只输出
+   公开脱敏的 `VM_BOOTSTRAP_STAGED`，删除固定
+   loader，保留原始 ZIP 与 owner-marked public receipt 后立即停止。任一步失败也只清理该
+   固定 loader。不得 poll/fetch/reset/test、执行产品 Live、修改/提交/推送产品代码、启用
+   task、构建候选或把 relay 当正式 evidence。
+
+完成 bootstrap-only 仍不能进入 integration。后续先注册三把公钥并完成真实正/负向权限
+测试，`KEYPAIR_STAGED` 才可能变成 credential ready；再由外部 provisioner 发放并绑定
+runtime protection receipt，执行 reset smoke、task 安全启用与 unattended loop。这些证据
+齐全前不得把 VM task 或宿主机 heartbeat 从 `PAUSED` 改为运行态。
+
+“不让用户手工敲命令”不等于可以静默取得外部权限。为实现用户要求的完整自动闭环，后续
+只在确有必要时向用户请求两类一次性授权，具体操作仍由 Codex 完成：
+
+- 若目标是普通全新 Windows VM 而不是 prepared baseline，授权 bootstrap-time network/
+  install，以固定官方来源、hash、签名和路径安装五项 prerequisite；未授权时只能选择已
+  预装并匹配 manifest 的 baseline。
+- 授权一次 GitHub 管理/provisioner 会话注册三把 VM 公钥及宿主机窄身份；该会话只用于
+  注册和验证，不能保存为 task credential。之后必须用真正窄身份完成正/负权限测试。
+
+这两项不是要用户逐步操作，也不是现在已经拥有的权限。新任务应先完成宿主机实现与
+finalization；需要这些外部权限时再以清晰的一次确认暂停。默认的最后一个人工动作是 P12
+发布确认；不得自动 merge、promotion 或 release。
+
+### P10A-0A 稳定能力、当前 WIP 与剩余 integration 工作
 
 1. public protected 产品 remote `LXZ56156/claude-desktop-deepseek-installer` 已创建，
    旧 `main` 基线已推送，ruleset `19068339` 已覆盖 `main` 与 `codex/repair/*`；本轮改动
@@ -450,9 +498,11 @@ bootstrap-only 工作。后一种状态也不改变
    已就绪，真实 remote 调用仍被 credential/runtime assertion 门阻断。
 4. readiness resolver 已把 `CanStartVmBootstrap`、`CanStartVmIntegration`、VM credential/
    automation/reset/unattended、`P10A0AComplete` 和 Formal readiness 分开。deterministic
-   onboarding builder 只从 clean exact commit 生成 Store ZIP，绑定 commit/tree、
+   onboarding builder 的稳定合同只允许从 clean exact commit 生成 Store ZIP，绑定 commit/tree、
    committed blob/working bytes、工具 hash、三个 repository identity、两个 genesis、
-   prompt/runbook，且不包含凭据、用户路径或正式 evidence。
+   prompt/runbook，且不包含凭据、用户路径或正式 evidence。当前 v3 one-prompt/phase2
+   改造、loader 接线与正负测试已通过 dirty WIP 标准双引擎全树门，但尚未完成 clean exact
+   commit 的 host finalization，不能把这条稳定合同解释为当前 bundle ready。
 5. fake deterministic reset、ownership receipt、baseline drift 阻断和诊断性
    `CLEAN_READY` 合同，以及 VM-only dispatcher/provider、device/command trust、
    preflight/postcondition/action receipt 和 fail-closed escalation 已实现。实际
@@ -513,7 +563,7 @@ Formal Lane 用于首次 P10A、正式 P11 和发布里程碑，才要求外部�
 是否可开始 VM bootstrap-only，必须按上一节从 retained owner-marked bundle output、同一
 `PAUSED` automation、PR/CI 与公开 Git/remote 四方持久事实实时派生：闭环未完成时为
 false，全部精确一致时为 true。
-当前 tracked HEAD 的双引擎门、Release DryRun、18-entry bundle、暂停 heartbeat hash
+最终 clean exact HEAD 的双引擎门、Release DryRun、18-entry bundle、暂停 heartbeat hash
 binding 与最终 remote/PR/CI 是持续 bootstrap 核验项；任一漂移就回退为 false，但在全部
 匹配时不再是 integration 阻塞。即使 bootstrap-ready，以下输入也不能由宿主机 fake 测试
 虚构；未满足前不得激活真实 outbox integration，也不得宣称 P10A-0A/P10A/P10B/P11 完成：
@@ -599,25 +649,16 @@ inventory 与 working-tree/cached `git diff --check`。不得绕过该入口直�
 HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，才运行
 `scripts/build-release.ps1 -DryRun`；DryRun 不是可发布候选构建。
 
-## 建议给下一对话的开场指令
+## 最终 VM 提示词交付
 
-> 在 disposable VM 上只执行 P10A-0A bootstrap-only，不进入 integration。先完整阅读
-> onboarding ZIP 内的 `vm-bootstrap.md`、manifest、inventory 与固定 policy/prompt；再从
-> retained owner-marked bundle output、同一 `PAUSED` HostCoordinator automation、公开
-> Git/remote、PR #1 与最终 CI 核验包含 `docs/HANDOFF.md` 的 clean HEAD 是否给出一致 exact
-> binding。不得把历史
-> `3e843912...`、`a09130f2...` 或 `615bbf3...` commit/bundle 当当前授权；任一事实缺失或
-> 不一致即 `BLOCKED`，不要进入 VM 操作。
->
-> 核验成立后，仅按“VM bootstrap-only 步骤”离线校验 18-entry Store bundle 与所有
-> hashes/tokens/repository/tool bindings，在 VM 本地生成 product read、host-to-VM read、
-> VM-to-host append 三把独立窄 key，只回传公钥和脱敏指纹；再从 VM 设备创建
-> `cddsi-fast-lane-vmtester-minute-poll` 并保持一分钟 cadence、`PAUSED`。runtime protection
-> assertion/hash/token 仍 `UNPROVISIONED` 时必须在网络、Git、凭据探测或文件修改前返回
-> `BLOCKED`。产出 `VM_BOOTSTRAP_STAGED` handoff 后停止。
->
-> 不得 poll/fetch/reset/test、运行产品 Live、修改/提交/推送产品代码、启用两端任务、
-> merge PR、发布或 promotion。`CanStartVmIntegration=false`、`P10A0AComplete=false`、
-> `CanStartFormalP10A=false`；后续 integration 需要外部 provisioner 的窄凭据/runtime
-> protection receipt、负向权限、reset/task/unattended 证据，Formal P10A 还需要外部
-> clean-snapshot receipt、独立 CAS 与签名。
+不要从 tracked 文档手工拼接或替换占位符。宿主机完成最终 commit、bundle、automation 与 CI
+绑定后，必须以 11 个精确外部锚点调用
+`New-CddsiFastLaneVmBootstrapOperatorPrompt`，把其 `Prompt` 字节不变地交给用户，并一并记录
+`LoaderScriptSha256`/`LoaderScriptLengthBytes` 与 `PromptSha256`/`PromptLengthBytes`。生成结果的
+19 字段应精确为 loader contract/source/hash/length、short launcher、prompt/hash/length 和
+11 个外部锚点；缺字段、额外字段或自制提示词都不是有效 handoff。
+
+用户进入 VM 后只做本节前述四件事。成功的提示词会依次完成零写入 outer preflight、Codex
+`apply_patch` 固定 loader、短 launcher Onboard、唯一 `PAUSED` automation 的精确 readback、
+全新短 launcher Handoff，以及 loader 清理；最终停在 `VM_BOOTSTRAP_STAGED`。此时仍有
+`CanStartVmIntegration=false`、`P10A0AComplete=false`、`CanStartFormalP10A=false`。

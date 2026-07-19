@@ -390,12 +390,19 @@
             -CommittedFreezeReceipt $CommittedFreezeReceipt -ExpectedRevision $ExpectedRevision `
             -ValidationTimeUtc $ValidationTimeUtc
     }
+
+    $canonicalBundle = New-CddsiReleaseFactsBundleFixture
+    $script:ReleaseFactsCanonicalBase = [pscustomobject][ordered]@{
+        Bundle = $canonicalBundle
+        FreezeState = New-CddsiReleaseFactsFreezeFixture -Bundle $canonicalBundle
+    }
 }
 
 Describe 'P10B frozen release facts exact contract' {
     BeforeAll {
-        $script:Bundle = New-CddsiReleaseFactsBundleFixture
-        $script:FreezeState = New-CddsiReleaseFactsFreezeFixture -Bundle $script:Bundle
+        $fixture = Copy-CddsiReleaseFactsFixture -Value $script:ReleaseFactsCanonicalBase
+        $script:Bundle = $fixture.Bundle
+        $script:FreezeState = $fixture.FreezeState
     }
 
     It 'requires a committed P10A receipt before constructing the freeze state' {
@@ -479,8 +486,9 @@ Describe 'P10B frozen release facts exact contract' {
 
 Describe 'P10B frozen release facts attack resistance' {
     BeforeAll {
-        $script:Bundle = New-CddsiReleaseFactsBundleFixture
-        $script:FreezeState = New-CddsiReleaseFactsFreezeFixture -Bundle $script:Bundle
+        $fixture = Copy-CddsiReleaseFactsFixture -Value $script:ReleaseFactsCanonicalBase
+        $script:Bundle = $fixture.Bundle
+        $script:FreezeState = $fixture.FreezeState
         $script:Proposal = Resolve-CddsiReleaseFactsFixture -Bundle $script:Bundle -FreezeState $script:FreezeState
         $script:CommittedFreezeReceipt = New-CddsiReleaseFactsCommitReceiptFixture -CommitProposal $script:Proposal.CommitProposal `
             -Signer $script:ReleaseFactsFreezeAuthority.Signer `

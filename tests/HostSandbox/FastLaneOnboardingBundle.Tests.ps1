@@ -3,6 +3,8 @@
     $script:OnboardingBuilderPath = Join-Path $script:RepoRoot 'operator\fast-lane\build-vm-onboarding.ps1'
     . $script:OnboardingBuilderPath -ImportOnly
     $script:OnboardingTemplate = $null
+    $script:OnboardingCanonical = $null
+    $script:OnboardingCanonicalSandboxes = [System.Collections.Generic.List[object]]::new()
     $trustedGitPath = Get-Variable -Name CddsiTrustedHarnessGitExecutablePath `
         -Scope Global -ErrorAction SilentlyContinue
     $trustedGitSha = Get-Variable -Name CddsiTrustedHarnessGitGrantSha256 `
@@ -20,10 +22,30 @@
     function Invoke-CddsiOnboardingFixtureGit {
         param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
-        $output = @(& $script:SourceGitExecutable -c core.hooksPath=NUL -c credential.helper= `
-            -c core.autocrlf=false @Arguments 2>&1)
-        if ($LASTEXITCODE -ne 0) { throw 'Fixture Git command failed.' }
-        return @($output | ForEach-Object { [string]$_ })
+        Initialize-CddsiFastLaneBoundedProcessType
+        $context = @{
+            GitExecutable = $script:SourceGitExecutable
+            StateRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+            MaximumRuntimeSeconds = 45
+            MaximumGitCommandSeconds = 10
+            MaximumOutputBytes = 4MB
+            Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        }
+        try {
+            $result = Invoke-CddsiFastLaneGitCommand -Context $context `
+                -Arguments (@('-c', 'core.autocrlf=false') + $Arguments)
+        }
+        catch {
+            throw [InvalidOperationException]::new('Fixture Git command failed.', $_.Exception)
+        }
+        $output = [System.Collections.Generic.List[string]]::new()
+        foreach ($text in @([string]$result.StandardOutput, [string]$result.StandardError)) {
+            if ([string]::IsNullOrEmpty($text)) { continue }
+            foreach ($line in @($text -split "`r?`n")) {
+                if (-not [string]::IsNullOrEmpty($line)) { $output.Add($line) }
+            }
+        }
+        return $output.ToArray()
     }
 
     function Write-CddsiOnboardingFixtureText {
@@ -81,7 +103,7 @@
         $knownHostsSha256 = Get-CddsiFastLaneOnboardingFileSha256 -Path $knownHostsFull
         $fixturePolicy = @'
 @{
-    SchemaVersion = 2
+    SchemaVersion = 3
     ProtocolVersion = 'cddsi-vm-test-relay-v1'
     Lane = 'Fast'
     ProductRemote = @{
@@ -122,6 +144,8 @@
         GitHubHost = 'github.com'
         OpenSshToolId = 'OpenSSH'
         OpenSshVmPath = '%PROGRAMFILES%\Git\usr\bin\ssh.exe'
+        OpenSshKeygenToolId = 'OpenSSHKeygen'
+        OpenSshKeygenVmPath = '%PROGRAMFILES%\Git\usr\bin\ssh-keygen.exe'
         KnownHostsSourcePath = 'operator/fast-lane/trust/github-known-hosts'
         KnownHostsSha256 = '__KNOWN_HOSTS_SHA__'
         StrictHostKeyCheckingRequired = $true
@@ -137,6 +161,17 @@
             AutomationId = 'cddsi-fast-lane-vmtester-minute-poll'
             InitialStatus = 'PAUSED'
             MustBeCreatedOnVmDevice = $true
+            BootstrapAutomation = @{
+                Id = 'cddsi-fast-lane-vmtester-minute-poll'
+                Kind = 'heartbeat'
+                Name = 'CDDsi Fast Lane VmTester minute poll'
+                Status = 'PAUSED'
+                RRule = 'FREQ=MINUTELY;INTERVAL=1'
+                CadenceMinutes = 1
+                DestinationContract = 'local'
+                TargetTaskToken = 'CURRENT_TASK'
+                ReconcileMode = 'CREATE_OR_UPDATE_EXACTLY_ONE'
+            }
         }
     }
 }
@@ -239,6 +274,7 @@
             ToolSpecifications = @(
                 [pscustomobject][ordered]@{ ToolId = 'Git'; VmPath = '%PROGRAMFILES%\Git\cmd\git.exe'; Sha256 = ('d' * 64) },
                 [pscustomobject][ordered]@{ ToolId = 'OpenSSH'; VmPath = '%PROGRAMFILES%\Git\usr\bin\ssh.exe'; Sha256 = ('a' * 64) },
+                [pscustomobject][ordered]@{ ToolId = 'OpenSSHKeygen'; VmPath = '%PROGRAMFILES%\Git\usr\bin\ssh-keygen.exe'; Sha256 = ('9' * 64) },
                 [pscustomobject][ordered]@{ ToolId = 'PowerShell7'; VmPath = '%PROGRAMFILES%\PowerShell\7\pwsh.exe'; Sha256 = ('e' * 64) },
                 [pscustomobject][ordered]@{ ToolId = 'WindowsPowerShell'; VmPath = '%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\powershell.exe'; Sha256 = ('f' * 64) }
             )
@@ -293,6 +329,291 @@
             $stream.Dispose()
         }
     }
+
+    function Get-CddsiOnboardingBytesSha256 {
+        param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+        $algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try { return ([BitConverter]::ToString($algorithm.ComputeHash($Bytes))).Replace('-', '').ToLowerInvariant() }
+        finally { $algorithm.Dispose() }
+    }
+
+    function Get-CddsiOnboardingZipEntryBytes {
+        param(
+            [Parameter(Mandatory = $true)][string]$ZipPath,
+            [Parameter(Mandatory = $true)][string]$EntryName
+        )
+
+        Initialize-CddsiReleaseCompression
+        $stream = [System.IO.File]::OpenRead($ZipPath)
+        $archive = $null
+        try {
+            $archive = [System.IO.Compression.ZipArchive]::new(
+                $stream, [System.IO.Compression.ZipArchiveMode]::Read, $false)
+            $matches = @($archive.Entries | Where-Object FullName -CEQ $EntryName)
+            if ($matches.Count -ne 1) { throw 'Fixture ZIP entry is missing.' }
+            $source = $matches[0].Open()
+            $target = New-Object System.IO.MemoryStream
+            try { $source.CopyTo($target); return [byte[]]$target.ToArray() }
+            finally { $target.Dispose(); $source.Dispose() }
+        }
+        finally {
+            if ($null -ne $archive) { $archive.Dispose() }
+            $stream.Dispose()
+        }
+    }
+
+    function Get-CddsiOnboardingOperatorArguments {
+        param([Parameter(Mandatory = $true)]$Bundle)
+
+        $manifestBytes = Get-CddsiOnboardingZipEntryBytes -ZipPath $Bundle.ZipPath -EntryName 'manifest.json'
+        $inventoryBytes = Get-CddsiOnboardingZipEntryBytes -ZipPath $Bundle.ZipPath -EntryName 'inventory.json'
+        $inventory = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($inventoryBytes) |
+            ConvertFrom-Json -ErrorAction Stop
+        return @{
+            ExpectedZipSha256 = $Bundle.ZipSha256
+            ExpectedZipLengthBytes = $Bundle.ZipLengthBytes
+            ExpectedManifestSha256 = Get-CddsiOnboardingBytesSha256 $manifestBytes
+            ExpectedManifestLengthBytes = [long]$manifestBytes.LongLength
+            ExpectedManifestBindingToken = $Bundle.ManifestBindingToken
+            ExpectedInventorySha256 = Get-CddsiOnboardingBytesSha256 $inventoryBytes
+            ExpectedInventoryLengthBytes = [long]$inventoryBytes.LongLength
+            ExpectedInventoryBindingToken = [string]$inventory.InventoryBindingToken
+            ExpectedBundleContentDigestSha256 = $Bundle.BundleContentDigestSha256
+            ExpectedProductCommitSha = $Bundle.ProductCommitSha
+            ExpectedProductTreeSha = $Bundle.ProductTreeSha
+        }
+    }
+
+    function New-CddsiOnboardingOpenedFolder {
+        param(
+            [Parameter(Mandatory = $true)]$Fixture,
+            [Parameter(Mandatory = $true)]$Bundle,
+            [Parameter(Mandatory = $true)][string]$Name
+        )
+
+        $openedFolder = Join-Path $Fixture.Sandbox.Root $Name
+        [void][System.IO.Directory]::CreateDirectory($openedFolder)
+        Copy-Item -LiteralPath $Bundle.ZipPath -Destination (Join-Path $openedFolder 'onboarding.zip')
+        return $openedFolder
+    }
+
+    function Get-CddsiOnboardingCanonicalArtifacts {
+        if ($null -ne $script:OnboardingCanonical) {
+            return $script:OnboardingCanonical
+        }
+
+        $testSandboxes = $script:OnboardingSandboxes
+        $canonicalSandboxes = [System.Collections.Generic.List[object]]::new()
+        $script:OnboardingCanonicalSandboxes = $canonicalSandboxes
+        $script:OnboardingSandboxes = $canonicalSandboxes
+        try {
+            $fixture = New-CddsiOnboardingFixture
+            $buildArguments = $fixture.Arguments
+            $bundle = New-CddsiFastLaneVmOnboardingBundle @buildArguments
+            $operatorArguments = Get-CddsiOnboardingOperatorArguments $bundle
+            $operator = New-CddsiFastLaneVmBootstrapOperatorPrompt @operatorArguments
+            $script:OnboardingCanonical = [pscustomobject][ordered]@{
+                Fixture = $fixture
+                Bundle = $bundle
+                OperatorArguments = $operatorArguments
+                Operator = $operator
+            }
+        }
+        finally {
+            $script:OnboardingSandboxes = $testSandboxes
+        }
+        return $script:OnboardingCanonical
+    }
+
+    function Write-CddsiOnboardingHarnessScript {
+        param(
+            [Parameter(Mandatory = $true)][string]$HarnessRoot,
+            [Parameter(Mandatory = $true)][string]$NamePrefix,
+            [Parameter(Mandatory = $true)][string]$ScriptText
+        )
+
+        $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+        $bytes = $encoding.GetBytes($ScriptText)
+        $sha256 = Get-CddsiOnboardingBytesSha256 $bytes
+        $scriptPath = Join-Path $HarnessRoot ($NamePrefix + '-' + $sha256 + '.ps1')
+        if ([System.IO.File]::Exists($scriptPath)) {
+            (Get-CddsiOnboardingBytesSha256 ([System.IO.File]::ReadAllBytes($scriptPath))) |
+                Should -BeExactly $sha256
+            return $scriptPath
+        }
+        $stream = New-Object System.IO.FileStream(
+            $scriptPath, [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try { $stream.Write($bytes, 0, $bytes.Length) }
+        finally { $stream.Dispose() }
+        return $scriptPath
+    }
+
+    function Set-CddsiOnboardingSandboxFilesNormalSafely {
+        param([Parameter(Mandatory = $true)]$Sandbox)
+
+        $root = [System.IO.Path]::GetFullPath([string]$Sandbox.Root).TrimEnd('\', '/')
+        $queue = [System.Collections.Generic.Queue[string]]::new()
+        $queue.Enqueue($root)
+        while ($queue.Count -gt 0) {
+            $directory = $queue.Dequeue()
+            foreach ($entry in [System.IO.Directory]::GetFileSystemEntries(
+                    $directory, '*', [System.IO.SearchOption]::TopDirectoryOnly)) {
+                $attributes = [System.IO.File]::GetAttributes($entry)
+                if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw 'Refusing test cleanup because an owned sandbox contains a reparse point.'
+                }
+                if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+                    $queue.Enqueue($entry)
+                }
+                else {
+                    [System.IO.File]::SetAttributes($entry, [System.IO.FileAttributes]::Normal)
+                }
+            }
+        }
+    }
+
+    function Invoke-CddsiOnboardingOperatorLauncher {
+        param(
+            [Parameter(Mandatory = $true)]$Operator,
+            [Parameter(Mandatory = $true)][ValidateSet('Onboard','Handoff')][string]$Phase,
+            [Parameter(Mandatory = $true)][ValidateSet('TestSafe','DryRun')][string]$Mode,
+            [Parameter(Mandatory = $true)][string]$OpenedFolder,
+            [Parameter(Mandatory = $true)][string]$NoWriteRoot,
+            [switch]$SkipLoaderMaterialization
+        )
+
+        $loaderPath = Join-Path $OpenedFolder 'cddsi-vm-bootstrap-loader.ps1'
+        if (-not $SkipLoaderMaterialization) {
+            $loaderBytes = (New-Object Text.ASCIIEncoding).GetBytes([string]$Operator.LoaderScript)
+            if ([System.IO.File]::Exists($loaderPath)) {
+                (Get-CddsiOnboardingBytesSha256 ([System.IO.File]::ReadAllBytes($loaderPath))) |
+                    Should -BeExactly $Operator.LoaderScriptSha256
+            }
+            else {
+                $stream = New-Object System.IO.FileStream(
+                    $loaderPath, [System.IO.FileMode]::CreateNew,
+                    [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                try { $stream.Write($loaderBytes, 0, $loaderBytes.Length) }
+                finally { $stream.Dispose() }
+            }
+        }
+        $harnessRoot = Split-Path -Parent $OpenedFolder
+        $launcherPath = Write-CddsiOnboardingHarnessScript -HarnessRoot $harnessRoot `
+            -NamePrefix 'cddsi-test-exact-launcher' -ScriptText $Operator.ExactLauncher
+        return & $launcherPath -Phase $Phase -Mode $Mode -OpenedFolder $OpenedFolder `
+            -LocalApplicationDataRoot $NoWriteRoot `
+            -ProgramFilesRoot (Join-Path $NoWriteRoot 'ProgramFiles') `
+            -SystemRoot (Join-Path $NoWriteRoot 'Windows')
+    }
+
+    function New-CddsiOnboardingLauncherVariant {
+        param(
+            [Parameter(Mandatory = $true)]$Operator,
+            [Parameter(Mandatory = $true)][Collections.IDictionary]$CanonicalArguments,
+            [Parameter(Mandatory = $true)][Collections.IDictionary]$Replacements
+        )
+
+        $launcher = [string]$Operator.ExactLauncher
+        foreach ($name in $Replacements.Keys) {
+            if (-not $CanonicalArguments.Contains($name)) {
+                throw ('ONBOARDING_LAUNCHER_VARIANT_ANCHOR_UNKNOWN:' + $name)
+            }
+            $quoted = -not ([string]$name).EndsWith(
+                'LengthBytes', [StringComparison]::Ordinal)
+            $oldValue = [string]$CanonicalArguments[$name]
+            $newValue = [string]$Replacements[$name]
+            $oldToken = '-' + $name + ' ' + $(if ($quoted) {
+                    "'" + $oldValue + "'"
+                } else { $oldValue })
+            $newToken = '-' + $name + ' ' + $(if ($quoted) {
+                    "'" + $newValue + "'"
+                } else { $newValue })
+            if ([regex]::Matches($launcher, [regex]::Escape($oldToken)).Count -ne 1) {
+                throw ('ONBOARDING_LAUNCHER_VARIANT_ANCHOR_COUNT_INVALID:' + $name)
+            }
+            $launcher = $launcher.Replace($oldToken, $newToken)
+        }
+        return [pscustomobject][ordered]@{
+            LoaderScript = [string]$Operator.LoaderScript
+            LoaderScriptSha256 = [string]$Operator.LoaderScriptSha256
+            LoaderScriptLengthBytes = [long]$Operator.LoaderScriptLengthBytes
+            ExactLauncher = $launcher
+        }
+    }
+
+    function Find-CddsiOnboardingZipSignatureOffset {
+        param(
+            [Parameter(Mandatory = $true)][byte[]]$Bytes,
+            [Parameter(Mandatory = $true)][uint32]$Signature
+        )
+
+        for ($index = 0; $index -le ($Bytes.Length - 4); $index++) {
+            if ([BitConverter]::ToUInt32($Bytes, $index) -eq $Signature) { return $index }
+        }
+        throw 'Fixture ZIP signature is missing.'
+    }
+
+    function Set-CddsiOnboardingZipDependencyByte {
+        param(
+            [Parameter(Mandatory = $true)][byte[]]$Bytes,
+            [Parameter(Mandatory = $true)][string]$EntryName
+        )
+
+        $position = 0
+        $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+        while ($position -le ($Bytes.Length - 30) -and
+            [BitConverter]::ToUInt32($Bytes, $position) -eq [uint32]0x04034b50) {
+            $compressed = [BitConverter]::ToUInt32($Bytes, $position + 18)
+            $nameLength = [BitConverter]::ToUInt16($Bytes, $position + 26)
+            $extraLength = [BitConverter]::ToUInt16($Bytes, $position + 28)
+            $name = $encoding.GetString($Bytes, $position + 30, $nameLength)
+            $dataOffset = $position + 30 + $nameLength + $extraLength
+            if ($name -ceq $EntryName) {
+                if ($compressed -lt 1) { throw 'Fixture ZIP dependency is empty.' }
+                $Bytes[$dataOffset] = $Bytes[$dataOffset] -bxor 1
+                return
+            }
+            $position = $dataOffset + [int]$compressed
+        }
+        throw 'Fixture ZIP dependency local header is missing.'
+    }
+
+    function Set-CddsiOnboardingZipEntryNameByte {
+        param(
+            [Parameter(Mandatory = $true)][byte[]]$Bytes,
+            [Parameter(Mandatory = $true)][string]$EntryName
+        )
+
+        $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+        $nameIndex = $EntryName.IndexOf('common', [StringComparison]::Ordinal)
+        if ($nameIndex -lt 0) { throw 'Fixture ZIP entry name marker is missing.' }
+        $position = 0
+        $localChanged = $false
+        while ($position -le ($Bytes.Length - 30) -and
+            [BitConverter]::ToUInt32($Bytes, $position) -eq [uint32]0x04034b50) {
+            $compressed = [BitConverter]::ToUInt32($Bytes, $position + 18)
+            $nameLength = [BitConverter]::ToUInt16($Bytes, $position + 26)
+            $extraLength = [BitConverter]::ToUInt16($Bytes, $position + 28)
+            $nameOffset = $position + 30
+            $name = $encoding.GetString($Bytes, $nameOffset, $nameLength)
+            if ($name -ceq $EntryName) { $Bytes[$nameOffset + $nameIndex] = [byte][char]'x'; $localChanged = $true }
+            $position = $nameOffset + $nameLength + $extraLength + [int]$compressed
+        }
+        $centralChanged = $false
+        while ($position -le ($Bytes.Length - 46) -and
+            [BitConverter]::ToUInt32($Bytes, $position) -eq [uint32]0x02014b50) {
+            $nameLength = [BitConverter]::ToUInt16($Bytes, $position + 28)
+            $extraLength = [BitConverter]::ToUInt16($Bytes, $position + 30)
+            $commentLength = [BitConverter]::ToUInt16($Bytes, $position + 32)
+            $nameOffset = $position + 46
+            $name = $encoding.GetString($Bytes, $nameOffset, $nameLength)
+            if ($name -ceq $EntryName) { $Bytes[$nameOffset + $nameIndex] = [byte][char]'x'; $centralChanged = $true }
+            $position = $nameOffset + $nameLength + $extraLength + $commentLength
+        }
+        if (-not $localChanged -or -not $centralChanged) { throw 'Fixture ZIP entry name was not changed twice.' }
+    }
 }
 
 Describe 'Fast Lane immutable VM onboarding bundle' {
@@ -303,33 +624,32 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
     AfterEach {
         foreach ($item in @($script:OnboardingSandboxes)) {
             if ([System.IO.Directory]::Exists($item.Sandbox.Root)) {
-                foreach ($path in [System.IO.Directory]::EnumerateFiles(
-                    $item.Sandbox.Root, '*', [System.IO.SearchOption]::AllDirectories
-                )) {
-                    [System.IO.File]::SetAttributes($path, [System.IO.FileAttributes]::Normal)
-                }
+                Set-CddsiOnboardingSandboxFilesNormalSafely -Sandbox $item.Sandbox
                 Remove-CddsiOwnedSandbox -Sandbox $item.Sandbox -Ledger $item.Ledger
             }
         }
     }
 
     AfterAll {
+        foreach ($item in @($script:OnboardingCanonicalSandboxes)) {
+            if ([System.IO.Directory]::Exists($item.Sandbox.Root)) {
+                Set-CddsiOnboardingSandboxFilesNormalSafely -Sandbox $item.Sandbox
+                Remove-CddsiOwnedSandbox -Sandbox $item.Sandbox -Ledger $item.Ledger
+            }
+        }
         if ($null -ne $script:OnboardingTemplate -and
             [System.IO.Directory]::Exists($script:OnboardingTemplate.Sandbox.Root)) {
-            foreach ($path in [System.IO.Directory]::EnumerateFiles(
-                $script:OnboardingTemplate.Sandbox.Root, '*', [System.IO.SearchOption]::AllDirectories
-            )) {
-                [System.IO.File]::SetAttributes($path, [System.IO.FileAttributes]::Normal)
-            }
+            Set-CddsiOnboardingSandboxFilesNormalSafely `
+                -Sandbox $script:OnboardingTemplate.Sandbox
             Remove-CddsiOwnedSandbox -Sandbox $script:OnboardingTemplate.Sandbox `
                 -Ledger $script:OnboardingTemplate.Ledger
         }
     }
 
     It 'builds byte-identical canonical Store ZIPs from the same explicit immutable inputs' {
-        $firstFixture = New-CddsiOnboardingFixture
-        $firstArguments = $firstFixture.Arguments
-        $first = New-CddsiFastLaneVmOnboardingBundle @firstArguments
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $firstFixture = $canonical.Fixture
+        $first = $canonical.Bundle
         $secondArguments = @{}
         foreach ($key in $firstFixture.Arguments.Keys) { $secondArguments[$key] = $firstFixture.Arguments[$key] }
         $secondArguments.OutputDirectory = Join-Path $firstFixture.Sandbox.Root 'bundle-output-second'
@@ -355,11 +675,30 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $manifest | Should -Match 'VmMayEditProductCode":false'
         $manifest | Should -Match '"VmInitialStatus":"PAUSED"'
         $manifestObject = $manifest | ConvertFrom-Json
-        $manifestObject.SchemaVersion | Should -Be 2
-        $manifestObject.ContractVersion | Should -BeExactly 'cddsi-fast-lane-vm-onboarding-manifest-v2'
+        $manifestObject.SchemaVersion | Should -Be 3
+        $manifestObject.ContractVersion | Should -BeExactly 'cddsi-fast-lane-vm-onboarding-manifest-v3'
         $manifestObject.Policy.ProductRepository.Visibility | Should -BeExactly 'PUBLIC'
         $manifestObject.Policy.HostToVmRepository.Visibility | Should -BeExactly 'PUBLIC'
         $manifestObject.Policy.VmToHostRepository.Visibility | Should -BeExactly 'PUBLIC'
+        $manifestObject.Policy.SshTrust.OpenSshKeygenToolId | Should -BeExactly 'OpenSSHKeygen'
+        $manifestObject.Policy.SshTrust.OpenSshKeygenVmPath |
+            Should -BeExactly '%PROGRAMFILES%\Git\usr\bin\ssh-keygen.exe'
+        @($manifestObject.Tools).Count | Should -Be 5
+        @($manifestObject.Tools | Where-Object ToolId -CEQ 'OpenSSHKeygen').Count | Should -Be 1
+        $manifestObject.BootstrapAutomation.Id | Should -BeExactly 'cddsi-fast-lane-vmtester-minute-poll'
+        $manifestObject.BootstrapAutomation.Kind | Should -BeExactly 'heartbeat'
+        $manifestObject.BootstrapAutomation.Name | Should -BeExactly 'CDDsi Fast Lane VmTester minute poll'
+        $manifestObject.BootstrapAutomation.Status | Should -BeExactly 'PAUSED'
+        $manifestObject.BootstrapAutomation.RRule | Should -BeExactly 'FREQ=MINUTELY;INTERVAL=1'
+        $manifestObject.BootstrapAutomation.CadenceMinutes | Should -Be 1
+        $manifestObject.BootstrapAutomation.DestinationContract | Should -BeExactly 'local'
+        $manifestObject.BootstrapAutomation.TargetTaskToken | Should -BeExactly 'CURRENT_TASK'
+        $manifestObject.BootstrapAutomation.ReconcileMode | Should -BeExactly 'CREATE_OR_UPDATE_EXACTLY_ONE'
+        (Get-CddsiFastLaneOnboardingBindingToken -Value $manifestObject.BootstrapAutomation) |
+            Should -BeExactly (Get-CddsiFastLaneOnboardingBindingToken `
+                -Value $manifestObject.Policy.Automation.BootstrapAutomation)
+        $first.ZipEntryCount | Should -Be 18
+        $manifestObject.Inventory.EntryCount | Should -Be 16
         $manifest | Should -Match ('"TreeSha":"' + $firstFixture.ProductTreeSha + '"')
         $manifest | Should -Match '"SourceCommitVerified":true'
         $manifest | Should -Match ('"GitExecutableSha256":"' + $script:SourceGitExecutableSha256 + '"')
@@ -367,7 +706,8 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
     }
 
     It 'uses path-bound clean filtering for CRLF working bytes and normalized committed blobs' {
-        $fixture = New-CddsiOnboardingFixture
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
         $relative = 'operator/fast-lane/invoke-git-outbox.ps1'
         $fullPath = Join-Path $fixture.SourceRoot ($relative.Replace('/', '\'))
         $workingText = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($fullPath))
@@ -389,8 +729,7 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
             '-C', $fixture.SourceRoot, 'status', '--porcelain=v1', '--untracked-files=all'
         )).Count | Should -Be 0
 
-        $buildArguments = $fixture.Arguments
-        $result = New-CddsiFastLaneVmOnboardingBundle @buildArguments
+        $result = $canonical.Bundle
         $result.Status | Should -BeExactly 'SUCCEEDED'
         $result.SourceCommitVerified | Should -BeTrue
     }
@@ -515,11 +854,11 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $hashFixture.Arguments.SourceGitExecutableSha256 = '0' * 64
         $requiredTools = @($hashFixture.Arguments.ToolSpecifications)
         $hashFixture.Arguments.ToolSpecifications = @(
-            $requiredTools | Where-Object { $_.ToolId -cne 'OpenSSH' }
+            $requiredTools | Where-Object { $_.ToolId -cne 'OpenSSHKeygen' }
         )
         $pureArguments = $hashFixture.Arguments
         { New-CddsiFastLaneVmOnboardingBundle @pureArguments } |
-            Should -Throw '*tools must contain exactly Git, OpenSSH, PowerShell7, and WindowsPowerShell*'
+            Should -Throw '*tools must contain exactly Git, OpenSSH, OpenSSHKeygen, PowerShell7, and WindowsPowerShell*'
 
         $hashFixture.Arguments.ToolSpecifications = $requiredTools
         $hashArguments = $hashFixture.Arguments
@@ -529,6 +868,47 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $rootFixture.Arguments.SourceRoot = Join-Path $rootFixture.SourceRoot 'operator'
         $rootArguments = $rootFixture.Arguments
         { New-CddsiFastLaneVmOnboardingBundle @rootArguments } | Should -Throw '*exact Git repository root*'
+    }
+
+    It 'rejects missing, unknown, case-drifted, or changed BootstrapAutomation fields' {
+        $missing = [pscustomobject][ordered]@{
+            Id = 'cddsi-fast-lane-vmtester-minute-poll'; Kind = 'heartbeat'
+            Name = 'CDDsi Fast Lane VmTester minute poll'; Status = 'PAUSED'
+            RRule = 'FREQ=MINUTELY;INTERVAL=1'; CadenceMinutes = 1
+            DestinationContract = 'local'; TargetTaskToken = 'CURRENT_TASK'
+        }
+        { ConvertTo-CddsiFastLaneOnboardingBootstrapAutomation -Contract $missing -Source test } |
+            Should -Throw '*BootstrapAutomation property set differs*'
+
+        $unknown = [pscustomobject][ordered]@{
+            Id = 'cddsi-fast-lane-vmtester-minute-poll'; Kind = 'heartbeat'
+            Name = 'CDDsi Fast Lane VmTester minute poll'; Status = 'PAUSED'
+            RRule = 'FREQ=MINUTELY;INTERVAL=1'; CadenceMinutes = 1
+            DestinationContract = 'local'; TargetTaskToken = 'CURRENT_TASK'
+            ReconcileMode = 'CREATE_OR_UPDATE_EXACTLY_ONE'; UnknownField = 'forbidden'
+        }
+        { ConvertTo-CddsiFastLaneOnboardingBootstrapAutomation -Contract $unknown -Source test } |
+            Should -Throw '*BootstrapAutomation property set differs*'
+
+        $caseDrift = [pscustomobject][ordered]@{
+            Id = 'cddsi-fast-lane-vmtester-minute-poll'; Kind = 'heartbeat'
+            Name = 'CDDsi Fast Lane VmTester minute poll'; Status = 'paused'
+            RRule = 'FREQ=MINUTELY;INTERVAL=1'; CadenceMinutes = 1
+            DestinationContract = 'local'; TargetTaskToken = 'CURRENT_TASK'
+            ReconcileMode = 'CREATE_OR_UPDATE_EXACTLY_ONE'
+        }
+        { ConvertTo-CddsiFastLaneOnboardingBootstrapAutomation -Contract $caseDrift -Source test } |
+            Should -Throw '*BootstrapAutomation value differs*'
+
+        $valueDrift = [pscustomobject][ordered]@{
+            Id = 'cddsi-fast-lane-vmtester-minute-poll'; Kind = 'heartbeat'
+            Name = 'CDDsi Fast Lane VmTester minute poll'; Status = 'PAUSED'
+            RRule = 'FREQ=MINUTELY;INTERVAL=1'; CadenceMinutes = 1
+            DestinationContract = 'local'; TargetTaskToken = 'CURRENT_THREAD'
+            ReconcileMode = 'CREATE_OR_UPDATE_EXACTLY_ONE'
+        }
+        { ConvertTo-CddsiFastLaneOnboardingBootstrapAutomation -Contract $valueDrift -Source test } |
+            Should -Throw '*BootstrapAutomation value differs*'
     }
 
     It 'rejects dirty tracked and untracked source trees before materializing output' {
@@ -580,13 +960,15 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
     }
 
     It 'rejects a tampered materialized ZIP during complete bundle validation' {
-        $fixture = New-CddsiOnboardingFixture
-        $buildArguments = $fixture.Arguments
-        $result = New-CddsiFastLaneVmOnboardingBundle @buildArguments
-        Set-CddsiOnboardingZipEntryText -ZipPath $result.ZipPath `
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $openedFolder = New-CddsiOnboardingOpenedFolder `
+            -Fixture $fixture -Bundle $canonical.Bundle -Name 'tampered-validation-opened'
+        $tamperedZipPath = Join-Path $openedFolder 'onboarding.zip'
+        Set-CddsiOnboardingZipEntryText -ZipPath $tamperedZipPath `
             -EntryName 'payload/runtime/operator/fast-lane/invoke-git-outbox.ps1' -Text "Write-Output 'tampered'`r`n"
 
-        { Test-CddsiFastLaneVmOnboardingBundle -Sandbox $fixture.Sandbox -ZipPath $result.ZipPath } |
+        { Test-CddsiFastLaneVmOnboardingBundle -Sandbox $fixture.Sandbox -ZipPath $tamperedZipPath } |
             Should -Throw
     }
 
@@ -675,9 +1057,15 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
             Should -Throw '*repository differs from committed policy: VmToHost*'
 
         $fixture.Arguments.VmToHostRepositoryId = [long]1003
+        $keygenTool = @($fixture.Arguments.ToolSpecifications | Where-Object ToolId -CEQ 'OpenSSHKeygen')[0]
+        $keygenTool.VmPath = '%PROGRAMFILES%\Git\usr\bin\ssh-keygen2.exe'
+        { New-CddsiFastLaneVmOnboardingBundle @buildArguments } |
+            Should -Throw '*fixed tool path differs: OpenSSHKeygen*'
+
+        $keygenTool.VmPath = '%PROGRAMFILES%\Git\usr\bin\ssh-keygen.exe'
         $fixture.Arguments.ToolSpecifications = @($fixture.Arguments.ToolSpecifications | Where-Object ToolId -cne 'WindowsPowerShell')
         { New-CddsiFastLaneVmOnboardingBundle @buildArguments } |
-            Should -Throw '*exactly Git, OpenSSH, PowerShell7, and WindowsPowerShell*'
+            Should -Throw '*exactly Git, OpenSSH, OpenSSHKeygen, PowerShell7, and WindowsPowerShell*'
         [System.IO.Directory]::Exists($fixture.Arguments.OutputDirectory) | Should -BeFalse
     }
 
@@ -734,9 +1122,8 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
     }
 
     It 'keeps the ZIP entry set exactly equal to manifest inventory plus generated runbooks' {
-        $fixture = New-CddsiOnboardingFixture
-        $buildArguments = $fixture.Arguments
-        $result = New-CddsiFastLaneVmOnboardingBundle @buildArguments
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $result = $canonical.Bundle
         Initialize-CddsiReleaseCompression
         $stream = [System.IO.File]::OpenRead($result.ZipPath)
         $archive = $null
@@ -758,5 +1145,774 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $actual | Should -Contain 'runbooks/negative-permissions.json'
         $actual | Should -Contain 'runbooks/unattended-smoke.json'
         $result.SecretFindings | Should -Be 0
+    }
+
+    It 'generates a deterministic self-bound 19-field one-prompt VM operator handoff' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $bundle = $canonical.Bundle
+        $operatorArguments = $canonical.OperatorArguments
+        $operator = $canonical.Operator
+        $repeat = New-CddsiFastLaneVmBootstrapOperatorPrompt @operatorArguments
+
+        $expectedProperties = @(
+            'LoaderContractVersion','LoaderScript','LoaderScriptSha256','LoaderScriptLengthBytes',
+            'ExactLauncher','Prompt','PromptSha256','PromptLengthBytes','ExpectedZipSha256',
+            'ExpectedZipLengthBytes','ExpectedManifestSha256','ExpectedManifestLengthBytes',
+            'ExpectedManifestBindingToken','ExpectedInventorySha256','ExpectedInventoryLengthBytes',
+            'ExpectedInventoryBindingToken','ExpectedBundleContentDigestSha256',
+            'ExpectedProductCommitSha','ExpectedProductTreeSha'
+        )
+        (@($operator.PSObject.Properties | ForEach-Object Name) -join "`n") |
+            Should -BeExactly ($expectedProperties -join "`n")
+        @($operator.PSObject.Properties).Count | Should -Be 19
+        $operator.LoaderContractVersion | Should -BeExactly 'cddsi-fast-lane-vm-bootstrap-file-loader-v1'
+        $operator.LoaderScript | Should -BeExactly $repeat.LoaderScript
+        $operator.ExactLauncher | Should -BeExactly $repeat.ExactLauncher
+        $operator.Prompt | Should -BeExactly $repeat.Prompt
+        $operator.LoaderScriptSha256 | Should -BeExactly (Get-CddsiOnboardingBytesSha256 `
+            ((New-Object System.Text.UTF8Encoding($false, $true)).GetBytes($operator.LoaderScript)))
+        $operator.LoaderScriptLengthBytes | Should -Be `
+            ((New-Object System.Text.UTF8Encoding($false, $true)).GetByteCount($operator.LoaderScript))
+        $operator.PromptSha256 | Should -BeExactly (Get-CddsiOnboardingBytesSha256 `
+            ((New-Object System.Text.UTF8Encoding($false, $true)).GetBytes($operator.Prompt)))
+        $operator.PromptLengthBytes | Should -Be `
+            ((New-Object System.Text.UTF8Encoding($false, $true)).GetByteCount($operator.Prompt))
+        foreach ($value in @($operatorArguments.Values)) { $operator.Prompt.Contains([string]$value) | Should -BeTrue }
+        $operator.Prompt | Should -Match 'Do not ask the operator to run an intermediate command'
+        $operator.Prompt | Should -Match 'Do not claim or require a Formal clean-snapshot receipt'
+        $operator.Prompt | Should -Match 'CanStartVmIntegration.*P10A0AComplete.*CanStartFormalP10A'
+        $operator.Prompt | Should -Match 'use the Codex `apply_patch` capability yourself'
+        $operator.Prompt | Should -Match 'Do not construct or pass a result, prompt, observation, or derived root'
+        $operator.LoaderScript | Should -Match 'Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding'
+        $operator.LoaderScript | Should -Not -Match 'ObservationJsonBase64|AutomationObservation|Read-LoaderObservation'
+        $operator.LoaderScript | Should -Not -Match 'Invoke-CddsiFastLaneVmBootstrapOnboarding\b|New-CddsiFastLaneVmBootstrapHandoff\b'
+        $operator.ExactLauncher | Should -Not -Match 'WriteAllBytes|CreateDirectory|Set-Acl|Start-Process'
+        $operator.ExactLauncher | Should -Not -Match 'Where-Object'
+        $operator.ExactLauncher | Should -Match '\$b\.LongLength-ne\$s\.Length'
+        $operator.ExactLauncher | Should -Match 'cddsi-vm-bootstrap-loader\.ps1'
+        $operator.ExactLauncher | Should -Match 'VM_BOOTSTRAP_FILE_LOADER_HASH_MISMATCH'
+        $operator.ExactLauncher | Should -Match 'VM_BOOTSTRAP_LOADER_CLEANUP_FAILED'
+        $operator.ExactLauncher | Should -Match '\[IO\.File\]::Delete\(\$p\)'
+        $operator.ExactLauncher.Length | Should -BeLessOrEqual 4096
+        $operator.ExactLauncher.Contains([Convert]::ToBase64String(
+                (New-Object Text.ASCIIEncoding).GetBytes($operator.LoaderScript))) | Should -BeFalse
+        foreach ($anchorName in @(
+            'ExpectedZipSha256','ExpectedZipLengthBytes','ExpectedManifestSha256',
+            'ExpectedManifestLengthBytes','ExpectedManifestBindingToken','ExpectedInventorySha256',
+            'ExpectedInventoryLengthBytes','ExpectedInventoryBindingToken',
+            'ExpectedBundleContentDigestSha256','ExpectedProductCommitSha','ExpectedProductTreeSha'
+        )) {
+            $quoted = -not $anchorName.EndsWith('LengthBytes', [StringComparison]::Ordinal)
+            $anchorValue = [string]$operatorArguments[$anchorName]
+            $anchorToken = '-' + $anchorName + ' ' + $(if ($quoted) {
+                    "'" + $anchorValue + "'"
+                } else { $anchorValue })
+            ([regex]::Matches($operator.ExactLauncher, [regex]::Escape($anchorToken))).Count |
+                Should -Be 1
+        }
+
+        $promptBlocks = [regex]::Matches(
+            $operator.Prompt, '(?ms)^```powershell\r?\n(?<Code>.*?)\r?\n```[ \t]*\r?$')
+        $promptBlocks.Count | Should -Be 4
+        ([string]$promptBlocks[1].Groups['Code'].Value + "`n") |
+            Should -BeExactly $operator.LoaderScript
+        ([regex]::Matches($operator.Prompt,
+                [regex]::Escape([Convert]::ToBase64String(
+                        (New-Object Text.UTF8Encoding($false, $true)).GetBytes($operator.ExactLauncher))))).Count |
+            Should -Be 2
+
+        $launcherTokens = $null
+        $launcherParseErrors = $null
+        [System.Management.Automation.Language.Parser]::ParseInput(
+            $operator.ExactLauncher, [ref]$launcherTokens, [ref]$launcherParseErrors) | Out-Null
+        @($launcherParseErrors).Count | Should -Be 0
+        $loaderTokens = $null; $loaderParseErrors = $null
+        $loaderAst = [Management.Automation.Language.Parser]::ParseInput(
+            $operator.LoaderScript, [ref]$loaderTokens, [ref]$loaderParseErrors)
+        @($loaderParseErrors).Count | Should -Be 0
+        $expectedLoaderParameters = @(
+            'Phase','Mode','OpenedFolder','LocalApplicationDataRoot','ProgramFilesRoot','SystemRoot',
+            'ExpectedZipSha256','ExpectedZipLengthBytes','ExpectedManifestSha256',
+            'ExpectedManifestLengthBytes','ExpectedManifestBindingToken','ExpectedInventorySha256',
+            'ExpectedInventoryLengthBytes','ExpectedInventoryBindingToken',
+            'ExpectedBundleContentDigestSha256','ExpectedProductCommitSha','ExpectedProductTreeSha',
+            'AcknowledgeVmBootstrapLive'
+        )
+        $loaderParameterAsts = @($loaderAst.ParamBlock.Parameters)
+        (@($loaderParameterAsts.Name.VariablePath.UserPath | Sort-Object) -join "`n") |
+            Should -BeExactly (@($expectedLoaderParameters | Sort-Object) -join "`n")
+        $expectedLoaderTypes = [ordered]@{
+            Phase = 'String'; Mode = 'String'; OpenedFolder = 'String'
+            LocalApplicationDataRoot = 'String'; ProgramFilesRoot = 'String'; SystemRoot = 'String'
+            ExpectedZipSha256 = 'String'; ExpectedZipLengthBytes = 'Int64'
+            ExpectedManifestSha256 = 'String'; ExpectedManifestLengthBytes = 'Int64'
+            ExpectedManifestBindingToken = 'String'; ExpectedInventorySha256 = 'String'
+            ExpectedInventoryLengthBytes = 'Int64'; ExpectedInventoryBindingToken = 'String'
+            ExpectedBundleContentDigestSha256 = 'String'; ExpectedProductCommitSha = 'String'
+            ExpectedProductTreeSha = 'String'; AcknowledgeVmBootstrapLive = 'SwitchParameter'
+        }
+        foreach ($loaderParameterAst in $loaderParameterAsts) {
+            $loaderParameterName = $loaderParameterAst.Name.VariablePath.UserPath
+            $loaderParameterAst.StaticType.Name | Should -BeExactly `
+                $expectedLoaderTypes[$loaderParameterName]
+            $parameterAttribute = @($loaderParameterAst.Attributes | Where-Object {
+                    $_.TypeName.FullName -ceq 'Parameter'
+                })
+            $expectedMandatory = @('Mode','AcknowledgeVmBootstrapLive') -cnotcontains `
+                $loaderParameterName
+            $parameterAttribute.Count | Should -Be $(if ($expectedMandatory) { 1 } else { 0 })
+            if ($expectedMandatory) {
+                $mandatoryArguments = @($parameterAttribute[0].NamedArguments | Where-Object {
+                        $_.ArgumentName -ceq 'Mandatory' -and $_.Argument.Extent.Text -ceq '$true'
+                    })
+                $mandatoryArguments.Count | Should -Be 1
+            }
+        }
+        $phaseLoaderAst = @($loaderParameterAsts | Where-Object {
+                $_.Name.VariablePath.UserPath -ceq 'Phase'
+            })[0]
+        $modeLoaderAst = @($loaderParameterAsts | Where-Object {
+                $_.Name.VariablePath.UserPath -ceq 'Mode'
+            })[0]
+        $phaseValidateSet = @($phaseLoaderAst.Attributes | Where-Object {
+                $_.TypeName.FullName -ceq 'ValidateSet'
+            })[0]
+        $modeValidateSet = @($modeLoaderAst.Attributes | Where-Object {
+                $_.TypeName.FullName -ceq 'ValidateSet'
+            })[0]
+        (@($phaseValidateSet.PositionalArguments.Extent.Text) -join '|') |
+            Should -BeExactly "'Onboard'|'Handoff'"
+        (@($modeValidateSet.PositionalArguments.Extent.Text) -join '|') |
+            Should -BeExactly "'TestSafe'|'DryRun'|'Live'"
+        $phaseLoaderAst.DefaultValue | Should -BeNullOrEmpty
+        $modeLoaderAst.DefaultValue.Extent.Text | Should -BeExactly "'Live'"
+        $bundle.ZipEntryCount | Should -Be 18
+        $inventory = (Get-CddsiFastLaneOnboardingZipJson -ZipPath $bundle.ZipPath -EntryName 'inventory.json') |
+            ConvertFrom-Json -ErrorAction Stop
+        $inventory.EntryCount | Should -Be 16
+    }
+
+    It 'runs the outer ZIP preflight with zero writes and fails before loader creation on drift' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $bundle = $canonical.Bundle
+        $operatorArguments = $canonical.OperatorArguments
+        $operator = $canonical.Operator
+        $openedFolder = New-CddsiOnboardingOpenedFolder `
+            -Fixture $fixture -Bundle $bundle -Name 'outer-preflight-opened'
+        $blocks = [regex]::Matches(
+            $operator.Prompt, '(?ms)^```powershell\r?\n(?<Code>.*?)\r?\n```[ \t]*\r?$')
+        $preflightText = [string]$blocks[0].Groups['Code'].Value
+        $preflightText | Should -Not -Match 'WriteAllBytes|WriteAllText|CreateDirectory|Delete\(|Start-Process|ProcessStartInfo|Invoke-WebRequest|Invoke-RestMethod'
+        $loaderPath = Join-Path $openedFolder 'cddsi-vm-bootstrap-loader.ps1'
+        $preflightPath = Write-CddsiOnboardingHarnessScript `
+            -HarnessRoot $fixture.Sandbox.Root -NamePrefix 'cddsi-test-outer-preflight' `
+            -ScriptText $preflightText
+        Push-Location $openedFolder
+        try { $preflight = & $preflightPath }
+        finally { Pop-Location }
+        $preflight.Status | Should -BeExactly 'VM_BOOTSTRAP_OUTER_PREFLIGHT_PASSED'
+        $preflight.FileWriteCount | Should -Be 0
+        $preflight.FileDeleteCount | Should -Be 0
+        $preflight.ProcessInvocationCount | Should -Be 0
+        $preflight.NetworkRequestCount | Should -Be 0
+        [System.IO.File]::Exists($loaderPath) | Should -BeFalse
+
+        $badArguments = @{}
+        foreach ($key in $operatorArguments.Keys) { $badArguments[$key] = $operatorArguments[$key] }
+        $badArguments.ExpectedZipSha256 = '0' * 64
+        $badOperator = New-CddsiFastLaneVmBootstrapOperatorPrompt @badArguments
+        $badBlocks = [regex]::Matches(
+            $badOperator.Prompt, '(?ms)^```powershell\r?\n(?<Code>.*?)\r?\n```[ \t]*\r?$')
+        $badPreflightPath = Write-CddsiOnboardingHarnessScript `
+            -HarnessRoot $fixture.Sandbox.Root -NamePrefix 'cddsi-test-bad-outer-preflight' `
+            -ScriptText ([string]$badBlocks[0].Groups['Code'].Value)
+        Push-Location $openedFolder
+        try {
+            { & $badPreflightPath } |
+                Should -Throw '*VM_BOOTSTRAP_PREFLIGHT_ZIP_HASH_MISMATCH*'
+        }
+        finally { Pop-Location }
+        [System.IO.File]::Exists($loaderPath) | Should -BeFalse
+    }
+
+    It 'keeps both phase2 launcher blocks below the Windows process limit without caller observations' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $operator = $canonical.Operator
+        $blocks = [regex]::Matches(
+            $operator.Prompt, '(?ms)^```powershell\r?\n(?<Code>.*?)\r?\n```[ \t]*\r?$')
+        $blocks.Count | Should -Be 4
+        $onboardCommand = [string]$blocks[2].Groups['Code'].Value
+        $handoffCommand = [string]$blocks[3].Groups['Code'].Value
+        $onboardCommand.Length | Should -BeLessThan 30000
+        $handoffCommand.Length | Should -BeLessThan 30000
+        $onboardCommand | Should -Match '-Phase Onboard -Mode Live'
+        $handoffCommand | Should -Match '-Phase Handoff -Mode Live'
+        $handoffCommand | Should -Not -Match 'ObservationJsonBase64|AutomationObservation|observationBase64|BootstrapResult'
+        $handoffCommand | Should -Not -Match '-Phase Onboard'
+        $operator.LoaderScript | Should -Match 'Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding'
+        $operator.LoaderScript | Should -Not -Match 'Invoke-CddsiFastLaneVmBootstrapOnboarding\b|New-CddsiFastLaneVmBootstrapHandoff\b'
+    }
+
+    It 'uses each quality-worker process to validate phase2 and never deletes a tampered fixed loader' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $bundle = $canonical.Bundle
+        $operator = $canonical.Operator
+        $openedFolder = New-CddsiOnboardingOpenedFolder `
+            -Fixture $fixture -Bundle $bundle -Name 'quality-worker-opened'
+        $blocks = [regex]::Matches(
+            $operator.Prompt, '(?ms)^```powershell\r?\n(?<Code>.*?)\r?\n```[ \t]*\r?$')
+        $blocks.Count | Should -Be 4
+        ([regex]::Matches($operator.Prompt,
+                [regex]::Escape('$launcherBytes=[Convert]::FromBase64String('))).Count | Should -Be 2
+
+        $secondBlock = [string]$blocks[3].Groups['Code'].Value
+        $callMarker = '$handoff=& $launcher -Phase Handoff -Mode Live -AcknowledgeVmBootstrapLive'
+        $callIndex = $secondBlock.IndexOf($callMarker, [StringComparison]::Ordinal)
+        $callIndex | Should -BeGreaterThan 0
+        $bootstrapPrefix = $secondBlock.Substring(0, $callIndex)
+        $bootstrapPrefix | Should -Match 'VM_BOOTSTRAP_EXACT_LAUNCHER_LENGTH_MISMATCH'
+        $bootstrapPrefix | Should -Match 'VM_BOOTSTRAP_EXACT_LAUNCHER_HASH_MISMATCH'
+        $bootstrapPrefix | Should -Match 'VM_BOOTSTRAP_EXACT_LAUNCHER_PARSE_FAILED'
+
+        $noWriteRoot = Join-Path $fixture.Sandbox.Root 'quality-worker-must-not-exist'
+        $loaderPath = Join-Path $openedFolder 'cddsi-vm-bootstrap-loader.ps1'
+        $positive = Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard `
+            -Mode TestSafe -OpenedFolder $openedFolder -NoWriteRoot $noWriteRoot
+        $positive.Status | Should -BeExactly 'VM_BOOTSTRAP_LOADER_VALIDATED_NO_WRITE'
+        $positive.Phase | Should -BeExactly 'Onboard'
+        $positive.Changed | Should -BeFalse
+        [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+        [System.IO.File]::Exists($loaderPath) | Should -BeTrue
+
+        $tamperedLoaderBytes = [System.IO.File]::ReadAllBytes($loaderPath)
+        $tamperedLoaderBytes[0] = $tamperedLoaderBytes[0] -bxor 1
+        [System.IO.File]::WriteAllBytes($loaderPath, $tamperedLoaderBytes)
+        { Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard `
+            -Mode TestSafe -OpenedFolder $openedFolder -NoWriteRoot $noWriteRoot `
+            -SkipLoaderMaterialization } | Should -Throw '*VM_BOOTSTRAP_LOADER_CLEANUP_FAILED*'
+        [System.IO.File]::Exists($loaderPath) | Should -BeTrue
+        [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+    }
+
+    It 'validates both non-Live phases with zero writes processes network Git or product Live' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $bundle = $canonical.Bundle
+        $operator = $canonical.Operator
+        $openedFolder = New-CddsiOnboardingOpenedFolder `
+            -Fixture $fixture -Bundle $bundle -Name 'nonlive-opened'
+        $noWriteRoot = Join-Path $fixture.Sandbox.Root 'loader-must-not-exist'
+        $beforeZipSha = Get-CddsiFastLaneOnboardingFileSha256 $bundle.ZipPath
+
+        foreach ($mode in @('TestSafe','DryRun')) {
+            foreach ($phase in @('Onboard','Handoff')) {
+                $result = Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase $phase `
+                    -Mode $mode -OpenedFolder $openedFolder -NoWriteRoot $noWriteRoot
+                $result.Status | Should -BeExactly 'VM_BOOTSTRAP_LOADER_VALIDATED_NO_WRITE'
+                $result.Phase | Should -BeExactly $phase
+                $result.Mode | Should -BeExactly $mode
+                $result.Changed | Should -BeFalse
+                foreach ($count in @(
+                    $result.DirectoryCreateCount, $result.FileWriteCount, $result.AclMutationCount,
+                    $result.ProcessInvocationCount, $result.NetworkRequestCount, $result.GitInvocationCount,
+                    $result.ProductLiveInvocationCount, $result.ProductWriteCount
+                )) { $count | Should -Be 0 }
+                $result.CanStartVmIntegration | Should -BeFalse
+                $result.P10A0AComplete | Should -BeFalse
+                $result.CanStartFormalP10A | Should -BeFalse
+            }
+        }
+        [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+        (Get-CddsiFastLaneOnboardingFileSha256 $bundle.ZipPath) | Should -BeExactly $beforeZipSha
+    }
+
+    It 'rejects zero or multiple ZIPs and every remaining external anchor mismatch without creating a loader-owned state root' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $bundle = $canonical.Bundle
+        $baseArguments = $canonical.OperatorArguments
+        $operator = $canonical.Operator
+        $openedFolder = New-CddsiOnboardingOpenedFolder `
+            -Fixture $fixture -Bundle $bundle -Name 'anchor-mismatch-opened'
+        $noWriteRoot = Join-Path $fixture.Sandbox.Root 'mismatch-loader-must-not-exist'
+        $zeroRoot = Join-Path $fixture.Sandbox.Root 'zero-zip'
+        [void][System.IO.Directory]::CreateDirectory($zeroRoot)
+        { Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard -Mode TestSafe `
+            -OpenedFolder $zeroRoot -NoWriteRoot $noWriteRoot } | Should -Throw '*EXACTLY_ONE_ZIP_REQUIRED*'
+        $multiRoot = Join-Path $fixture.Sandbox.Root 'multi-zip'
+        [void][System.IO.Directory]::CreateDirectory($multiRoot)
+        Copy-Item -LiteralPath $bundle.ZipPath -Destination (Join-Path $multiRoot 'first.zip')
+        Copy-Item -LiteralPath $bundle.ZipPath -Destination (Join-Path $multiRoot 'second.zip')
+        { Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard -Mode TestSafe `
+            -OpenedFolder $multiRoot -NoWriteRoot $noWriteRoot } | Should -Throw '*EXACTLY_ONE_ZIP_REQUIRED*'
+
+        $mismatches = @(
+            @{ Name = 'ExpectedZipLengthBytes'; Value = [long]($baseArguments.ExpectedZipLengthBytes + 1) },
+            @{ Name = 'ExpectedManifestSha256'; Value = ('1' * 64) },
+            @{ Name = 'ExpectedManifestLengthBytes'; Value = [long]($baseArguments.ExpectedManifestLengthBytes + 1) },
+            @{ Name = 'ExpectedManifestBindingToken'; Value = ('2' * 64) },
+            @{ Name = 'ExpectedInventorySha256'; Value = ('3' * 64) },
+            @{ Name = 'ExpectedInventoryLengthBytes'; Value = [long]($baseArguments.ExpectedInventoryLengthBytes + 1) },
+            @{ Name = 'ExpectedInventoryBindingToken'; Value = ('4' * 64) },
+            @{ Name = 'ExpectedBundleContentDigestSha256'; Value = ('5' * 64) },
+            @{ Name = 'ExpectedProductCommitSha'; Value = ('6' * 40) },
+            @{ Name = 'ExpectedProductTreeSha'; Value = ('7' * 40) }
+        )
+        foreach ($mismatch in $mismatches) {
+            $arguments = @{}
+            foreach ($key in $baseArguments.Keys) { $arguments[$key] = $baseArguments[$key] }
+            $arguments[$mismatch.Name] = $mismatch.Value
+            $badOperator = New-CddsiOnboardingLauncherVariant -Operator $operator `
+                -CanonicalArguments $baseArguments `
+                -Replacements @{ $mismatch.Name = $mismatch.Value }
+            { Invoke-CddsiOnboardingOperatorLauncher -Operator $badOperator -Phase Onboard -Mode TestSafe `
+                -OpenedFolder $openedFolder -NoWriteRoot $noWriteRoot } | Should -Throw
+        }
+        $oversize = @{}
+        foreach ($key in $baseArguments.Keys) { $oversize[$key] = $baseArguments[$key] }
+        $oversize.ExpectedZipLengthBytes = 64MB + 1
+        { New-CddsiFastLaneVmBootstrapOperatorPrompt @oversize } | Should -Throw '*length anchor is invalid*'
+        [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+    }
+
+    It 'rejects central method flags and local offset drift without creating a loader-owned state root' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $bundle = $canonical.Bundle
+        $baseArguments = $canonical.OperatorArguments
+        $baseBytes = [System.IO.File]::ReadAllBytes($bundle.ZipPath)
+        $centralOffset = Find-CddsiOnboardingZipSignatureOffset $baseBytes ([uint32]0x02014b50)
+        foreach ($kind in @('Method','Flags','Offset')) {
+            $folder = Join-Path $fixture.Sandbox.Root ('central-' + $kind.ToLowerInvariant())
+            [void][System.IO.Directory]::CreateDirectory($folder)
+            $bytes = [byte[]]$baseBytes.Clone()
+            if ($kind -ceq 'Method') { $bytes[$centralOffset + 10] = 8; $bytes[$centralOffset + 11] = 0 }
+            elseif ($kind -ceq 'Flags') { $bytes[$centralOffset + 8] = 0; $bytes[$centralOffset + 9] = 0 }
+            else { [BitConverter]::GetBytes([uint32]1).CopyTo($bytes, $centralOffset + 42) }
+            $zipPath = Join-Path $folder 'corrupt.zip'
+            [System.IO.File]::WriteAllBytes($zipPath, $bytes)
+            $arguments = @{}
+            foreach ($key in $baseArguments.Keys) { $arguments[$key] = $baseArguments[$key] }
+            $arguments.ExpectedZipSha256 = Get-CddsiOnboardingBytesSha256 $bytes
+            $arguments.ExpectedZipLengthBytes = [long]$bytes.LongLength
+            $operator = New-CddsiOnboardingLauncherVariant `
+                -Operator $canonical.Operator -CanonicalArguments $baseArguments `
+                -Replacements @{
+                    ExpectedZipSha256 = $arguments.ExpectedZipSha256
+                    ExpectedZipLengthBytes = $arguments.ExpectedZipLengthBytes
+                }
+            $noWriteRoot = Join-Path $fixture.Sandbox.Root ('central-no-write-' + $kind)
+            { Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard -Mode TestSafe `
+                -OpenedFolder $folder -NoWriteRoot $noWriteRoot } | Should -Throw '*CENTRAL*'
+            [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+        }
+    }
+
+    It 'rejects dependency bytes path aliases and reparse-point opened folders without creating a loader-owned state root' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $bundle = $canonical.Bundle
+        $baseArguments = $canonical.OperatorArguments
+        foreach ($kind in @('Content','Path')) {
+            $folder = Join-Path $fixture.Sandbox.Root ('dependency-' + $kind.ToLowerInvariant())
+            [void][System.IO.Directory]::CreateDirectory($folder)
+            $bytes = [System.IO.File]::ReadAllBytes($bundle.ZipPath)
+            if ($kind -ceq 'Content') {
+                Set-CddsiOnboardingZipDependencyByte $bytes 'payload/runtime/lib/common.ps1'
+            } else {
+                Set-CddsiOnboardingZipEntryNameByte $bytes 'payload/runtime/lib/common.ps1'
+            }
+            [System.IO.File]::WriteAllBytes((Join-Path $folder 'corrupt.zip'), $bytes)
+            $arguments = @{}
+            foreach ($key in $baseArguments.Keys) { $arguments[$key] = $baseArguments[$key] }
+            $arguments.ExpectedZipSha256 = Get-CddsiOnboardingBytesSha256 $bytes
+            $arguments.ExpectedZipLengthBytes = [long]$bytes.LongLength
+            $operator = New-CddsiOnboardingLauncherVariant `
+                -Operator $canonical.Operator -CanonicalArguments $baseArguments `
+                -Replacements @{
+                    ExpectedZipSha256 = $arguments.ExpectedZipSha256
+                    ExpectedZipLengthBytes = $arguments.ExpectedZipLengthBytes
+                }
+            $noWriteRoot = Join-Path $fixture.Sandbox.Root ('dependency-no-write-' + $kind)
+            { Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard -Mode TestSafe `
+                -OpenedFolder $folder -NoWriteRoot $noWriteRoot } | Should -Throw
+            [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+        }
+
+        $target = Join-Path $fixture.Sandbox.Root 'reparse-target'
+        [void][System.IO.Directory]::CreateDirectory($target)
+        Copy-Item -LiteralPath $bundle.ZipPath -Destination (Join-Path $target 'bundle.zip')
+        $junction = Join-Path $fixture.Sandbox.Root 'reparse-opened-folder'
+        $operator = $canonical.Operator
+        $noWriteRoot = Join-Path $fixture.Sandbox.Root 'reparse-no-write'
+        try {
+            New-Item -ItemType Junction -Path $junction -Target $target -ErrorAction Stop | Out-Null
+            { Invoke-CddsiOnboardingOperatorLauncher -Operator $operator -Phase Onboard -Mode TestSafe `
+                -OpenedFolder $junction -NoWriteRoot $noWriteRoot -SkipLoaderMaterialization } |
+                Should -Throw '*VM_BOOTSTRAP_LOADER_OPENED_FOLDER_INVALID*'
+            [System.IO.File]::Exists((Join-Path $junction 'cddsi-vm-bootstrap-loader.ps1')) |
+                Should -BeFalse
+            $operator.ExactLauncher |
+                Should -Not -Match 'WriteAllBytes|WriteAllText|Start-Process|Invoke-WebRequest|Invoke-RestMethod|\bgit(?:\.exe)?\b'
+        }
+        finally {
+            if ([System.IO.Directory]::Exists($junction)) {
+                [System.IO.Directory]::Delete($junction, $false)
+            }
+        }
+        [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
+    }
+
+    It 'enforces semantic ACLs, held dependency bytes, and deepest-first nonrecursive cleanup' {
+        $loaderLedger = [Collections.Generic.List[object]]::new()
+        $loaderSandbox = New-CddsiOwnedSandbox -TempBase ([IO.Path]::GetTempPath()) `
+            -RunId ([guid]::NewGuid().ToString('D')) -Ledger $loaderLedger
+        $script:OnboardingSandboxes.Add([pscustomobject]@{
+                Sandbox = $loaderSandbox; Ledger = $loaderLedger
+            })
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $loader = $canonical.Operator.LoaderScript
+        $loader | Should -Not -Match '(?i)\b(?:Get|Set)-Acl\b'
+        $loader | Should -Not -Match '(?i)AccessControlSections\]::(?:All|Audit|Group)\b'
+        $loader | Should -Match '(?s)Language\.NullString\]::Value,\s*\$false\)'
+        $loader | Should -Not -Match '\.bak'
+        ([regex]::Matches(
+                $loader,
+                '(?s)AccessControlSections\]::Access\s+-bor\s+.*?AccessControlSections\]::Owner')).Count |
+            Should -Be 3
+        $tokens = $null; $parseErrors = $null
+        $loaderAst = [Management.Automation.Language.Parser]::ParseInput(
+            $loader, [ref]$tokens, [ref]$parseErrors)
+        @($parseErrors).Count | Should -Be 0
+        $loaderFunctionDefinitions = @($loaderAst.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst]
+                }, $true))
+        $helperTexts = [System.Collections.Generic.List[string]]::new()
+        foreach ($helperName in @(
+            'Get-LoaderSha256','Get-LoaderTextBytes','Test-LoaderNoReparse',
+            'Test-LoaderExactProperties','Get-LoaderAclSha256','Write-LoaderCreateOnly',
+            'Write-LoaderJsonCreateOnly','Write-LoaderJsonAtomic',
+            'Test-LoaderPathWithinRoot','Open-LoaderBoundDependency',
+            'Test-LoaderCurrentSidOwner','Remove-LoaderCreatedEmptyRootSafely',
+            'Test-LoaderProtectedAcl','Set-LoaderProtectedAcl',
+            'Initialize-LoaderDirectoryCreatorType','New-LoaderDirectoryCreateOnly',
+            'Initialize-LoaderOwnedDirectory',
+            'Remove-LoaderOwnedTreeSafely','Set-LoaderState','Add-LoaderMutationAccounting'
+        )) {
+            $helper = @($loaderFunctionDefinitions | Where-Object { $_.Name -ceq $helperName })
+            $helper.Count | Should -Be 1
+            $helperTexts.Add([string]$helper[0].Extent.Text)
+        }
+        $loaderHelpersPath = Write-CddsiOnboardingHarnessScript `
+            -HarnessRoot $loaderSandbox.Root -NamePrefix 'cddsi-test-loader-helpers' `
+            -ScriptText (($helperTexts -join "`r`n`r`n") + "`r`n")
+        . $loaderHelpersPath
+
+        $wideRoot = Join-Path $loaderSandbox.Root 'preexisting-wide-root'
+        [void][IO.Directory]::CreateDirectory($wideRoot)
+        $wideBinding = Get-LoaderSha256 (Get-LoaderTextBytes (
+                ([IO.Path]::GetFullPath($wideRoot).TrimEnd('\', '/')).ToUpperInvariant()))
+        $forgedMarker = [pscustomobject][ordered]@{
+            SchemaVersion = 1; ContractVersion = 'cddsi-fast-lane-bootstrap-directory-owner-v1'
+            Role = 'Project'; RootBindingSha256 = $wideBinding
+            AclBindingSha256 = Get-LoaderAclSha256 $wideRoot
+        }
+        [void](Write-LoaderJsonCreateOnly `
+            (Join-Path $wideRoot '.cddsi-directory-owner.json') $forgedMarker)
+        { Initialize-LoaderOwnedDirectory $wideRoot 'Project' } |
+            Should -Throw '*VM_BOOTSTRAP_LOADER_ACL_INVALID*'
+
+        $collisionRoot = Join-Path $loaderSandbox.Root 'create-only-collision-root'
+        $collisionLedger = [Collections.Generic.List[object]]::new()
+        $originalCreateOnly = (Get-Item Function:\New-LoaderDirectoryCreateOnly).ScriptBlock
+        try {
+            Set-Item Function:\New-LoaderDirectoryCreateOnly -Value {
+                param([string]$Path)
+                [void][IO.Directory]::CreateDirectory($Path)
+                return $false
+            }
+            { Initialize-LoaderOwnedDirectory $collisionRoot 'Project' `
+                    -CreationLedger $collisionLedger } |
+                Should -Throw '*VM_BOOTSTRAP_LOADER_ACL_INVALID*'
+        }
+        finally {
+            Set-Item Function:\New-LoaderDirectoryCreateOnly -Value $originalCreateOnly
+        }
+        [IO.Directory]::Exists($collisionRoot) | Should -BeTrue
+        $collisionLedger.Count | Should -Be 0
+        @([IO.Directory]::EnumerateFileSystemEntries(
+                $collisionRoot, '*', [IO.SearchOption]::TopDirectoryOnly)).Count | Should -Be 0
+        [IO.Directory]::Delete($collisionRoot, $false)
+
+        $creationLedger = [Collections.Generic.List[object]]::new()
+        $aclFailureRoot = Join-Path $loaderSandbox.Root 'acl-failure-root'
+        $originalSetProtectedAcl = (Get-Item Function:\Set-LoaderProtectedAcl).ScriptBlock
+        try {
+            Set-Item Function:\Set-LoaderProtectedAcl -Value {
+                param([string]$Path)
+                throw 'INJECTED_LOADER_ACL_FAILURE'
+            }
+            { Initialize-LoaderOwnedDirectory $aclFailureRoot 'Project' `
+                -CreationLedger $creationLedger } |
+                Should -Throw '*INJECTED_LOADER_ACL_FAILURE*'
+        }
+        finally {
+            Set-Item Function:\Set-LoaderProtectedAcl -Value $originalSetProtectedAcl
+        }
+        [IO.Directory]::Exists($aclFailureRoot) | Should -BeFalse
+        $creationLedger.Count | Should -Be 0
+
+        $markerFailureRoot = Join-Path $loaderSandbox.Root 'marker-failure-root'
+        $originalWriteJsonCreateOnly = (Get-Item Function:\Write-LoaderJsonCreateOnly).ScriptBlock
+        try {
+            Set-Item Function:\Write-LoaderJsonCreateOnly -Value {
+                param([string]$Path, $Value)
+                throw 'INJECTED_LOADER_MARKER_FAILURE'
+            }
+            { Initialize-LoaderOwnedDirectory $markerFailureRoot 'Project' `
+                -CreationLedger $creationLedger } |
+                Should -Throw '*INJECTED_LOADER_MARKER_FAILURE*'
+        }
+        finally {
+            Set-Item Function:\Write-LoaderJsonCreateOnly -Value $originalWriteJsonCreateOnly
+        }
+        [IO.Directory]::Exists($markerFailureRoot) | Should -BeFalse
+        $creationLedger.Count | Should -Be 0
+
+        $protectedRoot = Initialize-LoaderOwnedDirectory `
+            (Join-Path $loaderSandbox.Root 'protected-root') 'Project'
+        Test-LoaderProtectedAcl $protectedRoot | Should -BeTrue
+        $protectedRootInfo = [IO.DirectoryInfo]::new($protectedRoot)
+        $aclExtensions = 'System.IO.FileSystemAclExtensions' -as [type]
+        $security = if ($null -ne $aclExtensions) {
+            [IO.FileSystemAclExtensions]::GetAccessControl(
+                $protectedRootInfo,
+                [Security.AccessControl.AccessControlSections]::Access)
+        } else {
+            $protectedRootInfo.GetAccessControl(
+                [Security.AccessControl.AccessControlSections]::Access)
+        }
+        $everyone = New-Object Security.Principal.SecurityIdentifier('S-1-1-0')
+        $extraRule = New-Object Security.AccessControl.FileSystemAccessRule(
+            $everyone, [Security.AccessControl.FileSystemRights]::Read,
+            [Security.AccessControl.InheritanceFlags]::None,
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow)
+        [void]$security.AddAccessRule($extraRule)
+        if ($null -ne $aclExtensions) {
+            [IO.FileSystemAclExtensions]::SetAccessControl($protectedRootInfo, $security)
+        } else { $protectedRootInfo.SetAccessControl($security) }
+        Test-LoaderProtectedAcl $protectedRoot | Should -BeFalse
+        Set-LoaderProtectedAcl $protectedRoot
+        Test-LoaderProtectedAcl $protectedRoot | Should -BeTrue
+        $protectedSections = [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner
+        $verifiedSecurity = if ($null -ne $aclExtensions) {
+            [IO.FileSystemAclExtensions]::GetAccessControl(
+                $protectedRootInfo, $protectedSections)
+        } else { $protectedRootInfo.GetAccessControl($protectedSections) }
+        $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $verifiedSecurity.AreAccessRulesProtected | Should -BeTrue
+        $verifiedSecurity.GetOwner([Security.Principal.SecurityIdentifier]).Value |
+            Should -BeExactly $currentSid.Value
+        $verifiedRules = @($verifiedSecurity.GetAccessRules(
+                $true, $true, [Security.Principal.SecurityIdentifier]))
+        $verifiedRules.Count | Should -Be 2
+        $expectedRuleSids = @($currentSid.Value, 'S-1-5-18') | Sort-Object
+        (@($verifiedRules.IdentityReference.Value | Sort-Object) -join '|') |
+            Should -BeExactly ($expectedRuleSids -join '|')
+        $expectedInheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+            [Security.AccessControl.InheritanceFlags]::ObjectInherit
+        foreach ($verifiedRule in $verifiedRules) {
+            $verifiedRule.IsInherited | Should -BeFalse
+            $verifiedRule.AccessControlType |
+                Should -Be ([Security.AccessControl.AccessControlType]::Allow)
+            $verifiedRule.FileSystemRights |
+                Should -Be ([Security.AccessControl.FileSystemRights]::FullControl)
+            $verifiedRule.InheritanceFlags | Should -Be $expectedInheritance
+            $verifiedRule.PropagationFlags |
+                Should -Be ([Security.AccessControl.PropagationFlags]::None)
+        }
+
+        $atomicRoot = Initialize-LoaderOwnedDirectory `
+            (Join-Path $loaderSandbox.Root 'atomic-replacement-root') 'Project'
+        $atomicTarget = Join-Path $atomicRoot 'state.json'
+        [void](Write-LoaderJsonCreateOnly $atomicTarget `
+            ([pscustomobject][ordered]@{ SchemaVersion = 1; State = 'OLD' }))
+        $oldAtomicBytes = [IO.File]::ReadAllBytes($atomicTarget)
+        $originalWriteCreateOnly = (Get-Item Function:\Write-LoaderCreateOnly).ScriptBlock
+        try {
+            Set-Item Function:\Write-LoaderCreateOnly -Value {
+                param([string]$Path, [byte[]]$Bytes)
+                throw 'INJECTED_LOADER_ATOMIC_TEMP_WRITE_FAILURE'
+            }
+            { Write-LoaderJsonAtomic $atomicTarget $atomicRoot `
+                ([pscustomobject][ordered]@{ SchemaVersion = 1; State = 'NEW' }) } |
+                Should -Throw '*INJECTED_LOADER_ATOMIC_TEMP_WRITE_FAILURE*'
+        }
+        finally {
+            Set-Item Function:\Write-LoaderCreateOnly -Value $originalWriteCreateOnly
+        }
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($atomicTarget)) |
+            Should -BeExactly ([Convert]::ToBase64String($oldAtomicBytes))
+        @([IO.Directory]::EnumerateFiles(
+                $atomicRoot, '.cddsi-state-*.tmp', [IO.SearchOption]::TopDirectoryOnly)).Count |
+            Should -Be 0
+        @([IO.Directory]::EnumerateFiles(
+                $atomicRoot, '.cddsi-state-*.bak', [IO.SearchOption]::TopDirectoryOnly)).Count |
+            Should -Be 0
+
+        $loaderRoot = Initialize-LoaderOwnedDirectory `
+            (Join-Path $loaderSandbox.Root 'state-idempotence-root') 'LoaderInstance'
+        $markerPath = Join-Path $loaderRoot '.cddsi-vm-loader-owner.json'
+        $rootBinding = Get-LoaderSha256 (Get-LoaderTextBytes ($loaderRoot.ToUpperInvariant()))
+        $ExpectedZipSha256 = 'a' * 64
+        $ExpectedProductCommitSha = 'b' * 40
+        $initialStateMarker = [pscustomobject][ordered]@{
+            SchemaVersion = 1; ContractVersion = 'cddsi-fast-lane-vm-bootstrap-loader-owner-v1'
+            ZipSha256 = $ExpectedZipSha256; ProductCommitSha = $ExpectedProductCommitSha
+            RootBindingSha256 = $rootBinding; AclBindingSha256 = Get-LoaderAclSha256 $loaderRoot
+            ContextSha256 = ('0' * 64); State = 'INITIALIZING'
+        }
+        [void](Write-LoaderJsonCreateOnly $markerPath $initialStateMarker)
+        $firstStateUpdate = Set-LoaderState 'ONBOARDED' ('0' * 64)
+        $firstStateUpdate.Changed | Should -BeTrue
+        $firstStateBytes = [IO.File]::ReadAllBytes($markerPath)
+        $secondStateUpdate = Set-LoaderState 'ONBOARDED' ('0' * 64)
+        $secondStateUpdate.Changed | Should -BeFalse
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($markerPath)) |
+            Should -BeExactly ([Convert]::ToBase64String($firstStateBytes))
+        @([IO.Directory]::EnumerateFiles(
+                $loaderRoot, '.cddsi-state-*.tmp', [IO.SearchOption]::TopDirectoryOnly)).Count |
+            Should -Be 0
+        @([IO.Directory]::EnumerateFiles(
+                $loaderRoot, '.cddsi-state-*.bak', [IO.SearchOption]::TopDirectoryOnly)).Count |
+            Should -Be 0
+
+        $loaderDirectoryCreateCount = 0; $loaderFileWriteCount = 1; $loaderAclMutationCount = 0
+        $accountingResult = [pscustomobject][ordered]@{
+            Changed = $false; DirectoryCreateCount = 0; FileWriteCount = 0; AclMutationCount = 0
+        }
+        $accounted = Add-LoaderMutationAccounting $accountingResult
+        $accounted.Changed | Should -BeTrue
+        $accounted.FileWriteCount | Should -Be 1
+
+        $leaseScriptPath = Join-Path $protectedRoot 'bound-dependency.ps1'
+        $leaseScriptText = @'
+$script:LoaderLeaseSentinel++
+'@
+        $leaseBytes = (New-Object Text.UTF8Encoding($false, $true)).GetBytes($leaseScriptText)
+        [IO.File]::WriteAllBytes($leaseScriptPath, $leaseBytes)
+        $lease = Open-LoaderBoundDependency $leaseScriptPath $protectedRoot $leaseBytes
+        try {
+            { [IO.File]::WriteAllText($leaseScriptPath, 'forged') } | Should -Throw
+            $dependencyTokens = $null; $dependencyErrors = $null
+            $dependencyAst = [Management.Automation.Language.Parser]::ParseInput(
+                $lease.Text, [ref]$dependencyTokens, [ref]$dependencyErrors)
+            @($dependencyErrors).Count | Should -Be 0
+            $dependencyAst.Extent.Text | Should -BeExactly $leaseScriptText
+            @($dependencyAst.EndBlock.Statements).Count | Should -Be 1
+            $lease.Text | Should -BeExactly $leaseScriptText
+            [Convert]::ToBase64String([byte[]]$lease.Bytes) |
+                Should -BeExactly ([Convert]::ToBase64String($leaseBytes))
+            (Get-LoaderSha256 ([byte[]]$lease.Bytes)) | Should -BeExactly $lease.Sha256
+            $lease.Stream.Position = 0
+            $memory = New-Object IO.MemoryStream
+            try { $lease.Stream.CopyTo($memory); $finalBytes = [byte[]]$memory.ToArray() }
+            finally { $memory.Dispose() }
+            (Get-LoaderSha256 $finalBytes) | Should -BeExactly $lease.Sha256
+        }
+        finally { $lease.Stream.Dispose() }
+        [IO.File]::WriteAllText($leaseScriptPath, $leaseScriptText, (New-Object Text.UTF8Encoding($false)))
+
+        $ordinaryRoot = Initialize-LoaderOwnedDirectory `
+            (Join-Path $loaderSandbox.Root 'ordinary-cleanup-root') 'Project'
+        $deepDirectory = Join-Path $ordinaryRoot 'one\two\three'
+        [void][IO.Directory]::CreateDirectory($deepDirectory)
+        [IO.File]::WriteAllText((Join-Path $ordinaryRoot 'root.txt'), 'root')
+        [IO.File]::WriteAllText((Join-Path $deepDirectory 'deep.txt'), 'deep')
+        $cleanup = Remove-LoaderOwnedTreeSafely $ordinaryRoot
+        $cleanup.FileDeleteCount | Should -Be 3
+        $cleanup.DirectoryDeleteCount | Should -Be 4
+        [IO.Directory]::Exists($ordinaryRoot) | Should -BeFalse
+
+        $reparseRoot = Initialize-LoaderOwnedDirectory `
+            (Join-Path $loaderSandbox.Root 'reparse-cleanup-root') 'Project'
+        $normalChild = Join-Path $reparseRoot 'normal'
+        [void][IO.Directory]::CreateDirectory($normalChild)
+        $normalFile = Join-Path $normalChild 'must-remain.txt'
+        [IO.File]::WriteAllText($normalFile, 'remain')
+        $outsideTarget = Join-Path $loaderSandbox.Root 'outside-cleanup-target'
+        [void][IO.Directory]::CreateDirectory($outsideTarget)
+        $outsideFile = Join-Path $outsideTarget 'outside.txt'
+        [IO.File]::WriteAllText($outsideFile, 'outside')
+        $descendantJunction = Join-Path $reparseRoot 'descendant-junction'
+        try {
+            New-Item -ItemType Junction -Path $descendantJunction `
+                -Target $outsideTarget -ErrorAction Stop | Out-Null
+            { Remove-LoaderOwnedTreeSafely $reparseRoot } |
+                Should -Throw '*VM_BOOTSTRAP_LOADER_CLEANUP_DESCENDANT_INVALID*'
+            [IO.File]::Exists($normalFile) | Should -BeTrue
+            [IO.File]::Exists($outsideFile) | Should -BeTrue
+        }
+        finally {
+            if ([IO.Directory]::Exists($descendantJunction)) {
+                [IO.Directory]::Delete($descendantJunction, $false)
+            }
+        }
+        [void](Remove-LoaderOwnedTreeSafely $reparseRoot)
+
+        $leaseIndex = $loader.IndexOf('$lease = Open-LoaderBoundDependency', [StringComparison]::Ordinal)
+        $parserIndex = $loader.IndexOf('Parser]::ParseInput(', $leaseIndex, [StringComparison]::Ordinal)
+        $capturedTextCreateToken = '$dependencyScript = [ScriptBlock]' +
+            '::Create($lease.Text)'
+        $createIndex = $loader.IndexOf(
+            $capturedTextCreateToken, $parserIndex,
+            [StringComparison]::Ordinal)
+        $dotSourceIndex = $loader.IndexOf('. $dependencyScript', $createIndex, [StringComparison]::Ordinal)
+        $runnerPathIndex = $loader.IndexOf(
+            '$script:CddsiFastLaneGitOutboxRunnerPath = $lease.Path', $dotSourceIndex,
+            [StringComparison]::Ordinal)
+        $disposeIndex = $loader.IndexOf('$lease.Stream.Dispose()', $dotSourceIndex, [StringComparison]::Ordinal)
+        $leaseIndex | Should -BeGreaterThan -1
+        $parserIndex | Should -BeGreaterThan $leaseIndex
+        $createIndex | Should -BeGreaterThan $parserIndex
+        $dotSourceIndex | Should -BeGreaterThan $createIndex
+        $runnerPathIndex | Should -BeGreaterThan $dotSourceIndex
+        $disposeIndex | Should -BeGreaterThan $dotSourceIndex
+        $loader | Should -Match 'Bytes\s*=\s*\$observedBytes;\s*Text\s*=\s*\$observedText'
+        $loader | Should -Match '(?s)Parser\]::ParseInput\(\s*\$lease\.Text\s*,'
+        $loader | Should -Match '\[IO\.FileShare\]::Read'
+        $loader | Should -Match "Collections.Generic.Stack\[string\]"
+        $loader | Should -Match 'SearchOption\]::TopDirectoryOnly'
+        $loader | Should -Not -Match 'SearchOption\]::AllDirectories'
+        $loader | Should -Not -Match '\[IO\.Directory\]::Delete\([^\r\n]*,\s*\$true\)'
+        $loader | Should -Match ('(?s)if\s*\(-not \(Test-LoaderNoReparse \$loaderRoot\).*?' +
+            '-not \(Test-LoaderProtectedAcl \$loaderRoot\).*?' +
+            '-not \[IO\.File\]::Exists\(\$markerPath\).*?' +
+            '-not \(Test-LoaderNoReparse \$markerPath\).*?' +
+            '\$marker = \(\[IO\.File\]::ReadAllText')
+        ([regex]::Matches($loader,
+                '-CreationLedger\s+\$createdOwnedDirectories')).Count | Should -Be 6
+        $loader | Should -Match 'Sort-Object\s+\{\s*\(\[string\]\$_\.Path\)\.Length\s*\}\s+-Descending'
+        $loader | Should -Match ('(?s)\[IO\.File\]::Replace\(\s*\$temporary,\s*\$target,\s*' +
+            '\[System\.Management\.Automation\.Language\.NullString\]::Value,\s*\$false\)')
+        $loader | Should -Match 'VM_BOOTSTRAP_LOADER_CLEANUP_FAILED'
+    }
+
+    It 'places Live acknowledgement and five-tool preflight before every durable loader action' {
+        $loader = (Get-CddsiOnboardingCanonicalArtifacts).Operator.LoaderScript
+        $ackIndex = $loader.IndexOf("if (-not `$AcknowledgeVmBootstrapLive.IsPresent)", [StringComparison]::Ordinal)
+        $toolIndex = $loader.IndexOf('foreach ($tool in @($package.Tools))', [StringComparison]::Ordinal)
+        $firstOwnerWrite = $loader.IndexOf('$projectRoot = Initialize-LoaderOwnedDirectory', [StringComparison]::Ordinal)
+        $ackIndex | Should -BeGreaterThan -1
+        $toolIndex | Should -BeGreaterThan $ackIndex
+        $firstOwnerWrite | Should -BeGreaterThan $toolIndex
+        $loader | Should -Not -Match 'Invoke-WebRequest|Invoke-RestMethod|Start-Process|git clone|git fetch'
+        $loader | Should -Match 'VM_BOOTSTRAP_PINNED_TOOL_MISSING_'
+        $loader | Should -Match 'VM_BOOTSTRAP_PINNED_TOOL_HASH_MISMATCH_'
     }
 }

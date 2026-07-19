@@ -427,6 +427,7 @@
             )
             'operator/fast-lane/invoke-git-outbox.ps1' = @(
                 'Invoke-CddsiFastLaneGitOutbox'
+                'Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding'
             )
             'operator/fast-lane/invoke-vm-reset-live.ps1' = @(
                 'Invoke-CddsiVmResetLiveAdapter'
@@ -444,6 +445,7 @@
         }
 
         OperatorRuntimeDynamicInvocationFiles = @(
+            'operator/fast-lane/invoke-git-outbox.ps1'
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
         )

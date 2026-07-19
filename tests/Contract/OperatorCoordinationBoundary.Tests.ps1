@@ -68,6 +68,11 @@ Describe 'operator coordination static isolation boundary' {
             Should -BeExactly (@($script:OperatorRuntimes | Sort-Object) -join "`n")
         (@($script:Boundary.Rules.OperatorRuntimeEntryPoints.Keys | Sort-Object) -join "`n") |
             Should -BeExactly (@($script:OperatorRuntimes | Sort-Object) -join "`n")
+        @($script:Boundary.Rules.OperatorRuntimeEntryPoints['operator/fast-lane/invoke-git-outbox.ps1']) |
+            Should -BeExactly @(
+                'Invoke-CddsiFastLaneGitOutbox'
+                'Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding'
+            )
         @($script:Boundary.Rules.OperatorRuntimeNetworkFiles) |
             Should -BeExactly @('operator/fast-lane/invoke-git-outbox.ps1')
         @($script:Boundary.Rules.OperatorRuntimeFileSystemFiles) |
@@ -90,6 +95,7 @@ Describe 'operator coordination static isolation boundary' {
             )
         @($script:Boundary.Rules.OperatorRuntimeDynamicInvocationFiles) |
             Should -BeExactly @(
+                'operator/fast-lane/invoke-git-outbox.ps1'
                 'operator/fast-lane/invoke-vm-reset-live.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
             )

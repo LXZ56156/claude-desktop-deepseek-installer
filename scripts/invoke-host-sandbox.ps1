@@ -1025,7 +1025,17 @@ function Invoke-CddsiTrustedProcess {
     })
 
     if ($secretFindingCount -gt 0) { throw 'Trusted process output contained a secret or synthetic canary.' }
-    if ($outcome -eq 'TimedOut') { throw ('Trusted process timed out: {0}.' -f $RuleId) }
+    if ($outcome -eq 'TimedOut') {
+        $timeoutTail = $stderr + [Environment]::NewLine + $stdout
+        if ($timeoutTail.Length -gt 5000) {
+            $timeoutTail = $timeoutTail.Substring($timeoutTail.Length - 5000)
+        }
+        $safeTimeoutTail = Protect-CddsiHarnessText -Text $timeoutTail -PathTokens $PathTokens `
+            -OwnershipToken $OwnershipToken -CanaryValue $CanaryValue
+        if ([string]::IsNullOrWhiteSpace($safeTimeoutTail)) { $safeTimeoutTail = 'NO_SAFE_OUTPUT' }
+        throw ('Trusted process timed out: {0}. Last safe output: {1}' -f `
+            $RuleId, $safeTimeoutTail.Trim())
+    }
     if ($outcome -ne 'Succeeded') {
         $safeOutput = Protect-CddsiHarnessText -Text ($stderr + [Environment]::NewLine + $stdout) -PathTokens $PathTokens -OwnershipToken $OwnershipToken -CanaryValue $CanaryValue
         throw ('Trusted process failed: {0}. {1}' -f $RuleId, $safeOutput.Trim())

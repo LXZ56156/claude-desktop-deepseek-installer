@@ -438,6 +438,8 @@
             -CommittedConsumptionReceipt $CommittedReceipt -ExpectedRevision $ExpectedRevision `
             -ValidationTimeUtc $ValidationTimeUtc
     }
+
+    $script:DefaultVmCalibrationBundleFixture = New-CddsiVmCalibrationBundleFixture
 }
 
 Describe 'P10A external-session-bound calibration contract' {
@@ -456,7 +458,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'validates two ordered candidates but exposes freeze only from consumption' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         (Test-CddsiVmCalibrationSessionFixture -Session $bundle.Session -AnchorToken $bundle.SessionAnchorToken) | Should -BeTrue
         (Test-CddsiVmCalibrationEvidenceFixture -Evidence $bundle.Evidence -Session $bundle.Session -AnchorToken $bundle.SessionAnchorToken) | Should -BeTrue
         @($bundle.Evidence.MsixCandidates).Count | Should -Be 2
@@ -486,7 +488,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'requires an external anchor and one committed consumption CAS receipt' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         (Test-CddsiVmCalibrationSessionFixture -Session $bundle.Session -AnchorToken ('0' * 64)) | Should -BeFalse
         (Test-CddsiVmCalibrationSession -ExpectedSession $bundle.Session -ExpectedSessionAnchorToken $bundle.SessionAnchorToken `
             -ValidationTimeUtc '2026-07-15T01:00:01Z' -MaximumAgeSeconds 86400) | Should -BeFalse
@@ -521,7 +523,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'never treats a raw proposal state or a recomputed SHA token as a committed receipt' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $available = New-CddsiVmCalibrationConsumptionStateFixture -Session $bundle.Session -AnchorToken $bundle.SessionAnchorToken
         $proposal = Resolve-CddsiVmCalibrationConsumptionFixture -Evidence $bundle.Evidence -Session $bundle.Session `
             -AnchorToken $bundle.SessionAnchorToken -ConsumptionState $available
@@ -540,7 +542,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'requires the pinned RSA authority and rejects forged, stale, replayed and expired commit receipts' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $available = New-CddsiVmCalibrationConsumptionStateFixture -Session $bundle.Session -AnchorToken $bundle.SessionAnchorToken
         $proposal = Resolve-CddsiVmCalibrationConsumptionFixture -Evidence $bundle.Evidence -Session $bundle.Session `
             -AnchorToken $bundle.SessionAnchorToken -ConsumptionState $available
@@ -577,7 +579,7 @@ Describe 'P10A external-session-bound calibration contract' {
             -CommittedReceipt $receipt -ExpectedRevision 1 `
             -ValidationTimeUtc '2026-07-14T01:00:00Z').CanFreezeP10B | Should -BeFalse
 
-        $otherBundle = New-CddsiVmCalibrationBundleFixture
+        $otherBundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $otherBundle.Session.OperationUseStates[0].ProviderEvidenceDigest = ('0' * 64)
         $otherBundle.Session.OperationUseStates[0].ReceiptBindingToken = Get-CddsiOperationUseBindingToken -OperationUseState $otherBundle.Session.OperationUseStates[0]
         $otherBundle.Session.WorkflowSessionState.TerminalOperationSetDigestSha256 = Get-CddsiTerminalOperationSetDigest -OperationGrant $otherBundle.Session.OperationGrant -OperationUseStates $otherBundle.Session.OperationUseStates
@@ -595,7 +597,7 @@ Describe 'P10A external-session-bound calibration contract' {
             -ParameterName ExpectedSessionAnchorToken) | Should -BeTrue
         (Test-CddsiVmCalibrationMandatoryParameterFixture -CommandName Resolve-CddsiVmCalibrationConsumption `
             -ParameterName ConsumptionState) | Should -BeTrue
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $bundle.Evidence.SessionBinding.PSObject.Properties.Name | Should -Not -Contain 'Grant'
         $bundle.Evidence.SessionBinding.GrantId | Should -BeExactly $bundle.Session.OperationGrant.GrantId
         $bundle.Evidence.SessionBinding.ClaimId | Should -BeExactly $bundle.Session.AuthorizationSession.ClaimId
@@ -603,7 +605,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'rejects forged grant session and operation-set bindings' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $mutations = @(
             { param($session) $session.StageManifest.SidecarSha256 = ('0' * 64) },
             { param($session) $session.OperationGrant.ArtifactSha256 = ('0' * 64) },
@@ -624,7 +626,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'rejects expired completion and every observation outside the claimed session window' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $expired = Copy-CddsiVmCalibrationFixture -Value $bundle.Session
         $expired.WorkflowSessionState.OccurredAtUtc = $expired.AuthorizationSession.ExpiresAtUtc
         (Test-CddsiVmCalibrationSessionFixture -Session $expired -AnchorToken $bundle.SessionAnchorToken) | Should -BeFalse
@@ -641,7 +643,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'blocks a missing candidate and a valid but explicitly unobserved flavor' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $oneOnly = Copy-CddsiVmCalibrationFixture -Value $bundle.Evidence
         $oneOnly.MsixCandidates = [object[]]@($oneOnly.MsixCandidates[0])
         Update-CddsiVmCalibrationInternalFields -Evidence $oneOnly
@@ -683,7 +685,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'rejects unofficial or query-bearing MSIX and Git source URIs and overlong redirects' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $attacks = @(
             { param($evidence) $evidence.MsixCandidates[0].SourceUri = 'https://example.com/Claude.msix' },
             { param($evidence) $evidence.MsixCandidates[0].RedirectUri = 'https://example.com/Claude.msix' },
@@ -701,26 +703,26 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'rejects relabelled duplicate MSIX candidates and Git asset route drift' {
-        $duplicate = New-CddsiVmCalibrationBundleFixture
+        $duplicate = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $duplicate.Evidence.MsixCandidates[1].SourceUri = $duplicate.Evidence.MsixCandidates[0].SourceUri
         $duplicate.Evidence.MsixCandidates[1].RedirectUri = $duplicate.Evidence.MsixCandidates[0].RedirectUri
         $duplicate.Evidence.MsixCandidates[1].ArtifactSha256 = $duplicate.Evidence.MsixCandidates[0].ArtifactSha256
         Update-CddsiVmCalibrationInternalFields -Evidence $duplicate.Evidence
         (Test-CddsiVmCalibrationEvidenceFixture -Evidence $duplicate.Evidence -Session $duplicate.Session -AnchorToken $duplicate.SessionAnchorToken) | Should -BeFalse
 
-        $wrongFlavorRoute = New-CddsiVmCalibrationBundleFixture
+        $wrongFlavorRoute = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $wrongFlavorRoute.Evidence.MsixCandidates[1].SourceUri = 'https://claude.ai/api/desktop/win32/x64/latest/redirect'
         Update-CddsiVmCalibrationInternalFields -Evidence $wrongFlavorRoute.Evidence
         (Test-CddsiVmCalibrationEvidenceFixture -Evidence $wrongFlavorRoute.Evidence -Session $wrongFlavorRoute.Session -AnchorToken $wrongFlavorRoute.SessionAnchorToken) | Should -BeFalse
 
-        $gitRouteDrift = New-CddsiVmCalibrationBundleFixture
+        $gitRouteDrift = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $gitRouteDrift.Evidence.Git.AssetName = 'Git-2.53.0.3-arm64.exe'
         Update-CddsiVmCalibrationInternalFields -Evidence $gitRouteDrift.Evidence
         (Test-CddsiVmCalibrationEvidenceFixture -Evidence $gitRouteDrift.Evidence -Session $gitRouteDrift.Session -AnchorToken $gitRouteDrift.SessionAnchorToken) | Should -BeFalse
     }
 
     It 'rejects observation drift even after every evidence-internal derived field is recomputed' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $forged = Copy-CddsiVmCalibrationFixture -Value $bundle.Evidence
         $forged.MsixCandidates[0].SizeBytes = 104857601
         Update-CddsiVmCalibrationInternalFields -Evidence $forged
@@ -731,7 +733,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'rejects whole-evidence binding drift and evidence-session mismatch' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $bindingDrift = Copy-CddsiVmCalibrationFixture -Value $bundle.Evidence
         $bindingDrift.EvidenceBindingToken = ('0' * 64)
         (Test-CddsiVmCalibrationEvidenceFixture -Evidence $bindingDrift -Session $bundle.Session -AnchorToken $bundle.SessionAnchorToken) | Should -BeFalse
@@ -752,7 +754,7 @@ Describe 'P10A external-session-bound calibration contract' {
     }
 
     It 'keeps COMPLETE distinct from comprehensive acceptance and rejects injected sensitive fields' {
-        $bundle = New-CddsiVmCalibrationBundleFixture
+        $bundle = Copy-CddsiVmCalibrationFixture -Value $script:DefaultVmCalibrationBundleFixture
         $raw = Copy-CddsiVmCalibrationFixture -Value $bundle.Evidence
         $raw.DesktopBehavior.HkcuManagedPolicy | Add-Member -NotePropertyName RegistryValues -NotePropertyValue @{}
         $raw.EvidenceBindingToken = Get-CddsiVmCalibrationEvidenceBindingToken -Evidence $raw

@@ -29,7 +29,7 @@
 
 Describe 'P10A-0A Fast Lane infrastructure policy' {
     It 'uses two physical one-way repositories for one logical dual-outbox control plane' {
-        $script:Policy.SchemaVersion | Should -Be 2
+        $script:Policy.SchemaVersion | Should -Be 3
         $script:Policy.ProtocolVersion | Should -BeExactly 'cddsi-vm-test-relay-v1'
         $script:Policy.Lane | Should -BeExactly 'Fast'
         $script:Policy.ControlPlane.Topology | Should -BeExactly 'DirectionalRepositoryPair'
@@ -97,6 +97,20 @@ Describe 'P10A-0A Fast Lane infrastructure policy' {
             Should -BeExactly 'cddsi-fast-lane-vmtester-minute-poll'
         $script:Policy.Automation.Vm.InitialStatus | Should -BeExactly 'PAUSED'
         $script:Policy.Automation.Vm.MustBeCreatedOnVmDevice | Should -BeTrue
+        $bootstrapAutomation = $script:Policy.Automation.Vm.BootstrapAutomation
+        (@($bootstrapAutomation.Keys | Sort-Object) -join "`n") | Should -BeExactly ((@(
+            'CadenceMinutes', 'DestinationContract', 'Id', 'Kind', 'Name',
+            'RRule', 'ReconcileMode', 'Status', 'TargetTaskToken'
+        ) | Sort-Object) -join "`n")
+        $bootstrapAutomation.Id | Should -BeExactly 'cddsi-fast-lane-vmtester-minute-poll'
+        $bootstrapAutomation.Kind | Should -BeExactly 'heartbeat'
+        $bootstrapAutomation.Name | Should -BeExactly 'CDDsi Fast Lane VmTester minute poll'
+        $bootstrapAutomation.Status | Should -BeExactly 'PAUSED'
+        $bootstrapAutomation.RRule | Should -BeExactly 'FREQ=MINUTELY;INTERVAL=1'
+        $bootstrapAutomation.CadenceMinutes | Should -Be 1
+        $bootstrapAutomation.DestinationContract | Should -BeExactly 'local'
+        $bootstrapAutomation.TargetTaskToken | Should -BeExactly 'CURRENT_TASK'
+        $bootstrapAutomation.ReconcileMode | Should -BeExactly 'CREATE_OR_UPDATE_EXACTLY_ONE'
         $script:Policy.Automation.Vm.ReadOutbox | Should -BeExactly 'host-to-vm'
         $script:Policy.Automation.Vm.WriteOutbox | Should -BeExactly 'vm-to-host'
         $script:HostPrompt | Should -Match 'Never\s+run product Live on the host'
@@ -138,6 +152,9 @@ Describe 'P10A-0A Fast Lane infrastructure policy' {
         $script:Policy.SshTrust.GitHubHost | Should -BeExactly 'github.com'
         $script:Policy.SshTrust.OpenSshToolId | Should -BeExactly 'OpenSSH'
         $script:Policy.SshTrust.OpenSshVmPath | Should -BeExactly '%PROGRAMFILES%\Git\usr\bin\ssh.exe'
+        $script:Policy.SshTrust.OpenSshKeygenToolId | Should -BeExactly 'OpenSSHKeygen'
+        $script:Policy.SshTrust.OpenSshKeygenVmPath |
+            Should -BeExactly '%PROGRAMFILES%\Git\usr\bin\ssh-keygen.exe'
         $script:Policy.SshTrust.KnownHostsSourcePath |
             Should -BeExactly 'operator/fast-lane/trust/github-known-hosts'
         $script:Policy.SshTrust.StrictHostKeyCheckingRequired | Should -BeTrue

@@ -1,6 +1,6 @@
 # 实现计划
 
-更新日期：2026-07-18
+更新日期：2026-07-19
 
 ## 总目标
 
@@ -28,7 +28,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
-| P10A-0A | 双机 Fast Lane MVP 前置门 | 宿主机实现与文档内容已就绪；bootstrap readiness 由外部 finalization 事实派生，integration 受窄凭据、VM 证据和任务门阻断 | 外部精确锚核验后仅执行 VM bootstrap；角色权限、真实 VM reset 与两端无人值守闭环通过 |
+| P10A-0A | 双机 Fast Lane MVP 前置门 | 唯一 phase2 与 loader 安全实现已通过 dirty WIP 双引擎统一门；clean-commit finalization 未完成、不得进入 VM | 从 clean exact commit 重跑双引擎门并完成 host finalization；再完成角色权限、真实双向交换、VM reset 与无人值守闭环 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -52,6 +52,57 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 - 没有已提交并消费的 P10A evidence，不得冻结 release facts 或开始 P10B 双候选。
 - P10B 未完成，不得开始 P11 全面 VM Live。
 - P11 未通过，不得宣称产品完成或进入 P12。
+
+## 2026-07-19 当前工作包与端到端目标
+
+用户可见的正常路径已经冻结为：用户启动 disposable VM、安装并登录 Codex、把宿主机
+交付的唯一 onboarding ZIP 放进一个新建空目录并打开、粘贴一次最终提示。之后不再让
+用户手工运行 hash、解压、PowerShell、Git、密钥或 automation 命令。VM Codex 完成本地
+bootstrap；两端窄身份和 runtime protection 就绪后，HostCoordinator 唯一修改产品代码，
+VmTester 只 reset、测试、分析和回传，自动循环到场景矩阵与 Formal 验收满足。P12 发布
+仍保留一次人工确认，不自动 merge、promotion 或 release。
+
+这是一项目标合同，不是当前完成状态。当前工作树基于 commit
+`809942943bfeb0547fa36f57aedb8e75e1d45e29`、tree
+`423e740e9fc191a23959e8c37a9a16eb81776ef3`，有 20 个 tracked 文件未提交；旧 bundle、
+CI、automation prompt 和 430/430、39/39 结果均不绑定当前字节。
+
+当前 dirty WIP 已通过标准 HostSandbox 双引擎全树门：两引擎各 448/448，全部 failure/
+skip/not-run/inconclusive 与安全、ledger、mutation 指标为 0，repository unchanged、cleanup
+succeeded。该结果早于本文最终同步与 commit，不能替代第 5 步要求的 clean exact HEAD 门。
+
+宿主机进入 VM 前必须按以下顺序收口，任何 tracked 修改都从第 5 步重新开始：
+
+1. 已落盘并通过 dirty WIP 统一门：`Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding` 的 canonical
+   automation identity、目标 exact schema、唯一任务、prompt/current-task readback、伪造输入、
+   phase1 后零/一状态重扫与漂移补偿、HostSandbox 路径绑定和权限正负测试；旧 direct 实现已
+   收缩为 facade。readback 只作为绑定持有 TOML 字节的时点 observation，每次 Handoff 都重验。
+2. 已落盘并通过 dirty WIP 统一门：`config/execution-boundaries.psd1` 只暴露 phase2 operator surface；
+   direct core、direct handoff 与 mutation helper 保持 fail closed。
+3. 已落盘并通过 dirty WIP 统一门：builder/loader 不再接受 `ObservationJsonBase64`、caller
+   result/prompt/observation，只把 `CodexHome`、原始 ZIP、11 个外部锚点、固定 roots、target
+   token 和 acknowledgement 交给 phase2。
+4. 已落盘并通过 dirty WIP 统一门：loader 对 existing root 执行 current-SID/protected-DACL 精确校验，
+   hash/parser/load 消费同一 captured bytes，状态 create-only/atomic/idempotent，cleanup 使用显式
+   栈、逐层 no-reparse、deepest-first 非递归删除；测试不再启动未记账嵌套 PowerShell。
+5. 在正常提交并非 force push 到同一 repair branch 后，从新的 clean exact HEAD 运行标准
+   HostSandbox 双引擎全树门、Release Simulation DryRun、diff/编码门。
+6. 从同一最终 commit 生成并自校验 18-entry/16-inventory/1980-timestamp onboarding bundle，
+   原位更新既有 `cddsi-fast-lane-hostcoordinator-minute-poll` 的完整 binding，仍保持 `PAUSED`。
+7. 核验 remote ref、PR #1 OPEN/DRAFT、最终 HEAD CI 与 clean worktree 全部一致；只有此时
+   才可派生 `CanStartVmBootstrap=true` 并交付 ZIP、prompt 与 loader/prompt hashes。
+
+bootstrap-ready 也不等于通信已经建立。prepared VM baseline 必须已有 manifest 固定的
+Git、OpenSSH、`ssh-keygen`、PowerShell 7 和 Windows PowerShell；当前 bootstrap 只验证，
+不下载或安装。要让普通全新 Windows VM 也只需安装 Codex，后续必须在用户明确授权后，
+增加受固定来源/hash/签名约束的工具安装阶段，或交付预构建 baseline。
+
+三组 VM keypair 初始仅为 `KEYPAIR_STAGED`。GitHub deploy-key 注册、窄 HostCoordinator/
+VmTester 权限、正负向 remote 测试和 runtime assertion/hash/token 需要一次受授权的外部
+provisioner；交互式 GitHub/bootstrap-admin 只能完成这次注册，不能保存或复用为 automation
+credential。其后才允许安全激活两端 task、完成真实 publish/poll、deterministic reset、
+unattended 修复循环。Formal Lane 的 external snapshot receipt、CAS、签名及 P10A/P10B/P11
+仍是后续阶段，当前四个 readiness/complete 标志全部为 false。
 
 ## P0：规划与外部合同基线
 
@@ -434,7 +485,7 @@ fake executor/orchestrator 已实现；真实 adapter 源码仍是未完成交�
 - `Success=true` 只可能对应全部三项 readiness 为 `READY` 的 `SUCCEEDED`。
 - 产品自身不内置 Desktop UI 自动化；真实 UI E2E 只在 P11。
 
-## P10A-0A：双机 Fast Lane MVP 前置门（bootstrap-only ready；integration blocked）
+## P10A-0A：双机 Fast Lane MVP 前置门（bootstrap implementation landed；bootstrap/integration blocked）
 
 ### 目标
 
@@ -464,6 +515,13 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
 - 已实现 deterministic VM onboarding builder：只从 clean exact commit 生成 Store ZIP，
   绑定 commit/tree、committed blob/working bytes、工具 hash、三个 repository identity、
   两个 genesis、prompt/runbook，且不包含 credential、用户路径或正式 evidence。
+- dirty worktree 已实现并通过标准双引擎全树门的一次提示自治 VM bootstrap；clean-commit
+  finalization 仍待完成：普通用户只启动
+  VM、安装登录 Codex、把唯一 ZIP
+  放进新建空文件夹并打开、粘贴一次最终提示。单一受审 onboarding 入口负责外层 hash/
+  length 零写入门、owner-marked 安全解压、manifest v3/inventory/五工具校验、三组
+  `KEYPAIR_STAGED`、唯一 `PAUSED` minute task 的创建或原位更新与 readback，以及 public
+  redacted handoff；不允许临时拼替代命令。
 - 已实现 fake deterministic reset、ownership/baseline/plan/action receipts、baseline
   drift 阻断和诊断性 `CLEAN_READY`，并增加 VM-only dispatcher/provider、device/command
   trust、preflight/postcondition 与 fail-closed escalation。实际 provider/device evidence
@@ -476,8 +534,8 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
   VM 仍需独立 read-only credential；VM 对产品 remote 的负向写验证不能由本地 fake
   合同代替。
 - 宿主机分钟级 heartbeat 已创建为
-  `cddsi-fast-lane-hostcoordinator-minute-poll`。宿主机 finalization 后它已绑定当次精确
-  commit/tree、bundle 和 runtime material，并继续保持 `PAUSED`；精确值只从实际 Git、
+  `cddsi-fast-lane-hostcoordinator-minute-poll`。宿主机 finalization 必须把同一任务原位更新为
+  当次精确 commit/tree、bundle 和 runtime material 绑定，并继续保持 `PAUSED`；精确值只从实际 Git、
   既有 PR/CI 和该暂停 automation 的当前配置交叉核验，不写回 tracked 文档。窄凭据与
   runtime assertion 仍为 `UNPROVISIONED`，任务因此在网络、Git 或代码修改前 fail closed。
   本机没有 VM Codex project，VM task 必须在 VM 设备上创建并先保持暂停。
@@ -487,7 +545,9 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
   HKCU/credential/checkpoint 与 owner-marked 测试目录并签发 `CLEAN_READY` receipt；
   不得广泛清理用户 profile 或全局工具配置。
 - 外部 hypervisor supervisor 维护权威快照；首次 P10A、正式 P11/里程碑，或 reset
-  失败、baseline drift、VMP/重启/卸载/补偿状态未知时才恢复并签发 receipt。
+  失败、baseline drift、VMP/重启/卸载/补偿状态未知时才恢复并签发 receipt。白话说，
+  supervisor 是普通 VM 软件或其外部自动化，baseline 是 VM 起始状态；Formal
+  clean-snapshot receipt 本次 bootstrap 不需要，只属于上述后续正式门。
 - 两个物理单向 public protected control repos 共同提供逻辑 `host-to-vm`/`vm-to-host` 双 outbox；
   两端 Codex automation 分别轮询。需要更低延迟时，由 deterministic watcher 验签并调用固定
   `codex exec resume`；普通 Git push 不视为对方已收到。
@@ -516,6 +576,9 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
   任何后续 tracked 修改都会使该状态失效，直到从新的
   clean exact HEAD 重新完成同一 finalization。即使为 true 也只允许 bootstrap-only，始终不
   允许 control polling、产品测试、reset Live 或产品代码修改。
+  retained path、host task、PR/CI、worktree 和 remote 的四方核验只由宿主机 finalization
+  完成；VM 只消费最终提示词给出的外部 ZIP hash/length、commit/tree 与 binding tokens，
+  不重复检查宿主机事实。
 - 三个 repositories 的 protected history 已部署并验证。VM integration 另要求窄
   HostCoordinator credential、runtime protection assertion 和随后 VM 侧 credential/
   negative-permission evidence；不得复用 bootstrap administrator credential 作为降级。
@@ -666,8 +729,11 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
 下一工作包严格按以下依赖顺序推进：
 
 1. VM 只执行 bootstrap：
-   离线验 manifest/inventory/hash、生成 VM-local keys、回报 public fingerprints/tool hash，
-   并从 VM Codex 设备创建初始为 `PAUSED` 的 minute task。不得轮询、测试或运行 reset Live。
+   用户只完成启动 VM、安装登录 Codex、把唯一 ZIP 放进空文件夹并打开、粘贴一次提示。
+   VM Codex 用单一受审入口自治完成离线验 manifest v3/inventory/hash/五工具、owner-marked
+   local staging、三组 `KEYPAIR_STAGED`、public fingerprints/tool hash，并从 VM 设备创建或
+   原位更新唯一 `PAUSED` minute task 后 readback。先得到 `VM_BOOTSTRAP_LOCAL_STAGED`，
+   再输出 `VM_BOOTSTRAP_STAGED` 并停止；不得轮询、测试或运行 reset Live。
 2. 发放窄 HostCoordinator/VmTester credentials：宿主机只写 repair ref 与 host-to-VM，
    VM 只读产品和 host-to-VM、只写 VM-to-host；用真实 remote 负向证明错向写、产品写、
    force-push/delete/rewrite 和 broad admin capability 均被拒绝。
@@ -698,6 +764,9 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
 - 服务端 protected history 已完成。bootstrap-only 的宿主机门不是长期外部阻塞：当 clean
   HEAD、bundle、暂停 task、remote/PR/CI 的外部事实全部匹配时派生
   `CanStartVmBootstrap=true`；任一不匹配则为 false。这不等于 integration 或正式 VM 门已通过。
+- VM 不负责重查上述宿主机 retained path/task/PR/CI/remote；它只验证最终提示词的外部
+  ZIP hash/length、commit/tree 与 tokens。新 key 只是 `KEYPAIR_STAGED`，必须完成注册及真实
+  正/负向权限测试后才可能 credential ready。
 - 宿主机限 repair-ref/host-to-VM、VM 产品 read-only/VM-to-host 的窄 credentials，以及
   产品写、错向写、force/delete/rewrite 和 broad-admin 负向证据。
 - VM provider/device trust、真实 deterministic reset smoke、从 VM device 创建并保持

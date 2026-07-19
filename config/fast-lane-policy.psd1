@@ -1,5 +1,5 @@
 ﻿@{
-    SchemaVersion  = 2
+    SchemaVersion  = 3
     ProtocolVersion = 'cddsi-vm-test-relay-v1'
     Lane            = 'Fast'
 
@@ -74,6 +74,8 @@
         GitHubHost                    = 'github.com'
         OpenSshToolId                 = 'OpenSSH'
         OpenSshVmPath                 = '%PROGRAMFILES%\Git\usr\bin\ssh.exe'
+        OpenSshKeygenToolId           = 'OpenSSHKeygen'
+        OpenSshKeygenVmPath           = '%PROGRAMFILES%\Git\usr\bin\ssh-keygen.exe'
         KnownHostsSourcePath          = 'operator/fast-lane/trust/github-known-hosts'
         KnownHostsSha256              = 'c73ac5d045cd2a359d2202b79b551fb22a638463d5ddbe5ed59b1b3998869c88'
         StrictHostKeyCheckingRequired = $true
@@ -113,6 +115,17 @@
             AutomationId = 'cddsi-fast-lane-vmtester-minute-poll'
             InitialStatus = 'PAUSED'
             MustBeCreatedOnVmDevice = $true
+            BootstrapAutomation = @{
+                Id                  = 'cddsi-fast-lane-vmtester-minute-poll'
+                Kind                = 'heartbeat'
+                Name                = 'CDDsi Fast Lane VmTester minute poll'
+                Status              = 'PAUSED'
+                RRule               = 'FREQ=MINUTELY;INTERVAL=1'
+                CadenceMinutes      = 1
+                DestinationContract = 'local'
+                TargetTaskToken     = 'CURRENT_TASK'
+                ReconcileMode       = 'CREATE_OR_UPDATE_EXACTLY_ONE'
+            }
             Role         = 'VmTester'
             ReadOutbox   = 'host-to-vm'
             WriteOutbox  = 'vm-to-host'
