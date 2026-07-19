@@ -1650,9 +1650,17 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $creationLedger = [Collections.Generic.List[object]]::new()
         $aclFailureRoot = Join-Path $loaderSandbox.Root 'acl-failure-root'
         $originalSetProtectedAcl = (Get-Item Function:\Set-LoaderProtectedAcl).ScriptBlock
+        Set-Item Function:\Invoke-CddsiTestOriginalSetLoaderProtectedAcl `
+            -Value $originalSetProtectedAcl
         try {
             Set-Item Function:\Set-LoaderProtectedAcl -Value {
                 param([string]$Path)
+                # A GitHub-hosted administrator token may give a newly created
+                # directory the Administrators SID as its default owner. Reach
+                # the proved current-SID/protected-DACL state before injecting
+                # the later failure so cleanup has environment-independent
+                # ownership evidence and never needs a weaker delete rule.
+                Invoke-CddsiTestOriginalSetLoaderProtectedAcl -Path $Path
                 throw 'INJECTED_LOADER_ACL_FAILURE'
             }
             { Initialize-LoaderOwnedDirectory $aclFailureRoot 'Project' `
@@ -1661,6 +1669,10 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         }
         finally {
             Set-Item Function:\Set-LoaderProtectedAcl -Value $originalSetProtectedAcl
+            Set-Item Function:\Invoke-CddsiTestOriginalSetLoaderProtectedAcl -Value {
+                param([string]$Path)
+                throw 'TEST_ORIGINAL_LOADER_ACL_HELPER_DISABLED'
+            }
         }
         [IO.Directory]::Exists($aclFailureRoot) | Should -BeFalse
         $creationLedger.Count | Should -Be 0
