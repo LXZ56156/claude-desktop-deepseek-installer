@@ -15,6 +15,7 @@
         'operator/fast-lane/providers/windows-vm-reset.ps1'
     )
     $script:RehearsalRelative = 'operator/fast-lane/invoke-synthetic-rehearsal.ps1'
+    $script:RealtimeRelayProposalRelative = 'docs/REALTIME_RELAY_PROPOSAL.md'
     . (Join-Path $script:RepoRoot 'scripts\check-worker.ps1') `
         -RepositoryRoot $script:RepoRoot `
         -SandboxRoot $script:RepoRoot `
@@ -31,6 +32,40 @@
 }
 
 Describe 'operator coordination static isolation boundary' {
+    It 'classifies the realtime relay proposal as inactive DevelopmentOnly documentation' {
+        @($script:ReleaseManifest.PackageFiles | Where-Object {
+                $_ -ceq $script:RealtimeRelayProposalRelative
+            }).Count | Should -Be 0
+        @($script:ReleaseManifest.DevelopmentOnlyFiles | Where-Object {
+                $_ -ceq $script:RealtimeRelayProposalRelative
+            }).Count | Should -Be 1
+
+        $proposalPath = Join-Path $script:RepoRoot $script:RealtimeRelayProposalRelative
+        Test-Path -LiteralPath $proposalPath -PathType Leaf | Should -BeTrue
+        $proposal = [IO.File]::ReadAllText(
+            $proposalPath,
+            [Text.UTF8Encoding]::new($false, $true)
+        )
+        foreach ($requiredText in @(
+            'PROPOSED / NOT_PROVISIONED / NOT_ACTIVE'
+            'Cloudflare Worker + SQLite-backed Durable Object + WebSocket Hibernation'
+            '`host-to-vm`'
+            '`vm-to-host`'
+            'HMAC 请求认证'
+            '`ClientWebSocket`'
+            'sibling infra repo'
+            'immutable payload pointer'
+            'Cloudflare 的公网 URL 不是 sender authority'
+            'GitHub control repo'
+            '一分钟轮询继续保留为 fallback'
+            '**Formal Lane**'
+            '禁止自动 merge、release、promotion'
+        )) {
+            $proposal.IndexOf($requiredText, [StringComparison]::Ordinal) |
+                Should -BeGreaterOrEqual 0
+        }
+    }
+
     It 'formats heterogeneous Pester error records without hiding the failed test' {
         $exception = [InvalidOperationException]::new('synthetic worker failure')
         $record = [Management.Automation.ErrorRecord]::new(

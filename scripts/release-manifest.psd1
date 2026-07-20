@@ -87,6 +87,7 @@
         'docs/LEGACY_REUSE.md'
         'docs/PRODUCT_SPEC.md'
         'docs/README.md'
+        'docs/REALTIME_RELAY_PROPOSAL.md'
         'docs/RELEASE_PLAN.md'
         'docs/TEST_ISOLATION.md'
         'docs/TESTING.md'

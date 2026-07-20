@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-19
+更新日期：2026-07-20
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -21,17 +21,26 @@
 9. `docs/IMPLEMENTATION_PLAN.md`：从已完成 P1 的当前基线到 VM-ready 的阶段门。
 10. `docs/VM_TEST_RELAY.md`：宿主机修复端、VM 只读测试端，以及 Fast Lane 日常
     自动修复与 Formal Lane 正式证据回传的 operator coordination 权威协议。
-11. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
+11. `docs/REALTIME_RELAY_PROPOSAL.md`：Cloudflare realtime accelerator 的非权威提案；
+    只描述待实现架构、授权点和回滚，不表示资源已经 provision 或启用。
+12. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
     `docs/VM_ACCEPTANCE_PLAN.md`：发布候选、窄范围虚拟机校准与后续全面验收。
 
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
 
-截至 2026-07-19，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前状态”与
-“下一工作包”。共享工作树正在收口 P10A-0A 一文件/一提示 bootstrap，仍有 tracked
-修改；dirty WIP 已通过标准双引擎全树门，但尚无新的 clean final anchor，
-`CanStartVmBootstrap=false`。本文及其他稳定设计
-文档中的“已实现”摘要若与该入口冲突，以 `HANDOFF.md` 和实际 Git/机器证据为准。
+截至 2026-07-20，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前动态状态”。
+项目已经进入受控暂停：不得继续交付或执行任何既有 onboarding ZIP/prompt，不进入 VM，
+不启动 bootstrap、integration、测试循环或 Formal Lane。暂停前 finalization 及其 bundle、
+automation prompt 和 readiness receipt 只绑定暂停前的精确 commit；本次 tracked 文档修改
+立即使这些绑定失效。当前四个 readiness/complete 标志全部为 false。下一独立工作流是
+Cloudflare realtime relay 的设计与实现准备，而不是继续旧 VM bootstrap。
+
+`REALTIME_RELAY_PROPOSAL.md` 的事实级别固定为
+`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`。它不能授权创建 Cloudflare 资源、启用 watcher、
+改变 automation 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
+本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，
+以后两者为准。
 
 未来正式包还携带根目录的 `USER_GUIDE.md`、`TROUBLESHOOTING.md` 与
 `PRIVACY.md`。三者是最终用户合同，不替代本目录的开发事实，也不表示当前
@@ -55,6 +64,7 @@ Scaffold 已可执行 Live。
 | `docs/IMPLEMENTATION_PLAN.md` | 阶段、依赖、交付物和退出条件 | 阶段状态变化时 |
 | `docs/RELEASE_PLAN.md` | 构建、签名、分发和发布门 | 发布流程变化时 |
 | `docs/VM_TEST_RELAY.md` | 双机角色、消息状态机、证据回传和重测协调 | 协调协议或自动化边界变化时 |
+| `docs/REALTIME_RELAY_PROPOSAL.md` | realtime Fast Lane accelerator 的提案、威胁模型、实施/授权/回滚边界 | relay 架构评审、实现状态或授权状态变化时 |
 | `docs/VM_CALIBRATION_PLAN.md` | P10A 窄范围 VM 校准、证据和回传门 | 校准事实或 schema 变化时 |
 | `docs/VM_ACCEPTANCE_PLAN.md` | 后续真实 Live 验收 | VM 矩阵或 runbook 变化时 |
 | `docs/BOOTSTRAP_REPORT.md` | 初始脚手架历史证据 | 原则上不改历史数据 |
@@ -74,29 +84,28 @@ Scaffold 已可执行 Live。
   不得只相信交接中的旧哈希，也不得在外部直跑继承用户配置的 Git。
 
 P2-P10B 的纯/fake 合同与宿主机支撑已经建立；P10A-0A 的 public protected repositories、
-固定 Git outbox、readiness、onboarding、reset 和 automation 合同已建立。当前 dirty
-worktree 已把 VM bootstrap 收缩为唯一 phase2 operator 入口和真实本机 automation TOML
-readback；phase2-only builder/loader、execution boundary、HostSandbox path binding、
-semantic ACL、captured-byte load、atomic/idempotent state、no-reparse 非递归 cleanup 与
-完整正负测试均已落盘并通过 dirty WIP 标准双引擎全树门；包含文档同步的 clean exact
-commit 仍须重新完成统一门与 finalization。宿主机 HostCoordinator
-automation 已创建且保持暂停；VM automation 只能在最终 host finalization 后从 VM 设备
-创建或原位更新，并先保持暂停。
+固定 Git outbox、readiness、onboarding、reset 和 automation 合同也已建立。暂停前的
+phase2-only builder/loader、execution boundary、HostSandbox path binding、semantic ACL、
+captured-byte load、atomic/idempotent state、no-reparse 非递归 cleanup 与完整正负测试已经
+通过其绑定提交的机器门，但这不构成暂停后的执行许可。HostCoordinator automation 必须保持
+暂停；VM automation 的实际存在/状态没有来自最新 bundle 的可靠 receipt，因而不得推断，
+也不得进入 VM 核验或启用。
 
 `docs/HANDOFF.md` 只保存当前逻辑状态、下一工作包与停止线，不在 tracked 文档中复制
 最终 commit/tree、bundle digest、测试 RunId 等 post-commit 精确锚点，避免文档提交改变
 自身锚点。包含文档闭环的新 clean HEAD 的精确证据必须由 retained owner-marked bundle
 output 的 manifest/inventory/marker、同一暂停 HostCoordinator automation、PR CI 和实际
-Git/remote 四方持久事实交叉核验；它们与交接的逻辑状态一致后，才可派生 bootstrap-only
-readiness，且下一任务不需要依赖聊天记录。
+Git/remote 四方持久事实交叉核验。controlled pause 期间即使四方一致，readiness 也始终为
+false；只有未来另有显式恢复决定、完整 finalization 和新 readiness receipt 后，才可重新
+考虑 bootstrap-only readiness。下一任务不需要依赖聊天记录。
 
 三个 repositories 的 public 与 protected-history 合同已经建立；公开前审计的剩余存量风险
 已按既定决策接受，但 credential、Authorization 数据和未脱敏 secret 仍绝对禁止进入公开
 仓库。窄权限角色凭据、runtime protection assertion、VM 负向权限、真实双向交换、reset
 与 unattended evidence 尚未完成，因此 VM integration 继续阻断；Formal Lane 仍要求外部
-clean snapshot receipt、独立 CAS 与签名。普通用户的目标流程是“一份 ZIP、一次提示”后
-由两端 Codex 自动配置和循环测试，但网络工具安装、GitHub 一次性管理授权及最终发布确认
-不能被静默假定。整个过程不增加宿主机产品 Live，VM 也不得修改产品代码。
+clean snapshot receipt、独立 CAS 与签名。受控暂停期间不交付“一份 ZIP、一次提示”目标
+流程，也不把拟议 realtime relay 当作绕过这些门的替代路径。整个过程不增加宿主机产品 Live，
+VM 也不得修改产品代码。
 
 其他文档可以保留便于理解的稳定摘要；动态结论由 `docs/HANDOFF.md` 的条件式与 retained
 owner-marked bundle output、同一暂停 automation、PR CI、实际 Git/remote 四方持久事实

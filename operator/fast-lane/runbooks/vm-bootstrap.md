@@ -1,14 +1,25 @@
 # VM bootstrap runbook
 
-Status: **NOT EXECUTABLE — host clean-commit finalization is incomplete as of
-2026-07-19.** This runbook defines the reviewed target workflow. It does
-not authorize entering the VM, Fast Lane integration, Formal P10A, product
-Live, repository polling, reset, or product testing.
+Status: **CONTROLLED PAUSE — NOT EXECUTABLE (2026-07-20).** Do not enter the VM
+or deliver/run any existing onboarding ZIP or prompt. Every pre-pause bundle
+and prompt is retained for audit with status
+`SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`. HostCoordinator must remain
+`PAUSED`; a VM automation, if present, must remain `PAUSED`. This runbook only
+preserves the reviewed historical target workflow and does not authorize VM
+bootstrap, Fast Lane integration, Formal P10A, product Live, repository
+polling, reset, product testing, Cloudflare provisioning, or watcher startup.
 
-## User-visible contract
+The next independent work item is `docs/REALTIME_RELAY_PROPOSAL.md`, currently
+`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`. Resuming this runbook later requires
+an explicit decision and full finalization from a new clean exact commit,
+including a newly generated bundle, still-paused automation readback, final
+remote/PR/CI verification, and a new readiness receipt.
 
-The ordinary user performs only these actions after the host explicitly reports
-`CanStartVmBootstrap=true`:
+## Future user-visible contract — inactive during controlled pause
+
+This section is a future interface contract, not current instructions. It may be used only
+after an explicit restore decision, complete finalization, and a new readiness receipt in
+which the host reports `CanStartVmBootstrap=true`. The ordinary user would then perform only:
 
 1. Start the prepared disposable VM in the normal VM application.
 2. Install Codex in the VM and sign in.
@@ -19,7 +30,7 @@ The ordinary user performs only these actions after the host explicitly reports
 Codex performs the hash, extraction, PowerShell, key-generation, and automation
 work. It must not ask the user to reconstruct commands or observations.
 
-This path currently assumes the prepared baseline already contains the exact
+That future path assumes the prepared baseline already contains the exact
 manifest-pinned Git, OpenSSH, `ssh-keygen`, PowerShell 7, and Windows PowerShell
 binaries. Bootstrap validates them and does not download or install them. A
 generic new Windows guest can therefore block before any persistent write.
@@ -115,15 +126,15 @@ Formal P10A/P11 later add external clean-snapshot receipts, immutable CAS, and
 signatures. P12 remains a human release confirmation. There is no automatic
 merge, promotion, or release.
 
-## Current implementation blockers
+## Historical pre-pause implementation snapshot — not executable
 
 The phase2 surface, caller-input removal, execution-boundary contraction,
 canonical TOML/current-task binding, HostSandbox path binding, semantic ACL,
 captured-byte loading, atomic/idempotent state, and explicit-stack cleanup are
-implemented in the current dirty worktree with positive and negative tests.
-The dirty WIP has passed the standard dual-engine HostSandbox full-tree gate,
+recorded here as implemented in the pre-pause dirty worktree with positive and negative tests.
+That dirty WIP had passed the standard dual-engine HostSandbox full-tree gate,
 with all failure, skip, forbidden/live/outside/secret/unexpected-ledger/mutation
-metrics at zero. Before this runbook becomes executable, the host must still:
+metrics at zero. Before the controlled pause, the planned closeout was to:
 
 1. commit and non-force-push the exact reviewed bytes to the existing repair
    branch, without creating another PR;
@@ -132,7 +143,9 @@ metrics at zero. Before this runbook becomes executable, the host must still:
 3. update the existing host automation in place, still `PAUSED`, and prove clean
    worktree, exact remote ref, PR #1 OPEN/DRAFT, and final-HEAD CI success.
 
-Until those steps and the host gate are complete:
+The controlled pause supersedes those historical steps. Regardless of whether similar facts
+are reproduced later, this runbook remains non-executable until a new explicit restore
+decision, complete finalization, and new readiness receipt. Current status is:
 
 - `CanStartVmBootstrap=false`;
 - `CanStartVmIntegration=false`;

@@ -2,7 +2,137 @@
 
 更新日期：2026-07-20
 
-## 一句话状态
+## 当前动态状态（唯一入口）
+
+**CONTROLLED_PAUSE：不得继续 VM bootstrap。** 2026-07-20T15:19:09Z
+（北京时间 2026-07-20 23:19:09），本任务在宿主机审计到
+`codex/repair/p10a-0a-fast-lane` 的暂停基线 commit
+`5df3744f526619b7e4a1d3ca93e130a4974fc5d5`、tree
+`8c361b65bdd51a26fa5c57076bdb96432229236a` 后，按用户指令停止旧 onboarding 路径，转入
+realtime relay 重规划。该基线当时与 upstream/remote repair ref 精确一致、worktree/index
+clean，PR #1 是唯一 PR 且为 OPEN/DRAFT；CI run `29745570954` / quality job
+`88362548125` 与 Release dry-run run `29745571080` / release-contract job
+`88362548450` 均 completed/success；两个实际 PR check-run 均 success。Claude GitHub App 另有
+一个不含 check-run 的 queued 空 suite `80546088325`，它不出现在 PR checks 中，不能误报为
+第三个执行中质量门。上述事实只证明暂停前字节，不授权暂停后的任何 VM 动作。
+
+本次对 tracked 文档和 manifest/tests 的任何修改都改变 commit/tree。因此，暂停前的
+HostSandbox finalization、Release Simulation、GitHub CI、HostCoordinator prompt、retained
+bundle 以及 `finalization-readiness-receipt.json` 已不再绑定当前工作树或本次最终提交。精确的
+暂停后 commit/tree 不能由 tracked 文档自引用；只以本任务提交/push 后的实际 Git、remote、
+PR 和 CI 为准。
+
+当前强制状态：
+
+- `CanStartVmBootstrap=false`；
+- `CanStartVmIntegration=false`；
+- `P10A0AComplete=false`；
+- `CanStartFormalP10A=false`；
+- 不进入 VM，不再让用户或 VM 运行、复制、校验或修复任何 onboarding ZIP/prompt；
+- 不执行 bootstrap、poll、integration、reset、测试循环、Formal Lane 或产品 Live；
+- 不启用、触发、删除或重建任何 automation；HostCoordinator 必须继续 `PAUSED`，VM task
+  若存在也必须继续 `PAUSED`，没有来自 VM 的可靠当前 receipt 时不得推断其存在或状态；
+- 不 merge、release、promotion、force push，也不创建重复 PR。
+
+### 暂停前 retained 字节与 superseded 标记
+
+暂停前最后一个 owner-marked retained root 保留在：
+
+`C:\Users\LIZIXUAN\AppData\Local\Temp\cddsi-test-a03ca352-f256-414b-8afc-80c8adc8c38b`
+
+其中最后生成但**没有可靠 VM 成功 receipt**的 onboarding ZIP 为
+`final-vm-onboarding\cddsi-fast-lane-vm-onboarding.zip`，length `842085`，SHA-256
+`ff8f923ba1e7af37b4cac8de2d5b54ec9fbc47a9e6c00cf2231c71f00b2f7208`；其提示词
+`vm-bootstrap-prompt.txt` length `81505`，SHA-256
+`6470511fd7267bf093ddf624b699a70c42f4d741a69e054339702ac9a463fa35`。manifest、inventory、
+loader、launcher 与 content digest 的暂停前只读锚为：
+
+- `final-vm-onboarding\staging\manifest.json`：length `10460`，SHA-256
+  `2f38ce77f7fa8b1600775c400b42b20644e9cdafe81d82ad3a961757b801076d`，binding token
+  `96318a5753f1cfb087383ee8ebdf336ff7b232c1a5095634624a2f1068acf815`；
+- `final-vm-onboarding\staging\inventory.json`：length `4901`，16 entries，SHA-256
+  `d238b5b269b1820eb1cfb34c1db4c9a55b9bc9758153c50e0adf440d85d5100a`，binding token
+  `a579b591dc39280abaed13d0eabb2d82da01fc200a1c970146fe25ae22b35718`；
+- content digest：`09c31785d2d6a380e46de06c2b139342202ea281a994366792acda280ab64172`；
+- loader source 只嵌入 retained prompt，没有独立交付文件：length `62501`，SHA-256
+  `6414c044b11cdb8009de54303d9730829402f3c7f39769e491ace660323e2d3b`；
+- exact launcher 同样嵌入 retained prompt：length `4079`，SHA-256
+  `204019b33e36be53d9dd4fc8078e0040924b62640013a993c7c7228f24d9d5aa`；
+- `evidence\finalization-readiness-receipt.json`：length `4984`，SHA-256
+  `fa6991de25e13d9c7bf21f95ce10e104621d1d57365a6fe62dc790325d9f5a7a`；其旧
+  `CanStartVmBootstrap=true` 只绑定暂停前 commit，现已失效，不能读取为当前状态。
+
+以上全部状态统一改为：
+
+`SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`
+
+该标记也覆盖此前所有 onboarding ZIP 及其 prompt，包括但不限于：
+
+- `d4dc6df133cd331ac8411212c105b205a9491942247f83f1256aaee4b62c065c`；
+- `311f8fe7cfac6eefb51b6c9f588ae7a396ed82505d10a6837d208181b0ee9ed8`；
+- `6127b0a0d4e555db9b0ef6174c4c37ea17876bdd151ed5e60606783da92144e1`；
+- `416805e8781957dc8c7b1bb7fea31710447624cb5b3e35a19957b1a5b7d2246a`；
+- `58bf3d26930b1c2eda78c29b4d53a89a28794fc7d74ef6ecdb90b6858cb88832`；
+- `ff8f923ba1e7af37b4cac8de2d5b54ec9fbc47a9e6c00cf2231c71f00b2f7208`。
+
+这些历史字节、owner marker、evidence 和 sandbox 均不得删除或重写；保留只为审计。聊天中的
+早期 VM diagnostics 分别绑定旧 ZIP，并不是 `ff8f923b...` 的执行 receipt。未发现能够证明
+最新 ZIP 已执行、完成 bootstrap 或生成有效 public handoff 的可靠 receipt，因此真实状态是
+`LATEST_ZIP_EXECUTION=NOT_PROVEN`，不能由“已交付路径”推断成功。
+
+### Automation 与外部授权状态
+
+宿主机唯一 HostCoordinator automation 仍为
+`cddsi-fast-lane-hostcoordinator-minute-poll`、kind `heartbeat`、名称
+`CDDsi Fast Lane HostCoordinator minute poll`、目标 task
+`019f667f-e2ed-7c40-91fb-9bfc8367f9cf`、一分钟 cadence、`PAUSED`。暂停前 TOML SHA-256
+为 `769a2e61b488efe329ff49330ed2e6cd304f5ddda882a5091f8505e746fe3a2e`，length
+`17303`；prompt SHA-256 为
+`4ba8df222451e5c3593a452f37f208a510b747cd38f1be23364ade0baf43ada9`，length `16754`。
+本任务只读复核，不更新该 automation；新的 tracked commit 会使其旧 prompt binding 失效，
+但它必须继续保持暂停。
+
+HostCoordinator/VmTester 的窄 credentials、GitHub deploy-key 注册、runtime protection
+assertion/hash/token 与外部 provisioner receipt 均没有可靠的 provisioned 证据；状态继续为
+`NOT_PROVISIONED` / `UNPROVISIONED`。不得读取 credential store 来猜测，也不得复用交互式
+bootstrap-admin 身份。服务端 PUBLIC + protected-history 是保留的外部历史事实，但不构成
+sender authority 或 runtime readiness。
+
+仓库、operator state 与 retained evidence 中没有 task-owned foreground watcher/relay 的 PID、
+owner receipt 或启动记录。为避免把不明进程误认成本任务进程，本次没有枚举或终止未知进程；
+`OwnedWatcherStatus=NOT_PROVEN_PRESENT`、`WatcherStopCount=0`。
+
+### 暂停原因与下一任务
+
+暂停不是继续修复旧 loader，也不是进入 VM。原因是现有 minute polling、用户人工搬运和反馈
+延迟不满足下一轮高频双机协作，需要先独立设计并实现秒级通知 accelerator，同时保持 Git
+control repositories 的 durable audit/fallback 与全部原有权限边界。
+
+下一独立任务名称：**Cloudflare realtime relay 设计与实现**。入口为
+`docs/REALTIME_RELAY_PROPOSAL.md`，当前事实级别只能是
+`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`。本任务不创建 Cloudflare Worker、Durable Object、
+域名、secret、token、sibling infra repository 或 watcher，也不改变一分钟 fallback。任何后续
+provisioning、网络、Cloudflare/GitHub 管理动作都必须在新任务中取得明确外部授权。
+
+恢复旧 VM bootstrap 前必须从未来新的最终 clean exact commit 重新执行完整双引擎
+HostSandbox、Release Simulation DryRun、diff/编码门、远端/PR/CI 核验，重新生成并自校验
+onboarding bundle，重新原位绑定且保持暂停的 automation，再生成新的 readiness receipt。
+任何暂停前 ZIP、prompt、CI 或 receipt 均不得复用。
+
+### 新对话读取顺序
+
+1. `AGENTS.md`
+2. `docs/HANDOFF.md` 顶部当前动态状态
+3. `docs/README.md`
+4. `docs/REALTIME_RELAY_PROPOSAL.md`
+5. `docs/VM_TEST_RELAY.md`
+6. `docs/IMPLEMENTATION_PLAN.md`
+7. `docs/TEST_ISOLATION.md`
+8. `operator/fast-lane/README.md`
+9. `operator/fast-lane/runbooks/vm-bootstrap.md`
+10. 仅在方案评审需要时再读其他 Fast Lane runbook；不得从旧聊天恢复执行许可。
+
+## 旧 bootstrap 收口状态（历史，已由上方 controlled pause 覆盖）
 
 **当前不能重试 VM。** 2026-07-20，VM 用精确 ZIP（length `842085`，SHA-256
 `6127b0a0d4e555db9b0ef6174c4c37ea17876bdd151ed5e60606783da92144e1`）完成外层 ZIP、manifest、
@@ -88,7 +218,7 @@ P11 全面验收已经产生。产品运行阶段仍为 `Scaffold`，宿主机�
 静默权限：若确有需要，只允许各请求一次明确确认，Codex 代为执行具体步骤，且交互式
 bootstrap-admin 会话不得保存或复用为 automation credential。
 
-## 仓库与工作树
+## 暂停前仓库与工作树（历史）
 
 - 项目目录：`D:\projects(WIN)\claude-desktop-deepseek-installer`
 - 只读参考：`D:\projects(WIN)\claude-deepseek-installer`
@@ -123,7 +253,7 @@ bootstrap-admin 会话不得保存或复用为 automation credential。
 宿主机开发与统一门禁都不在开发机执行 Live；首次限域真实校准只能进入 P10A 专用
 disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
 
-## 必读顺序
+## 旧任务必读顺序（历史；新对话使用顶部顺序）
 
 1. `AGENTS.md`
 2. 当前 `docs/HANDOFF.md`
@@ -390,10 +520,10 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
 这组 receipt 只证明版本化 PUBLIC 合同和服务端保护已部署。包含本节的 tracked 文档会
 产生新 commit/tree，因此它不是最终 VM onboarding authorization。
 
-## 2026-07-20 当前停点、宿主机收口与 VM 目标入口
+## 2026-07-20 暂停前宿主机收口与 VM 目标入口（历史）
 
 本文提交本身会改变 commit/tree，所以不能在本文内写一个“最终 SHA”再声称它包含本文。
-当前可以继续宿主修复与验证，但仍不能进入 VM。BOM 修复后的 onboarding 专项 28/28 已通过，
+暂停前可以继续宿主修复与验证，但当时仍不能进入 VM。BOM 修复后的 onboarding 专项 28/28 已通过，
 PowerShell 7/Windows PowerShell 定点执行均通过；第一次 dirty WIP 全树尝试中 448 个 Pester
 全部通过，但 capability-plane 静态门正确拒绝了测试直接调用 `ScriptBlock::Create`。根因已通过
 生产 loader 单一 helper 收口并完成专项复测。第二次 dirty WIP 标准 HostSandbox 已通过：
@@ -402,7 +532,8 @@ PowerShell 7/Windows PowerShell 定点执行均通过；第一次 dirty WIP 全�
 `Changed=false` 通过。本文随后同步了该状态，所以这些仍只是 dirty 行为证据；包含本文的最终
 clean exact commit 标准门、提交/push、CI 与 finalization 均仍须重新完成。最终精确值只由
 retained owner-marked bundle output、同一暂停 automation、PR/CI 与公开 Git/remote 四方
-持久事实核验：
+持久事实核验。以下 1–9 只保留暂停前计划，不是当前待办或执行许可；它们已由本文顶部的
+controlled pause、未来显式恢复决定和新 readiness receipt 要求覆盖：
 
 1. phase2 canonical TOML/唯一任务/prompt/current-task/HostSandbox 路径绑定正负测试、
    fail-closed facade、execution boundary 和 phase2-only builder/loader 已与 BOM 修复一起通过
@@ -426,19 +557,20 @@ retained owner-marked bundle output、同一暂停 automation、PR/CI 与公开 
    cadence、target task 与 `PAUSED`，prompt 精确绑定最终 commit/tree/bundle、repository/
    protection/tool facts。凭据或 runtime assertion 仍为 `UNPROVISIONED` 时，误触发必须在
    任何网络、Git 或代码修改前返回 `BLOCKED`。
-8. 核对 remote ref、clean tree、PR #1 仍 OPEN/DRAFT 且最终 HEAD CI 全部成功。以上完成后
-   才可令 `CanStartVmBootstrap=true` 并交付 VM bootstrap-only handoff；此前不得进入 VM。
+8. 核对 remote ref、clean tree、PR #1 仍 OPEN/DRAFT 且最终 HEAD CI 全部成功。暂停前计划曾
+   允许以上完成后派生 `CanStartVmBootstrap=true`；该自动派生规则现已失效，不得据此交付或
+   进入 VM。
 9. `CanStartVmIntegration=false`、`P10A0AComplete=false`、Formal readiness=false。
    服务端 protected history 已完成；窄角色凭据、runtime assertion、VM negative-permission/
    reset/task/unattended evidence 仍缺失。
 
-状态判定不依赖本文编辑时的快照：上述 1–8 任一项未由外部事实证明时，
-`CanStartVmBootstrap=false`；全部成立时，`CanStartVmBootstrap=true`，但仅允许执行下面的
-bootstrap-only 工作。后一种状态也不改变
-`CanStartVmIntegration=false`、`P10A0AComplete=false`、`CanStartFormalP10A=false`。
+暂停前状态判定曾规定：上述 1–8 任一项未由外部事实证明时，
+`CanStartVmBootstrap=false`；全部成立时才可考虑 bootstrap-only。controlled pause 已撤销这条
+自动派生许可：即使未来重新满足同类事实，当前仍固定为 false，必须先有新的显式恢复决定、
+新 finalization 和新 readiness receipt；其余三个标志也继续为 false。
 
-本次只需按平常方式启动准备好的 disposable VM，不需要用户制作或签发任何正式快照凭证。
-正式 P10A/P11 的快照、CAS 与签名证据是后续阶段的工作，不是本次 bootstrap 的前置。
+暂停前合同曾把普通 disposable VM 启动与 Formal snapshot receipt 分开。当前不得据此启动
+guest；正式 P10A/P11 的快照、CAS 与签名要求也没有改变。
 
 宿主机 finalization 负责核验 retained owner-marked path、宿主机 `PAUSED` automation、
 PR/CI、clean worktree、remote ref 和服务端保护。VM 看不到这些宿主机事实，也不得重复核验。
@@ -608,15 +740,14 @@ Formal Lane 用于首次 P10A、正式 P11 和发布里程碑，才要求外部�
 首次执行严格限域的真实校准；P11 才是对冻结双候选的全面 Live 验收。两者授权都不
 扩展到宿主机。
 
-## 进入 VM integration 与 Formal Lane 前的阻塞项
+## 进入 VM integration 与 Formal Lane 前的阻塞项（历史清单；当前全部暂停）
 
-是否可开始 VM bootstrap-only，必须按上一节从 retained owner-marked bundle output、同一
-`PAUSED` automation、PR/CI 与公开 Git/remote 四方持久事实实时派生：闭环未完成时为
-false，全部精确一致时为 true。
-最终 clean exact HEAD 的双引擎门、Release DryRun、18-entry bundle、暂停 heartbeat hash
-binding 与最终 remote/PR/CI 是持续 bootstrap 核验项；任一漂移就回退为 false，但在全部
-匹配时不再是 integration 阻塞。即使 bootstrap-ready，以下输入也不能由宿主机 fake 测试
-虚构；未满足前不得激活真实 outbox integration，也不得宣称 P10A-0A/P10A/P10B/P11 完成：
+暂停前规则曾从 retained owner-marked bundle output、同一 `PAUSED` automation、PR/CI 与公开
+Git/remote 四方事实派生 bootstrap-only readiness。该规则现仅作历史证据：四方未来即使再次
+精确一致，也不足以自动令任何 readiness 为 true；还必须有新的显式恢复决定、完整
+finalization 和新 receipt。当前四个标志全部为 false。以下外部输入继续不能由宿主机 fake
+测试虚构；未满足前不得激活真实 outbox integration，也不得宣称
+P10A-0A/P10A/P10B/P11 完成：
 
 - 宿主机限 repair-ref/host-to-VM 写、VM product/host-to-VM 只读与 VM-to-host 写的窄
   credentials、runtime protection assertion，以及 product write、错向 write、
@@ -699,7 +830,7 @@ inventory 与 working-tree/cached `git diff --check`。不得绕过该入口直�
 HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，才运行
 `scripts/build-release.ps1 -DryRun`；DryRun 不是可发布候选构建。
 
-## 最终 VM 提示词交付
+## 最终 VM 提示词交付（恢复后合同；当前暂停）
 
 不要从 tracked 文档手工拼接或替换占位符。宿主机完成最终 commit、bundle、automation 与 CI
 绑定后，必须以 11 个精确外部锚点调用
@@ -708,7 +839,8 @@ HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，�
 19 字段应精确为 loader contract/source/hash/length、short launcher、prompt/hash/length 和
 11 个外部锚点；缺字段、额外字段或自制提示词都不是有效 handoff。
 
-用户进入 VM 后只做本节前述四件事。成功的提示词会依次完成零写入 outer preflight、Codex
+只有未来另行显式恢复、完成新 finalization 并产生新 readiness receipt 后，用户进入 VM 时才
+会只做本节前述四件事；当前不得执行。恢复后的提示词会依次完成零写入 outer preflight、Codex
 `apply_patch` 固定 loader、短 launcher Onboard、唯一 `PAUSED` automation 的精确 readback、
 全新短 launcher Handoff，以及 loader 清理；最终停在 `VM_BOOTSTRAP_STAGED`。此时仍有
 `CanStartVmIntegration=false`、`P10A0AComplete=false`、`CanStartFormalP10A=false`。

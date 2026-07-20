@@ -4,6 +4,36 @@ This directory is development-only operator coordination material. It is not
 loaded by `lib/bootstrap.ps1`, is not part of the product execution plane, and
 must never enter a Release ZIP.
 
+## Controlled pause (2026-07-20)
+
+VM onboarding, bootstrap, integration, reset/test loops, and Formal Lane are
+paused. Every previously generated onboarding ZIP and prompt is retained for
+audit but has status `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`; none may be
+delivered or executed. The host automation must remain `PAUSED`. A VM
+automation, if one exists, must also remain `PAUSED`; without a current VM
+receipt its existence or state is not inferred.
+
+The next independent work item is the proposal in
+`docs/REALTIME_RELAY_PROPOSAL.md`. Its status is strictly
+`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`. No Cloudflare resource, credential,
+identity, watcher, or sibling infrastructure repository is created by this
+pause task. The existing two protected Git control repositories remain the
+durable source and minute-poll fallback. A future realtime accelerator cannot
+execute payload text, expand either machine's product authority, weaken Formal
+Lane, or automate merge, release, promotion, or P12 approval.
+
+Current readiness is fail closed:
+
+- `CanStartVmBootstrap=false`
+- `CanStartVmIntegration=false`
+- `P10A0AComplete=false`
+- `CanStartFormalP10A=false`
+
+Resuming bootstrap requires an explicit future decision followed by complete
+finalization from a new clean exact commit, a newly generated and validated
+bundle, in-place readback of still-paused automations, final-head CI, and a new
+readiness receipt. No pre-pause hash or receipt may be reused.
+
 The Fast Lane uses one logical control plane backed by two physical public Git
 repositories:
 
@@ -67,14 +97,18 @@ The VM may test, analyze, reset only allow-listed owned test resources, and
 append diagnostic results to its one control repository; it must not edit,
 commit, or push product code, change runbooks, or build candidates.
 
-## One-prompt VM bootstrap
+## Historical one-prompt VM bootstrap target contract — not executable
 
-For the current bootstrap, `supervisor` is just the normal VM application used
+The controlled pause at the top overrides this entire section. It preserves the
+pre-pause target contract for review, but authorizes no ZIP delivery, guest
+startup, bootstrap, task activation, or VM action.
+
+Under the pre-pause target contract, `supervisor` was just the normal VM application used
 to start the guest, and `baseline` is the guest's starting state. A Formal
-clean-snapshot receipt is not required now; it is a later Formal P10A/P11
+clean-snapshot receipt was not a bootstrap prerequisite; it remained a later Formal P10A/P11
 requirement.
 
-The ordinary user performs only four actions: start the disposable VM, install
+The ordinary user would have performed only four actions: start the disposable VM, install
 and sign in to Codex, put the single onboarding ZIP in a new empty folder and
 open that folder in Codex, then paste the final host handoff prompt once. The
 prompt carries the external expected ZIP hash/length, product commit/tree, and
@@ -82,15 +116,15 @@ manifest/inventory/content tokens. It never asks the VM to inspect the host's
 retained path, host automation, PR/CI, worktree, or remote refs; host
 finalization already owns those checks.
 
-This four-action path assumes a prepared baseline already contains the exact
+This historical four-action path assumed a prepared baseline already contained the exact
 manifest-pinned Git, OpenSSH, `ssh-keygen`, PowerShell 7, and Windows
-PowerShell binaries. The current bootstrap validates them and does not install
+PowerShell binaries. The pre-pause bootstrap was designed to validate them and not install
 or download them. A generic new Windows guest can therefore stop before any
 persistent write. Adding tool self-install requires separate user authority
 for bootstrap-time network/install plus pinned origin, hash, signature, path,
 and cleanup contracts.
 
-After the outer ZIP length and hash match with zero writes, VM Codex may use a
+After the outer ZIP length and hash matched with zero writes, VM Codex was intended to use a
 new owner-marked bootstrap staging root to load only the manifest-bound reviewed
 runtime. The target side-effecting operator entry is
 `Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding`. It receives only the
@@ -116,12 +150,13 @@ Plan/core, mutation, failure, and direct handoff helpers are internal and fail
 closed when called as operator entry points. Codex does not assemble substitute
 shell, Git, ACL, extraction, observation, or key-generation logic.
 
-The local runner is idempotent for one exact binding. It may create only its
+Under that historical contract, the local runner was required to be idempotent for one exact
+binding. It was allowed to create only its
 owner-marked VM-local state, stage three distinct keypairs, and create or update
 the unique `cddsi-fast-lane-vmtester-minute-poll` automation with a one-minute
 cadence and `PAUSED` status. New keys are `KEYPAIR_STAGED`, not credential-ready;
 registration and positive/negative remote permission tests happen later. A
-successful runner first returns `VM_BOOTSTRAP_LOCAL_STAGED`; only after the
+successful runner was designed to return `VM_BOOTSTRAP_LOCAL_STAGED` first; only after the
 Codex automation update is persisted and phase2 proves the unique paused task
 from the authoritative TOML may the public redacted handoff return
 `VM_BOOTSTRAP_STAGED` and stop.
@@ -136,11 +171,12 @@ points, then deletes files and directories deepest-first without recursive
 delete.
 
 The bootstrap runner's narrow local-write authority is not inherited by the
-poll task. While runtime protection assertion/hash/token is `UNPROVISIONED`, an
-accidental task invocation must return `BLOCKED` with zero network requests,
+poll task. While runtime protection assertion/hash/token is `UNPROVISIONED`, any
+accidental task invocation must still return `BLOCKED` with zero network requests,
 zero Git operations, zero credential probes, and zero runtime-state writes.
 
-Current deployment state (2026-07-19):
+Historical deployment snapshot (2026-07-19; the controlled pause above overrides
+all execution/readiness statements below):
 
 - Product code: `LXZ56156/claude-desktop-deepseek-installer` (public;
   repository ID `1301870422`, node ID `R_kgDOTZj3Vg`, protected-history
