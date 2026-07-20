@@ -149,6 +149,33 @@ function Get-LoaderTextBytes([string]$Text) {
     return (New-Object Text.UTF8Encoding($false, $true)).GetBytes($Text)
 }
 
+function ConvertFrom-LoaderUtf8ScriptBytes([byte[]]$Bytes) {
+    if ($null -eq $Bytes -or $Bytes.LongLength -lt 1 -or
+        $Bytes.LongLength -gt 16MB) {
+        throw 'VM_BOOTSTRAP_LOADER_DEPENDENCY_ENCODING_INVALID'
+    }
+    $offset = 0
+    if ($Bytes.LongLength -ge 3 -and $Bytes[0] -eq 0xEF -and
+        $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        $offset = 3
+    }
+    try {
+        $text = (New-Object Text.UTF8Encoding($false, $true)).GetString(
+            $Bytes, $offset, [int]($Bytes.LongLength - $offset))
+    }
+    catch { throw 'VM_BOOTSTRAP_LOADER_DEPENDENCY_ENCODING_INVALID' }
+    if ([string]::IsNullOrEmpty($text) -or $text.IndexOf([char]0) -ge 0 -or
+        $text.IndexOf([char]0xFEFF) -ge 0 -or $text.IndexOf([char]0xFFFE) -ge 0) {
+        throw 'VM_BOOTSTRAP_LOADER_DEPENDENCY_ENCODING_INVALID'
+    }
+    return $text
+}
+
+function New-LoaderDependencyScriptBlock([string]$Text) {
+    try { return [ScriptBlock]::Create($Text) }
+    catch { throw 'VM_BOOTSTRAP_LOADER_DEPENDENCY_PARSE_FAILED' }
+}
+
 function Test-LoaderNoReparse([string]$Path) {
     try {
         $full = [IO.Path]::GetFullPath($Path)
@@ -520,7 +547,7 @@ function Open-LoaderBoundDependency([string]$Path, [string]$Root, [byte[]]$Expec
             -not (Test-LoaderNoReparse $full)) {
             throw 'VM_BOOTSTRAP_LOADER_DEPENDENCY_BINDING_MISMATCH'
         }
-        $observedText = (New-Object Text.UTF8Encoding($false, $true)).GetString($observedBytes)
+        $observedText = ConvertFrom-LoaderUtf8ScriptBytes $observedBytes
         return [pscustomobject][ordered]@{
             Path = $full; Stream = $stream; Sha256 = $expectedSha
             LengthBytes = [long]$ExpectedBytes.LongLength
@@ -1017,7 +1044,7 @@ try {
             if (@($parseErrors).Count -ne 0 -or -not (Test-LoaderNoReparse $lease.Path)) {
                 throw 'VM_BOOTSTRAP_LOADER_DEPENDENCY_PARSE_FAILED'
             }
-            $dependencyScript = [ScriptBlock]::Create($lease.Text)
+            $dependencyScript = New-LoaderDependencyScriptBlock $lease.Text
             . $dependencyScript
             if ($name -ceq 'payload/runtime/operator/fast-lane/invoke-git-outbox.ps1') {
                 $script:CddsiFastLaneGitOutboxRunnerPath = $lease.Path

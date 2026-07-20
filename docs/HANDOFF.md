@@ -1,19 +1,33 @@
 # 新任务交接
 
-更新日期：2026-07-19
+更新日期：2026-07-20
 
 ## 一句话状态
 
-**当前不能进入 VM。** 截至 2026-07-19，工作树有 20 个 tracked 文件处于未提交修改状态；
-针对包含本文同步的最终 clean commit 的宿主机 finalization 尚未开始。任何旧 commit、bundle、automation prompt、
-CI run 或历史 `CanStartVmBootstrap=true` 结论都已因 tracked edits 失效。因此当前精确状态是：
+**当前不能重试 VM。** 2026-07-20，VM 用精确旧 ZIP（length `842085`，SHA-256
+`311f8fe7cfac6eefb51b6c9f588ae7a396ed82505d10a6837d208181b0ee9ed8`）进入固定 launcher 后，
+在加载包内 UTF-8 BOM PowerShell 依赖时以 `The term '﻿#' is not recognized` fail closed。
+宿主机字节审计证明 prompt、loader 与 launcher 没有传输漂移；根因是 loader 将合法的
+`EF BB BF 23` 解码为开头仍含 U+FEFF 的内存字符串，parser 未报错而 dot-source 把
+`﻿#` 当成命令。该旧 ZIP 及绑定它的 prompt 禁止继续使用；旧 finalization receipt 仍只保留
+历史证据价值，不能授权当前 bootstrap。现有宿主机 automation binding 也不能授权当前修复；
+VM 回执明确为 `AutomationReconciliationReached=false`、`AutomationMutationCount=0`，未产生
+有效 VM automation binding。禁止在 VM 手工改 loader 或重试旧交付。因此当前精确状态是：
 
 - `CanStartVmBootstrap=false`；
 - `CanStartVmIntegration=false`；
 - `P10A0AComplete=false`；
 - `CanStartFormalP10A=false`。
 
-当前 P10A-0A dirty WIP 的行为测试闭环已通过，clean-commit finalization 仍待完成。新的唯一 phase2 入口
+当前宿主修复保持原始依赖字节、SHA、只读句柄和最终重读不变，只在同一 captured byte array
+上严格消费唯一开头 UTF-8 preamble；重复/嵌入 BOM、无效 UTF-8、UTF-16 与 NUL 均 fail closed。
+PowerShell 7 与 Windows PowerShell 的定点正负执行已经通过；包含本文的 clean-commit
+双引擎全树门、Release DryRun、CI、新 bundle/prompt 与 automation 原位重绑仍待重新完成。
+只有一个 `ProductCommitSha`/tree 与当前 clean HEAD 精确相等、且所有失败/隔离指标为 0 的
+新 owner-marked finalization receipt 才能重新派生 `CanStartVmBootstrap=true`；tracked 文档本身
+不能替代该外部机器证据。
+
+新的唯一 phase2 入口
 `Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding`、builder/loader、execution boundary 和正负
 测试已经按目标合同落盘：不再接受 caller result/prompt/observation 或 derived roots；direct
 phase1/core/handoff/mutation surface 均为纯 fail-closed facade；真实目标 automation TOML 采用
@@ -22,13 +36,10 @@ canonical identity scan、目标专用 exact schema、唯一 ID/name、prompt re
 loader 已采用 current-SID/protected-DACL 精确校验、同一已哈希字节解析/加载、create-only 与
 原子状态写、显式栈 deepest-first 非递归清理及幂等状态比较。
 
-这组 WIP 已完成一次标准 HostSandbox 双引擎全树 PASS：PowerShell 7 与 Windows PowerShell
-各 448/448，Failed/Skipped/NotRun/Inconclusive 均为 0；live/forbidden/outside/network/
-registry/secret/unexpected-ledger 与全部 mutation spy 均为 0，repository unchanged，cleanup
-为 `Succeeded`。此前 fail-closed 运行暴露的动态能力清单漂移、测试 reflection、WinPS
-`MAX_PATH` 原子临时名和 fixture Git 子进程/目录句柄生命周期均已修复根因，没有扩大 900 秒
-worker timeout。该 PASS 发生在本文最终同步与 commit 之前，只是 WIP 行为证据；仍须从包含
-本文的 clean exact commit 重跑标准门和完整 finalization，因此这不是 VM 授权。
+此前 `345ca671...` 的标准 HostSandbox、Release DryRun、39-entry release、18-entry onboarding
+与 CI success 只绑定旧 loader 字节；VM 的真实 BOM 失败已证明它们不能授权重试。新的最终
+测试计数与所有 hash/length/token 必须以修复后的 clean exact commit 机器结果为准，不沿用
+448/448、旧 loader `1692bd36...` 或旧 prompt `e1a30777...`。
 
 已完成且仍有效的外部历史事实只有：三个 public repositories 与无 bypass 的
 protected-history ruleset 已部署，产品旧 `main` 与两个 control outbox 已初始化；既有宿主机
@@ -57,8 +68,9 @@ bootstrap-admin 会话不得保存或复用为 automation credential。
   （均为 PUBLIC；ruleset `19068292`、`19068313`）
 - 当前版本：`0.1.0-dev`
 - 产品运行阶段：`Scaffold`
-- 本次 WIP 基线 commit：`809942943bfeb0547fa36f57aedb8e75e1d45e29`；tree：
-  `423e740e9fc191a23959e8c37a9a16eb81776ef3`。这是 20 个 tracked 修改所基于的旧 HEAD，
+- 本次 WIP 基线 commit：`345ca671f338c346ce93251cba453db12d3ac38f`；tree：
+  `7feb44942c88d1d2d8f06e2e98d72c65198359aa`。当前修复快照有 3 个 tracked 文件修改，
+  remote repair ref 仍指向该基线 HEAD；这些数量只是 2026-07-20 的工作快照，
   不是最终 bundle/CI/VM 授权锚。
 - 历史宿主机锚：`3e843912...`、`a09130f2...`、`615bbf368...`；包含本文的最终
   clean HEAD 与其 bundle/task/CI 绑定必须从外部机器事实重新发现，任何历史锚都不能
@@ -347,19 +359,26 @@ disposable VM，首次全面产品 Live 只能进入 P11 disposable VM。
 这组 receipt 只证明版本化 PUBLIC 合同和服务端保护已部署。包含本节的 tracked 文档会
 产生新 commit/tree，因此它不是最终 VM onboarding authorization。
 
-## 2026-07-19 当前停点、宿主机收口与 VM 目标入口
+## 2026-07-20 当前停点、宿主机收口与 VM 目标入口
 
 本文提交本身会改变 commit/tree，所以不能在本文内写一个“最终 SHA”再声称它包含本文。
-当前可以进入提交与 clean-commit finalization，但仍不能进入 VM。phase2/loader 实现与正负
-测试已在 dirty WIP 的标准双引擎门通过；仍须对包含本文的 clean HEAD 完成以下闭环。最终精确值只由
+当前可以继续宿主修复与验证，但仍不能进入 VM。BOM 修复后的 onboarding 专项 28/28 已通过，
+PowerShell 7/Windows PowerShell 定点执行均通过；第一次 dirty WIP 全树尝试中 448 个 Pester
+全部通过，但 capability-plane 静态门正确拒绝了测试直接调用 `ScriptBlock::Create`。根因已通过
+生产 loader 单一 helper 收口并完成专项复测。第二次 dirty WIP 标准 HostSandbox 已通过：
+`RunId=accbc437-df47-41a1-999e-4059dd55bca1`，双引擎各 448/448，全部失败/隔离/mutation 指标
+为 0、repository unchanged、cleanup succeeded；Release Simulation DryRun 也以 39/39、
+`Changed=false` 通过。本文随后同步了该状态，所以这些仍只是 dirty 行为证据；包含本文的最终
+clean exact commit 标准门、提交/push、CI 与 finalization 均仍须重新完成。最终精确值只由
 retained owner-marked bundle output、同一暂停 automation、PR/CI 与公开 Git/remote 四方
 持久事实核验：
 
-1. 已完成 dirty WIP 标准门：phase2 canonical TOML/唯一任务/prompt/current-task/HostSandbox
-   路径绑定正负测试、fail-closed facade、execution boundary 和 phase2-only builder/loader
-   均通过。
-2. 已完成 dirty WIP 双引擎回归：loader semantic ACL、captured-byte execution、atomic/
-   idempotent state、早期 failure cleanup 与显式栈非递归删除均通过，未扩大 timeout。
+1. phase2 canonical TOML/唯一任务/prompt/current-task/HostSandbox 路径绑定正负测试、
+   fail-closed facade、execution boundary 和 phase2-only builder/loader 已与 BOM 修复一起通过
+   上述 dirty 标准门；最终 clean exact commit 仍须重新证明。
+2. BOM 修复的专项回归已覆盖 BOM/no-BOM 实际执行、同一 captured bytes/hash/held handle、
+   UTF-16/非法编码 fail closed、semantic ACL、atomic/idempotent state、早期 failure cleanup 与
+   显式栈非递归删除；dirty 全树 PASS 仍不能替代 clean-commit finalization。
 3. 把全部 tracked 修改作为正常 commit fast-forward push 到既有
    `codex/repair/p10a-0a-fast-lane` 与 PR #1；不得 force push、创建重复 PR、merge、发布或
    promotion。
@@ -400,8 +419,8 @@ product commit/tree。交付时还必须给出 loader source 与 prompt 各自�
 
 ### VM bootstrap-only 步骤
 
-以下是 host finalization 通过后交付给用户的目标流程，不是当前执行许可。当前 phase2 与
-loader 的 WIP 行为门已闭环，但 clean-commit/bundle/task/CI finalization 尚未完成，
+以下是 host finalization 通过后交付给用户的目标流程，不是当前执行许可。当前 BOM 修复专项与
+dirty WIP 双引擎全树门已通过，但 clean-commit 全树门及 bundle/task/CI finalization 尚未完成，
 `CanStartVmBootstrap=false`。
 
 普通用户只做四件事：
@@ -501,8 +520,8 @@ finalization；需要这些外部权限时再以清晰的一次确认暂停。�
    onboarding builder 的稳定合同只允许从 clean exact commit 生成 Store ZIP，绑定 commit/tree、
    committed blob/working bytes、工具 hash、三个 repository identity、两个 genesis、
    prompt/runbook，且不包含凭据、用户路径或正式 evidence。当前 v3 one-prompt/phase2
-   改造、loader 接线与正负测试已通过 dirty WIP 标准双引擎全树门，但尚未完成 clean exact
-   commit 的 host finalization，不能把这条稳定合同解释为当前 bundle ready。
+   改造仍在 WIP；BOM 修复专项与 dirty 全树门已通过，但 clean exact commit 的完整门和
+   host finalization 尚未完成，不能把这条稳定合同解释为当前 bundle ready。
 5. fake deterministic reset、ownership receipt、baseline drift 阻断和诊断性
    `CLEAN_READY` 合同，以及 VM-only dispatcher/provider、device/command trust、
    preflight/postcondition/action receipt 和 fail-closed escalation 已实现。实际

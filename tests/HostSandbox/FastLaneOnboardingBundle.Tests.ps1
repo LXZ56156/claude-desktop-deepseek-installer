@@ -51,11 +51,17 @@
     function Write-CddsiOnboardingFixtureText {
         param(
             [Parameter(Mandatory = $true)][string]$Path,
-            [Parameter(Mandatory = $true)][string]$Text
+            [Parameter(Mandatory = $true)][string]$Text,
+            [switch]$WithUtf8Bom
         )
 
         [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $Path))
-        [System.IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding($false)))
+        $encoding = if ($WithUtf8Bom) {
+            New-Object System.Text.UTF8Encoding($true)
+        } else {
+            New-Object System.Text.UTF8Encoding($false)
+        }
+        [System.IO.File]::WriteAllText($Path, $Text, $encoding)
     }
 
     function New-CddsiOnboardingFileSpecification {
@@ -178,15 +184,15 @@
 '@
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'config\fast-lane-policy.psd1') `
             -Text ($fixturePolicy.Replace('__KNOWN_HOSTS_SHA__', $knownHostsSha256) + "`r`n")
-        Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\common.ps1') `
+        Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\common.ps1') -WithUtf8Bom `
             -Text "function Test-CddsiExactPropertySet { param(`$InputObject, `$Expected) return `$true }`r`n"
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\vm-calibration.ps1') `
             -Text "function ConvertTo-CddsiVmCalibrationCanonicalJson { param(`$Value) return '{}' }`r`n"
-        Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\vm-test-relay.ps1') `
+        Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\vm-test-relay.ps1') -WithUtf8Bom `
             -Text "function Test-CddsiVmTestRelayEnvelope { param(`$Envelope) return `$true }`r`n"
         Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'lib\vm-reset.ps1') `
             -Text "function Invoke-CddsiVmGuestReset { param(`$Policy) return `$Policy }`r`n"
-        Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'operator\fast-lane\invoke-git-outbox.ps1') `
+        Write-CddsiOnboardingFixtureText -Path (Join-Path $sourceRoot 'operator\fast-lane\invoke-git-outbox.ps1') -WithUtf8Bom `
             -Text ("`$ownerContract='cddsi-fast-lane-git-outbox-owner-v1'`r`n" +
                 "`$stateContract='cddsi-fast-lane-git-outbox-state-v1'`r`n" +
                 "`$resultContract='cddsi-fast-lane-git-outbox-result-v1'`r`n" +
@@ -1127,9 +1133,27 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         Initialize-CddsiReleaseCompression
         $stream = [System.IO.File]::OpenRead($result.ZipPath)
         $archive = $null
+        $selectedEntryBytes = @{}
         try {
             $archive = [System.IO.Compression.ZipArchive]::new($stream, [System.IO.Compression.ZipArchiveMode]::Read, $false)
             $actual = [string[]]@($archive.Entries | ForEach-Object FullName)
+            foreach ($entryName in @(
+                'payload/runtime/lib/common.ps1',
+                'payload/runtime/lib/vm-calibration.ps1'
+            )) {
+                $entry = $archive.GetEntry($entryName)
+                $entry | Should -Not -BeNullOrEmpty
+                $entryStream = $entry.Open()
+                $entryMemory = New-Object System.IO.MemoryStream
+                try {
+                    $entryStream.CopyTo($entryMemory)
+                    $selectedEntryBytes[$entryName] = [byte[]]$entryMemory.ToArray()
+                }
+                finally {
+                    $entryMemory.Dispose()
+                    $entryStream.Dispose()
+                }
+            }
         }
         finally {
             if ($null -ne $archive) { $archive.Dispose() }
@@ -1144,6 +1168,18 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $actual | Should -Contain 'inventory.json'
         $actual | Should -Contain 'runbooks/negative-permissions.json'
         $actual | Should -Contain 'runbooks/unattended-smoke.json'
+        $commonSourceBytes = [IO.File]::ReadAllBytes(
+            (Join-Path $canonical.Fixture.SourceRoot 'lib\common.ps1'))
+        $calibrationSourceBytes = [IO.File]::ReadAllBytes(
+            (Join-Path $canonical.Fixture.SourceRoot 'lib\vm-calibration.ps1'))
+        [Convert]::ToBase64String([byte[]]$selectedEntryBytes['payload/runtime/lib/common.ps1']) |
+            Should -BeExactly ([Convert]::ToBase64String($commonSourceBytes))
+        [Convert]::ToBase64String([byte[]]$selectedEntryBytes['payload/runtime/lib/vm-calibration.ps1']) |
+            Should -BeExactly ([Convert]::ToBase64String($calibrationSourceBytes))
+        [Convert]::ToBase64String([byte[]]$commonSourceBytes[0..2]) |
+            Should -BeExactly ([Convert]::ToBase64String([byte[]]@(0xEF, 0xBB, 0xBF)))
+        [Convert]::ToBase64String([byte[]]$calibrationSourceBytes[0..2]) |
+            Should -Not -BeExactly ([Convert]::ToBase64String([byte[]]@(0xEF, 0xBB, 0xBF)))
         $result.SecretFindings | Should -Be 0
     }
 
@@ -1593,6 +1629,7 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         $helperTexts = [System.Collections.Generic.List[string]]::new()
         foreach ($helperName in @(
             'Get-LoaderSha256','Get-LoaderTextBytes','Test-LoaderNoReparse',
+            'ConvertFrom-LoaderUtf8ScriptBytes','New-LoaderDependencyScriptBlock',
             'Test-LoaderExactProperties','Get-LoaderAclSha256','Write-LoaderCreateOnly',
             'Write-LoaderJsonCreateOnly','Write-LoaderJsonAtomic',
             'Test-LoaderPathWithinRoot','Open-LoaderBoundDependency',
@@ -1828,6 +1865,10 @@ $script:LoaderLeaseSentinel++
             $dependencyAst.Extent.Text | Should -BeExactly $leaseScriptText
             @($dependencyAst.EndBlock.Statements).Count | Should -Be 1
             $lease.Text | Should -BeExactly $leaseScriptText
+            $script:LoaderLeaseSentinel = 0
+            $leaseScript = New-LoaderDependencyScriptBlock $lease.Text
+            . $leaseScript
+            $script:LoaderLeaseSentinel | Should -Be 1
             [Convert]::ToBase64String([byte[]]$lease.Bytes) |
                 Should -BeExactly ([Convert]::ToBase64String($leaseBytes))
             (Get-LoaderSha256 ([byte[]]$lease.Bytes)) | Should -BeExactly $lease.Sha256
@@ -1835,10 +1876,78 @@ $script:LoaderLeaseSentinel++
             $memory = New-Object IO.MemoryStream
             try { $lease.Stream.CopyTo($memory); $finalBytes = [byte[]]$memory.ToArray() }
             finally { $memory.Dispose() }
+            [Convert]::ToBase64String($finalBytes) |
+                Should -BeExactly ([Convert]::ToBase64String($leaseBytes))
             (Get-LoaderSha256 $finalBytes) | Should -BeExactly $lease.Sha256
         }
         finally { $lease.Stream.Dispose() }
         [IO.File]::WriteAllText($leaseScriptPath, $leaseScriptText, (New-Object Text.UTF8Encoding($false)))
+
+        $bomScriptPath = Join-Path $protectedRoot 'bom-bound-dependency.ps1'
+        $bomScriptText = "# UTF-8 BOM dependency`r`n`$script:LoaderBomLeaseSentinel++`r`n"
+        $strictUtf8 = New-Object Text.UTF8Encoding($false, $true)
+        $bomScriptBytes = [byte[]](@(0xEF, 0xBB, 0xBF) + $strictUtf8.GetBytes($bomScriptText))
+        [IO.File]::WriteAllBytes($bomScriptPath, $bomScriptBytes)
+        $bomLease = Open-LoaderBoundDependency $bomScriptPath $protectedRoot $bomScriptBytes
+        try {
+            $bomLease.Text[0] | Should -Be ([char]'#')
+            $bomLease.Text.IndexOf([char]0xFEFF) | Should -Be -1
+            [Convert]::ToBase64String([byte[]]$bomLease.Bytes) |
+                Should -BeExactly ([Convert]::ToBase64String($bomScriptBytes))
+            $bomTokens = $null; $bomErrors = $null
+            [void][Management.Automation.Language.Parser]::ParseInput(
+                $bomLease.Text, [ref]$bomTokens, [ref]$bomErrors)
+            @($bomErrors).Count | Should -Be 0
+            $script:LoaderBomLeaseSentinel = 0
+            $bomScript = New-LoaderDependencyScriptBlock $bomLease.Text
+            . $bomScript
+            $script:LoaderBomLeaseSentinel | Should -Be 1
+            $bomLease.Stream.Position = 0
+            $bomMemory = New-Object IO.MemoryStream
+            try { $bomLease.Stream.CopyTo($bomMemory); $bomFinalBytes = [byte[]]$bomMemory.ToArray() }
+            finally { $bomMemory.Dispose() }
+            [Convert]::ToBase64String($bomFinalBytes) |
+                Should -BeExactly ([Convert]::ToBase64String($bomScriptBytes))
+            (Get-LoaderSha256 $bomFinalBytes) | Should -BeExactly $bomLease.Sha256
+        }
+        finally { $bomLease.Stream.Dispose() }
+
+        $invalidEncodingCases = @(
+            [pscustomobject]@{
+                Name = 'duplicate-bom'
+                Bytes = [byte[]](@(0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF) +
+                    $strictUtf8.GetBytes('# duplicate'))
+            },
+            [pscustomobject]@{
+                Name = 'embedded-bom'
+                Bytes = [byte[]]($strictUtf8.GetBytes('# before ') +
+                    @(0xEF, 0xBB, 0xBF) + $strictUtf8.GetBytes('after'))
+            },
+            [pscustomobject]@{
+                Name = 'invalid-utf8'
+                Bytes = [byte[]]@(0xEF, 0xBB, 0xBF, 0xC3, 0x28)
+            },
+            [pscustomobject]@{
+                Name = 'utf16-le'
+                Bytes = [byte[]]@(0xFF, 0xFE, 0x23, 0x00)
+            },
+            [pscustomobject]@{
+                Name = 'utf16-be'
+                Bytes = [byte[]]@(0xFE, 0xFF, 0x00, 0x23)
+            },
+            [pscustomobject]@{
+                Name = 'nul'
+                Bytes = [byte[]]@(0x23, 0x00, 0x20)
+            }
+        )
+        foreach ($invalidEncodingCase in $invalidEncodingCases) {
+            $invalidPath = Join-Path $protectedRoot `
+                ('invalid-' + [string]$invalidEncodingCase.Name + '.ps1')
+            [IO.File]::WriteAllBytes($invalidPath, [byte[]]$invalidEncodingCase.Bytes)
+            { Open-LoaderBoundDependency $invalidPath $protectedRoot `
+                    ([byte[]]$invalidEncodingCase.Bytes) } |
+                Should -Throw '*VM_BOOTSTRAP_LOADER_DEPENDENCY_ENCODING_INVALID*'
+        }
 
         $ordinaryRoot = Initialize-LoaderOwnedDirectory `
             (Join-Path $loaderSandbox.Root 'ordinary-cleanup-root') 'Project'
@@ -1879,8 +1988,8 @@ $script:LoaderLeaseSentinel++
 
         $leaseIndex = $loader.IndexOf('$lease = Open-LoaderBoundDependency', [StringComparison]::Ordinal)
         $parserIndex = $loader.IndexOf('Parser]::ParseInput(', $leaseIndex, [StringComparison]::Ordinal)
-        $capturedTextCreateToken = '$dependencyScript = [ScriptBlock]' +
-            '::Create($lease.Text)'
+        $capturedTextCreateToken =
+            '$dependencyScript = New-LoaderDependencyScriptBlock $lease.Text'
         $createIndex = $loader.IndexOf(
             $capturedTextCreateToken, $parserIndex,
             [StringComparison]::Ordinal)
@@ -1896,6 +2005,10 @@ $script:LoaderLeaseSentinel++
         $runnerPathIndex | Should -BeGreaterThan $dotSourceIndex
         $disposeIndex | Should -BeGreaterThan $dotSourceIndex
         $loader | Should -Match 'Bytes\s*=\s*\$observedBytes;\s*Text\s*=\s*\$observedText'
+        $loader | Should -Match '\$observedText\s*=\s*ConvertFrom-LoaderUtf8ScriptBytes\s+\$observedBytes'
+        $loader | Should -Match '\$dependencyScript\s*=\s*New-LoaderDependencyScriptBlock\s+\$lease\.Text'
+        $loader | Should -Match '(?s)\$offset\s*=\s*3.*?GetString\(\s*\$Bytes,\s*\$offset'
+        $loader | Should -Match 'IndexOf\(\[char\]0xFEFF\)\s+-ge\s+0'
         $loader | Should -Match '(?s)Parser\]::ParseInput\(\s*\$lease\.Text\s*,'
         $loader | Should -Match '\[IO\.FileShare\]::Read'
         $loader | Should -Match "Collections.Generic.Stack\[string\]"
