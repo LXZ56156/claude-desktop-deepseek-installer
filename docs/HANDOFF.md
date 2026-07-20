@@ -16,18 +16,32 @@ network/Git/credential/automation/product-Live 全为 0，以及 deepest-first c
 `SUPERSEDED_DO_NOT_USE_LOADER_EXECUTION_CONTEXT_COLLISION`；禁止在 VM 手工改 loader 或重试。
 此前 `311f8fe7...` 的 BOM loader 缺陷包也继续保持 `SUPERSEDED_DO_NOT_USE`。
 
-宿主 WIP 已把生成 loader 的局部变量改为唯一的 `$phase2BootstrapContext`，并新增两层回归：
-对生成后 loader AST 的 Constant/ReadOnly 变量赋值/参数冲突扫描，以及抽取 exact
-`Invoke-LoaderPhase2` 后通过纯 stub 实际执行两次完整 20 参数 binder 与一次 blocked 分支。
-PowerShell 7 focused suite 当前为 29/29。dirty WIP 标准 HostSandbox RunId
-`e231c19f-fa84-4347-9c70-c075afdaebd6` 已由 PowerShell 7 与 Windows PowerShell 各通过
-449/449，所有失败/隔离/mutation 指标为 0、仓库前后快照一致且 cleanup 成功；同一 WIP 的
-Release Simulation DryRun 为 39 package files / 39 ZIP entries、`Changed=false`、四层 inventory
-与内容精确、全部 forbidden/secret/mutation 指标为 0。它们是提交前机器证据，仍不能替代随后
-clean exact commit 的最终重跑。现有宿主机 automation 仍是同一 ID 且 `PAUSED`，但绑定的是
-现已作废的 bundle；VM 回执为
+宿主已在 commit `a20326b6661e1e29e1be454f6957662069ae2838`（tree
+`63bfa01fa7efd506254237188f994c0a9cdb5ce6`）把生成 loader 的局部变量改为唯一的
+`$phase2BootstrapContext`，并加入生成后 AST Constant/ReadOnly 冲突扫描及 exact phase2 binder
+双引擎执行测试。clean HostSandbox RunId `39725c39-d002-4eee-9133-52b02b90b9bc` 当时为双引擎
+449/449、全部非 PASS/隔离/mutation 指标为 0；Release Simulation DryRun 为 39/39、
+`Changed=false`、四层 inventory exact、全部 forbidden/secret/mutation 指标为 0。为该 commit
+生成的 retained ZIP `416805e8781957dc8c7b1bb7fea31710447624cb5b3e35a19957b1a5b7d2246a`
+也已由两套引擎独立验证为 18-entry、16-entry inventory、Store、timestamp 1980，loader
+`6414c044...` 无 `$ExecutionContext` 冲突。
+
+但该 commit 的 GitHub `CI / quality` 成功后，独立 `Release dry run / release-contract`
+run `29740013822` 在 source quality gate 暴露了既有测试时序缺陷：测试把
+`REMOTE_CAS_MISMATCH` 语义断言耦合到最多 8 个、每个 2 秒预算的真实 Git 子进程；runner 负载
+波动使其中一条命令合法 fail closed 为 `GIT_COMMAND_TIMEOUT`，结果为 448/449，release exact
+DryRun 因前置失败未运行。同一 SHA 的另一工作流全绿，且该失败发生在未被 `a20326b...` 修改的
+Git outbox 测试，证明不是 loader 修复回归。当前 WIP 在**不扩大任何 timeout**、也不接受 timeout
+作为通过的前提下，把 stale CAS 与 held lock 拆成两个确定性负向测试；真实 Git/history/publish
+仍由其余集成测试覆盖。修改后的整份 Fast Lane Git outbox 测试已在 PowerShell 7 与 Windows
+PowerShell 各通过 21/21，失败/跳过/未运行/不确定均为 0。
+
+因此 `416805e8...` ZIP 及其 prompt 也已因新的 tracked 测试与本文修改而成为
+`SUPERSEDED_DO_NOT_USE_CI_TEST_TIMING_REBIND_REQUIRED`，不得交付或运行。现有宿主机 automation
+仍是同一 ID 且 `PAUSED`，但只绑定旧 commit/bundle；VM 回执为
 `AutomationReconciliationReached=false`、`AutomationMutationCount=0`，未产生有效 VM automation
-binding。因此当前精确状态仍是：
+binding。必须先提交当前 WIP，再从新的 clean exact commit 重跑双引擎全树门、Release DryRun、
+GitHub 两个 workflow、18-entry bundle 自校验与同一 automation 原位重绑。当前精确状态仍是：
 
 - `CanStartVmBootstrap=false`；
 - `CanStartVmIntegration=false`；
@@ -36,8 +50,8 @@ binding。因此当前精确状态仍是：
 
 上一轮 BOM 修复仍保持原始依赖字节、SHA、只读句柄和最终重读不变，只在同一 captured byte
 array 上严格消费唯一开头 UTF-8 preamble；重复/嵌入 BOM、无效 UTF-8、UTF-16 与 NUL 均
-fail closed。本轮必须重新完成包含本文的 clean-commit 双引擎全树门、Release DryRun、CI、
-新 bundle/prompt 与同一 automation 原位重绑。
+fail closed。本轮必须重新完成包含当前测试与本文的 clean-commit 双引擎全树门、Release DryRun、
+CI、新 bundle/prompt 与同一 automation 原位重绑。
 只有一个 `ProductCommitSha`/tree 与当前 clean HEAD 精确相等、且所有失败/隔离指标为 0 的
 新 owner-marked finalization receipt 才能重新派生 `CanStartVmBootstrap=true`；tracked 文档本身
 不能替代该外部机器证据。
@@ -53,8 +67,10 @@ loader 已采用 current-SID/protected-DACL 精确校验、同一已哈希字节
 
 此前 `7f3f7260...` 的标准 HostSandbox、Release DryRun、39-entry release、18-entry onboarding
 与 CI success 只绑定含变量碰撞的 loader 字节；VM 的真实 phase2 失败已证明它们不能授权重试。
-新的最终测试计数与所有 hash/length/token 必须以修复后的 clean exact commit 机器结果为准，
-不得沿用 448/448、loader `b1eb4981...`、prompt `a0242117...` 或 ZIP `6127b0a0...`。
+`a20326b...` 的 449/449、39/39 与 ZIP `416805e8...` 又只绑定 CI 测试修复前的 tracked 字节。
+新的最终测试计数与所有 hash/length/token 必须以当前 WIP 后的 clean exact commit 机器结果为准，
+不得沿用 448/448、loader `b1eb4981...`、prompt `a0242117...`、ZIP `6127b0a0...`，也不得把
+`416805e8...` 当成 active handoff。
 
 已完成且仍有效的外部历史事实只有：三个 public repositories 与无 bypass 的
 protected-history ruleset 已部署，产品旧 `main` 与两个 control outbox 已初始化；既有宿主机
@@ -83,10 +99,10 @@ bootstrap-admin 会话不得保存或复用为 automation credential。
   （均为 PUBLIC；ruleset `19068292`、`19068313`）
 - 当前版本：`0.1.0-dev`
 - 产品运行阶段：`Scaffold`
-- 本次 WIP 基线 commit：`7f3f7260a3e64330481eea331bafd1d12245d024`；tree：
-  `a51299574ba942fb7d036071b1e8419cf4f735f4`。当前修复快照有 3 个 tracked 文件修改，
-  remote repair ref 仍指向该基线 HEAD；这些数量只是 2026-07-20 的工作快照，
-  不是最终 bundle/CI/VM 授权锚。
+- 本次 WIP 基线 commit：`a20326b6661e1e29e1be454f6957662069ae2838`；tree：
+  `63bfa01fa7efd506254237188f994c0a9cdb5ce6`。当前修复快照修改
+  `tests/HostSandbox/FastLaneGitOutbox.Tests.ps1` 与本文；remote repair ref 仍指向该基线 HEAD。
+  这些数量只是 2026-07-20 的工作快照，不是最终 bundle/CI/VM 授权锚。
 - 历史宿主机锚：`3e843912...`、`a09130f2...`、`615bbf368...`；包含本文的最终
   clean HEAD 与其 bundle/task/CI 绑定必须从外部机器事实重新发现，任何历史锚都不能
   当成当前授权

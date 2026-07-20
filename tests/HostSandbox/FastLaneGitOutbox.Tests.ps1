@@ -1438,22 +1438,43 @@
             Should -Throw '*LOCAL_REMOTE_BINDING_MISMATCH*'
     }
 
-    It 'rejects stale publish CAS and a held single-instance lock' {
+    It 'rejects stale publish CAS without coupling the semantic assertion to Git process timing' {
         $fixture = New-OutboxFixture
         $parameters = Get-OutboxParameters $fixture -Operation Publish
         $state = New-CddsiVmTestRelayState synthetic/host-to-vm synthetic/vm-to-host synthetic/product
         $message = New-InitialRequestMessage $state
-        [void](Add-OutboxCommit $fixture $message 'racing writer')
+        $racingHead = 'b' * 40
+        Mock Initialize-CddsiFastLaneLocalGitRepository { }
+        Mock Get-CddsiFastLaneRemoteSnapshot {
+            [pscustomobject]@{
+                Head = $racingHead
+                StagingRef = 'refs/cddsi/remote-snapshot'
+            }
+        }
+        Mock Invoke-CddsiFastLaneGitCommand { throw 'UNEXPECTED_GIT_COMMAND' }
+
         { Invoke-CddsiFastLaneGitOutbox -Operation Publish -Mode Live -AcknowledgeOperatorPlaneLive `
             -Message $message -ExpectedRemoteHead $fixture.Genesis @parameters } | Should -Throw '*REMOTE_CAS_MISMATCH*'
+        Assert-MockCalled Initialize-CddsiFastLaneLocalGitRepository -Times 1 -Exactly
+        Assert-MockCalled Get-CddsiFastLaneRemoteSnapshot -Times 1 -Exactly
+        Assert-MockCalled Invoke-CddsiFastLaneGitCommand -Times 0 -Exactly
+        [IO.File]::Exists((Join-Path $fixture.StateRoot 'pending-publish.json')) | Should -BeFalse
+    }
 
+    It 'rejects a held single-instance lock before running Git' {
         $lockFixture = New-OutboxFixture -NumericId 106
         $lockParameters = Get-OutboxParameters $lockFixture
-        [void](Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live -AcknowledgeOperatorPlaneLive @lockParameters)
-        $lock = [IO.File]::Open((Join-Path $lockFixture.StateRoot '.cddsi.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        [void][IO.Directory]::CreateDirectory($lockFixture.StateRoot)
+        Mock Invoke-CddsiFastLaneGitCommand { throw 'UNEXPECTED_GIT_COMMAND' }
+        $lock = [IO.File]::Open(
+            (Join-Path $lockFixture.StateRoot '.cddsi.lock'),
+            [IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::None)
         try {
             { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live -AcknowledgeOperatorPlaneLive @lockParameters } |
                 Should -Throw '*FAST_LANE_SINGLE_INSTANCE_LOCKED*'
+            Assert-MockCalled Invoke-CddsiFastLaneGitCommand -Times 0 -Exactly
         }
         finally { $lock.Dispose() }
     }
