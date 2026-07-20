@@ -4,25 +4,40 @@
 
 ## 一句话状态
 
-**当前不能重试 VM。** 2026-07-20，VM 用精确旧 ZIP（length `842085`，SHA-256
-`311f8fe7cfac6eefb51b6c9f588ae7a396ed82505d10a6837d208181b0ee9ed8`）进入固定 launcher 后，
-在加载包内 UTF-8 BOM PowerShell 依赖时以 `The term '﻿#' is not recognized` fail closed。
-宿主机字节审计证明 prompt、loader 与 launcher 没有传输漂移；根因是 loader 将合法的
-`EF BB BF 23` 解码为开头仍含 U+FEFF 的内存字符串，parser 未报错而 dot-source 把
-`﻿#` 当成命令。该旧 ZIP 及绑定它的 prompt 禁止继续使用；旧 finalization receipt 仍只保留
-历史证据价值，不能授权当前 bootstrap。现有宿主机 automation binding 也不能授权当前修复；
-VM 回执明确为 `AutomationReconciliationReached=false`、`AutomationMutationCount=0`，未产生
-有效 VM automation binding。禁止在 VM 手工改 loader 或重试旧交付。因此当前精确状态是：
+**当前不能重试 VM。** 2026-07-20，VM 用精确 ZIP（length `842085`，SHA-256
+`6127b0a0d4e555db9b0ef6174c4c37ea17876bdd151ed5e60606783da92144e1`）完成外层 ZIP、manifest、
+inventory、固定工具与依赖字节验证后，在进入 phase2 wrapper 的第一条赋值处以
+`Cannot overwrite variable ExecutionContext because it is read-only or constant.` fail closed。
+PowerShell 变量名不区分大小写；生成 loader 内的局部 `$executionContext` 与内建
+`$ExecutionContext` 相同，而后者在 PowerShell 7 与 Windows PowerShell 中均为
+`Constant, AllScope`。回执中的 `PackageValidated=true`、`PackageRevalidated=false`、
+network/Git/credential/automation/product-Live 全为 0，以及 deepest-first cleanup 成功，均与该
+精确调用点一致。该 ZIP 及绑定它的 prompt 现在是
+`SUPERSEDED_DO_NOT_USE_LOADER_EXECUTION_CONTEXT_COLLISION`；禁止在 VM 手工改 loader 或重试。
+此前 `311f8fe7...` 的 BOM loader 缺陷包也继续保持 `SUPERSEDED_DO_NOT_USE`。
+
+宿主 WIP 已把生成 loader 的局部变量改为唯一的 `$phase2BootstrapContext`，并新增两层回归：
+对生成后 loader AST 的 Constant/ReadOnly 变量赋值/参数冲突扫描，以及抽取 exact
+`Invoke-LoaderPhase2` 后通过纯 stub 实际执行两次完整 20 参数 binder 与一次 blocked 分支。
+PowerShell 7 focused suite 当前为 29/29。dirty WIP 标准 HostSandbox RunId
+`e231c19f-fa84-4347-9c70-c075afdaebd6` 已由 PowerShell 7 与 Windows PowerShell 各通过
+449/449，所有失败/隔离/mutation 指标为 0、仓库前后快照一致且 cleanup 成功；同一 WIP 的
+Release Simulation DryRun 为 39 package files / 39 ZIP entries、`Changed=false`、四层 inventory
+与内容精确、全部 forbidden/secret/mutation 指标为 0。它们是提交前机器证据，仍不能替代随后
+clean exact commit 的最终重跑。现有宿主机 automation 仍是同一 ID 且 `PAUSED`，但绑定的是
+现已作废的 bundle；VM 回执为
+`AutomationReconciliationReached=false`、`AutomationMutationCount=0`，未产生有效 VM automation
+binding。因此当前精确状态仍是：
 
 - `CanStartVmBootstrap=false`；
 - `CanStartVmIntegration=false`；
 - `P10A0AComplete=false`；
 - `CanStartFormalP10A=false`。
 
-当前宿主修复保持原始依赖字节、SHA、只读句柄和最终重读不变，只在同一 captured byte array
-上严格消费唯一开头 UTF-8 preamble；重复/嵌入 BOM、无效 UTF-8、UTF-16 与 NUL 均 fail closed。
-PowerShell 7 与 Windows PowerShell 的定点正负执行已经通过；包含本文的 clean-commit
-双引擎全树门、Release DryRun、CI、新 bundle/prompt 与 automation 原位重绑仍待重新完成。
+上一轮 BOM 修复仍保持原始依赖字节、SHA、只读句柄和最终重读不变，只在同一 captured byte
+array 上严格消费唯一开头 UTF-8 preamble；重复/嵌入 BOM、无效 UTF-8、UTF-16 与 NUL 均
+fail closed。本轮必须重新完成包含本文的 clean-commit 双引擎全树门、Release DryRun、CI、
+新 bundle/prompt 与同一 automation 原位重绑。
 只有一个 `ProductCommitSha`/tree 与当前 clean HEAD 精确相等、且所有失败/隔离指标为 0 的
 新 owner-marked finalization receipt 才能重新派生 `CanStartVmBootstrap=true`；tracked 文档本身
 不能替代该外部机器证据。
@@ -36,10 +51,10 @@ canonical identity scan、目标专用 exact schema、唯一 ID/name、prompt re
 loader 已采用 current-SID/protected-DACL 精确校验、同一已哈希字节解析/加载、create-only 与
 原子状态写、显式栈 deepest-first 非递归清理及幂等状态比较。
 
-此前 `345ca671...` 的标准 HostSandbox、Release DryRun、39-entry release、18-entry onboarding
-与 CI success 只绑定旧 loader 字节；VM 的真实 BOM 失败已证明它们不能授权重试。新的最终
-测试计数与所有 hash/length/token 必须以修复后的 clean exact commit 机器结果为准，不沿用
-448/448、旧 loader `1692bd36...` 或旧 prompt `e1a30777...`。
+此前 `7f3f7260...` 的标准 HostSandbox、Release DryRun、39-entry release、18-entry onboarding
+与 CI success 只绑定含变量碰撞的 loader 字节；VM 的真实 phase2 失败已证明它们不能授权重试。
+新的最终测试计数与所有 hash/length/token 必须以修复后的 clean exact commit 机器结果为准，
+不得沿用 448/448、loader `b1eb4981...`、prompt `a0242117...` 或 ZIP `6127b0a0...`。
 
 已完成且仍有效的外部历史事实只有：三个 public repositories 与无 bypass 的
 protected-history ruleset 已部署，产品旧 `main` 与两个 control outbox 已初始化；既有宿主机
@@ -68,8 +83,8 @@ bootstrap-admin 会话不得保存或复用为 automation credential。
   （均为 PUBLIC；ruleset `19068292`、`19068313`）
 - 当前版本：`0.1.0-dev`
 - 产品运行阶段：`Scaffold`
-- 本次 WIP 基线 commit：`345ca671f338c346ce93251cba453db12d3ac38f`；tree：
-  `7feb44942c88d1d2d8f06e2e98d72c65198359aa`。当前修复快照有 3 个 tracked 文件修改，
+- 本次 WIP 基线 commit：`7f3f7260a3e64330481eea331bafd1d12245d024`；tree：
+  `a51299574ba942fb7d036071b1e8419cf4f735f4`。当前修复快照有 3 个 tracked 文件修改，
   remote repair ref 仍指向该基线 HEAD；这些数量只是 2026-07-20 的工作快照，
   不是最终 bundle/CI/VM 授权锚。
 - 历史宿主机锚：`3e843912...`、`a09130f2...`、`615bbf368...`；包含本文的最终

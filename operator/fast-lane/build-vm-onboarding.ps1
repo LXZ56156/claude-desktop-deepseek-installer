@@ -1164,13 +1164,13 @@ try {
     }
 
     function Invoke-LoaderPhase2 {
-        $executionContext = [pscustomobject][ordered]@{
+        $phase2BootstrapContext = [pscustomobject][ordered]@{
             SchemaVersion = 1; ContractVersion = 'cddsi-fast-lane-vm-bootstrap-execution-context-v1'
             Kind = 'VmDevice'; SyntheticOnly = $false; MutationAllowed = $true
             SandboxRoot = ''; SandboxRootBindingToken = ('0' * 64)
         }
         $parameters = @{
-            Mode = 'Live'; BootstrapExecutionContext = $executionContext; ZipPath = $package.ZipPath
+            Mode = 'Live'; BootstrapExecutionContext = $phase2BootstrapContext; ZipPath = $package.ZipPath
             ExpectedZipSha256 = $ExpectedZipSha256; ExpectedZipLengthBytes = $ExpectedZipLengthBytes
             ExpectedManifestSha256 = $ExpectedManifestSha256; ExpectedManifestLengthBytes = $ExpectedManifestLengthBytes
             ExpectedManifestBindingToken = $ExpectedManifestBindingToken; ExpectedInventorySha256 = $ExpectedInventorySha256

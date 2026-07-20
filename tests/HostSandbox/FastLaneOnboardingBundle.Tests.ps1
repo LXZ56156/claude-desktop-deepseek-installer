@@ -1601,6 +1601,186 @@ Describe 'Fast Lane immutable VM onboarding bundle' {
         [System.IO.Directory]::Exists($noWriteRoot) | Should -BeFalse
     }
 
+    It 'avoids protected PowerShell variables and invokes the exact Live phase2 binder fail closed' {
+        $canonical = Get-CddsiOnboardingCanonicalArtifacts
+        $fixture = $canonical.Fixture
+        $loader = $canonical.Operator.LoaderScript
+        $tokens = $null; $parseErrors = $null
+        $loaderAst = [Management.Automation.Language.Parser]::ParseInput(
+            $loader, [ref]$tokens, [ref]$parseErrors)
+        @($parseErrors).Count | Should -Be 0
+
+        $protectedOptions = [Management.Automation.ScopedItemOptions]::Constant -bor
+            [Management.Automation.ScopedItemOptions]::ReadOnly
+        $protectedVariableNames = @{}
+        foreach ($variable in @(Get-Variable)) {
+            if (($variable.Options -band $protectedOptions) -ne 0) {
+                $protectedVariableNames[[string]$variable.Name] = $true
+            }
+        }
+        $protectedVariableConflicts = [Collections.Generic.List[string]]::new()
+        foreach ($assignment in @($loaderAst.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.AssignmentStatementAst]
+                    }, $true))) {
+            if ($assignment.Left -isnot [Management.Automation.Language.VariableExpressionAst]) {
+                continue
+            }
+            $name = [string]$assignment.Left.VariablePath.UserPath
+            if ($protectedVariableNames.ContainsKey($name)) {
+                $protectedVariableConflicts.Add(('assignment:' + $name))
+            }
+        }
+        foreach ($parameter in @($loaderAst.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.ParameterAst]
+                    }, $true))) {
+            $name = [string]$parameter.Name.VariablePath.UserPath
+            if ($protectedVariableNames.ContainsKey($name)) {
+                $protectedVariableConflicts.Add(('parameter:' + $name))
+            }
+        }
+        @($protectedVariableConflicts) | Should -BeNullOrEmpty
+        $loader | Should -Not -Match '(?i)\$executionContext\b'
+
+        $phase2Functions = @($loaderAst.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -ceq 'Invoke-LoaderPhase2'
+                }, $true))
+        $phase2Functions.Count | Should -Be 1
+        $phase2HarnessPath = Write-CddsiOnboardingHarnessScript `
+            -HarnessRoot $fixture.Sandbox.Root -NamePrefix 'cddsi-test-loader-phase2' `
+            -ScriptText ([string]$phase2Functions[0].Extent.Text + "`r`n")
+        . $phase2HarnessPath
+
+        $package = [pscustomobject][ordered]@{
+            ZipPath = Join-Path $fixture.Sandbox.Root 'synthetic-bundle.zip'
+        }
+        $ExpectedZipSha256 = '1' * 64; $ExpectedZipLengthBytes = 101
+        $ExpectedManifestSha256 = '2' * 64; $ExpectedManifestLengthBytes = 102
+        $ExpectedManifestBindingToken = '3' * 64
+        $ExpectedInventorySha256 = '4' * 64; $ExpectedInventoryLengthBytes = 103
+        $ExpectedInventoryBindingToken = '5' * 64
+        $ExpectedBundleContentDigestSha256 = '6' * 64
+        $ExpectedProductCommitSha = '7' * 40; $ExpectedProductTreeSha = '8' * 40
+        $ProgramFilesRoot = Join-Path $fixture.Sandbox.Root 'ProgramFiles'
+        $SystemRoot = Join-Path $fixture.Sandbox.Root 'Windows'
+        $LocalApplicationDataRoot = Join-Path $fixture.Sandbox.Root 'LocalAppData'
+        $actualCodexHome = Join-Path $fixture.Sandbox.Root 'CodexHome'
+        $AcknowledgeVmBootstrapLive = $true
+        $script:LoaderPhase2Captures = [Collections.Generic.List[object]]::new()
+        $script:LoaderPhase2ReturnBlocked = $false
+
+        $existingFacade = Get-Item `
+            Function:\Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding `
+            -ErrorAction SilentlyContinue
+        $existingFacadeScript = if ($null -eq $existingFacade) {
+            $null
+        } else {
+            $existingFacade.ScriptBlock
+        }
+        try {
+            Set-Item Function:\Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding -Value {
+                [CmdletBinding()]
+                param(
+                    [string]$Mode,
+                    [object]$BootstrapExecutionContext,
+                    [string]$ZipPath,
+                    [string]$ExpectedZipSha256,
+                    [long]$ExpectedZipLengthBytes,
+                    [string]$ExpectedManifestSha256,
+                    [long]$ExpectedManifestLengthBytes,
+                    [string]$ExpectedManifestBindingToken,
+                    [string]$ExpectedInventorySha256,
+                    [long]$ExpectedInventoryLengthBytes,
+                    [string]$ExpectedInventoryBindingToken,
+                    [string]$ExpectedBundleContentDigestSha256,
+                    [string]$ExpectedProductCommitSha,
+                    [string]$ExpectedProductTreeSha,
+                    [string]$ProgramFilesRoot,
+                    [string]$SystemRoot,
+                    [string]$LocalApplicationDataRoot,
+                    [string]$CodexHome,
+                    [string]$ExpectedAutomationTargetCurrentTaskToken,
+                    [switch]$AcknowledgeVmBootstrapLive
+                )
+                $capture = [ordered]@{}
+                foreach ($key in $PSBoundParameters.Keys) {
+                    $capture[$key] = $PSBoundParameters[$key]
+                }
+                $script:LoaderPhase2Captures.Add([pscustomobject]$capture)
+                if ($script:LoaderPhase2ReturnBlocked) {
+                    return [pscustomobject][ordered]@{
+                        Status = 'VM_BOOTSTRAP_BLOCKED'; BlockerCode = 'SYNTHETIC_PHASE2_BLOCKED'
+                        NetworkRequestCount = 0; GitInvocationCount = 0
+                        ProductLiveInvocationCount = 0; ProductWriteCount = 0
+                    }
+                }
+                return [pscustomobject][ordered]@{
+                    Status = 'VM_BOOTSTRAP_LOCAL_STAGED'; BlockerCode = $null
+                    NetworkRequestCount = 0; GitInvocationCount = 0
+                    ProductLiveInvocationCount = 0; ProductWriteCount = 0
+                }
+            }
+
+            $firstResult = Invoke-LoaderPhase2
+            $secondResult = Invoke-LoaderPhase2
+            $firstResult.Status | Should -BeExactly 'VM_BOOTSTRAP_LOCAL_STAGED'
+            $secondResult.Status | Should -BeExactly 'VM_BOOTSTRAP_LOCAL_STAGED'
+            $script:LoaderPhase2Captures.Count | Should -Be 2
+            $expectedParameterNames = @(
+                'Mode','BootstrapExecutionContext','ZipPath','ExpectedZipSha256',
+                'ExpectedZipLengthBytes','ExpectedManifestSha256','ExpectedManifestLengthBytes',
+                'ExpectedManifestBindingToken','ExpectedInventorySha256',
+                'ExpectedInventoryLengthBytes','ExpectedInventoryBindingToken',
+                'ExpectedBundleContentDigestSha256','ExpectedProductCommitSha',
+                'ExpectedProductTreeSha','ProgramFilesRoot','SystemRoot',
+                'LocalApplicationDataRoot','CodexHome',
+                'ExpectedAutomationTargetCurrentTaskToken','AcknowledgeVmBootstrapLive'
+            ) | Sort-Object
+            foreach ($capture in @($script:LoaderPhase2Captures)) {
+                @($capture.PSObject.Properties.Name | Sort-Object) |
+                    Should -BeExactly $expectedParameterNames
+                $capture.Mode | Should -BeExactly 'Live'
+                $capture.ZipPath | Should -BeExactly $package.ZipPath
+                $capture.ExpectedAutomationTargetCurrentTaskToken |
+                    Should -BeExactly 'CURRENT_TASK'
+                $capture.AcknowledgeVmBootstrapLive.IsPresent | Should -BeTrue
+                $capture.BootstrapExecutionContext.PSObject.Properties.Name |
+                    Should -BeExactly @(
+                        'SchemaVersion','ContractVersion','Kind','SyntheticOnly',
+                        'MutationAllowed','SandboxRoot','SandboxRootBindingToken')
+                $capture.BootstrapExecutionContext.SchemaVersion | Should -Be 1
+                $capture.BootstrapExecutionContext.ContractVersion |
+                    Should -BeExactly 'cddsi-fast-lane-vm-bootstrap-execution-context-v1'
+                $capture.BootstrapExecutionContext.Kind | Should -BeExactly 'VmDevice'
+                $capture.BootstrapExecutionContext.SyntheticOnly | Should -BeFalse
+                $capture.BootstrapExecutionContext.MutationAllowed | Should -BeTrue
+                $capture.BootstrapExecutionContext.SandboxRoot | Should -BeExactly ''
+                $capture.BootstrapExecutionContext.SandboxRootBindingToken |
+                    Should -BeExactly ('0' * 64)
+            }
+            ($script:LoaderPhase2Captures[0].BootstrapExecutionContext |
+                    ConvertTo-Json -Compress) |
+                Should -BeExactly ($script:LoaderPhase2Captures[1].BootstrapExecutionContext |
+                    ConvertTo-Json -Compress)
+
+            $script:LoaderPhase2ReturnBlocked = $true
+            { Invoke-LoaderPhase2 } | Should -Throw '*SYNTHETIC_PHASE2_BLOCKED*'
+            $script:LoaderPhase2Captures.Count | Should -Be 3
+        }
+        finally {
+            if ($null -eq $existingFacadeScript) {
+                Remove-Item Function:\Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding `
+                    -ErrorAction SilentlyContinue
+            } else {
+                Set-Item Function:\Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding `
+                    -Value $existingFacadeScript
+            }
+        }
+    }
+
     It 'enforces semantic ACLs, held dependency bytes, and deepest-first nonrecursive cleanup' {
         $loaderLedger = [Collections.Generic.List[object]]::new()
         $loaderSandbox = New-CddsiOwnedSandbox -TempBase ([IO.Path]::GetTempPath()) `
