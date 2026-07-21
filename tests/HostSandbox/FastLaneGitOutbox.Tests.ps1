@@ -2060,27 +2060,28 @@
         $runnerSource | Should -Match 'return \[Cddsi\.FastLane\.BoundedProcessRunner\]::Run\('
         $runnerSource | Should -Match '\$result = Invoke-CddsiFastLaneBoundedGitProcess'
 
-        $wiringScript = Join-Path $fixture.Root 'seam wiring probe.ps1'
-        [IO.File]::WriteAllText(
-            $wiringScript,
-            "param([string]`$Value)`r`nStart-Sleep -Milliseconds 250`r`n[Console]::Out.Write(`$Value)`r`n",
-            (New-Object Text.UTF8Encoding($true)))
         $wiringValue = 'value with spaces and a "quoted" segment'
         $wiringEnvironment = @{
             SystemRoot = $systemRoot; WINDIR = $systemRoot
             HOME = $fixture.Root; USERPROFILE = $fixture.Root
             TEMP = $fixture.Root; TMP = $fixture.Root
+            GIT_CONFIG_COUNT = '0'; GIT_CONFIG_NOSYSTEM = '1'
+            GIT_CONFIG_SYSTEM = 'NUL'; GIT_CONFIG_GLOBAL = 'NUL'
+            GIT_TERMINAL_PROMPT = '0'; GCM_INTERACTIVE = 'Never'
         }
         $wiring = & $script:ProductionBoundedGitProcess `
-            -Executable (Join-Path $systemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
-            -Arguments @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $wiringScript, $wiringValue) `
+            -Executable $script:GitExecutable `
+            -Arguments @(
+                '-c', ('cddsi.probe=' + $wiringValue),
+                'config', '--get', 'cddsi.probe'
+            ) `
             -WorkingDirectory $fixture.Root -Environment $wiringEnvironment `
             -StandardInput $null -TimeoutMilliseconds 2000 -MaximumOutputBytes 4096
         $wiring.ExitCode | Should -Be 0
         $wiring.TimedOut | Should -BeFalse
         $wiring.JobAssigned | Should -BeTrue
         $wiring.ProcessTreeTerminated | Should -BeFalse
-        $wiring.StandardOutput | Should -BeExactly $wiringValue
+        $wiring.StandardOutput.TrimEnd("`r", "`n") | Should -BeExactly $wiringValue
 
         $failureContext = @{
             StateRoot = $fixture.Root; GitExecutable = $script:GitExecutable
