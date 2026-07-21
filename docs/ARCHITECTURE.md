@@ -103,8 +103,9 @@ synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-
 Git transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
 服务端 protected history 已部署；Cloudflare realtime accelerator 的产品侧纯 PowerShell
 合同、独立 infra 实现和离线测试也已完成。Free-only 外部步骤虽已获授权，既有 Cloudflare
-credential 的本任务 adoption/provenance 与 GET-only preflight 也已完成，但独立 Billing
-verification、资源创建、secret provisioning 或部署尚未完成；窄 Git 角色凭据、VM 设备
+credential 的本任务 adoption/provenance、GET-only preflight 与 Edge Billing dashboard
+人工核对也已完成；Workers Paid 未列出，但 fresh machine-verifiable Billing receipt 尚未
+签发，资源创建、secret provisioning 或部署也尚未完成；窄 Git 角色凭据、VM 设备
 provisioning 和无人值守双机验证仍未完成：
 
 ~~~text
@@ -162,12 +163,17 @@ Formal Lane: external clean snapshot + exact artifact
   `default.enc`、account 与 permission hashes；四 GET preflight 已确认单一 account、既有
   workers.dev subdomain、目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD` 与
   `BillingPlanVerified=false`。状态为 `AUTHENTICATED_READ_ONLY /
-  BILLING_VERIFICATION_REQUIRED`；usage model 不是 subscription receipt，Dashboard 核验需要浏览器
-  登录时已先提示用户。
+  BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED`；usage model
+  不是 subscription receipt。经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions
+  核对未列出 Workers/Workers Paid；active Teams Free Base 与无关 R2 Paid 不改变 Workers 的独立
+  计划边界、不授权 relay 使用 R2，也不把整个账号称为 Free。
 - credential 采用后和部署后读回必须验证单一 account、Workers 使用模型、workers.dev、
   Worker/DO 配置与 active deployment；明文 profile 必须不存在，OAuth/deploy credential 与
-  runtime HMAC credential 必须继续分离。Workers 使用模型仅作配置证据，不能替代独立 Free-plan
-  Billing receipt。实际 Host/VM runtime secret 尚未 provision；尤其缺少
+  runtime HMAC credential 必须继续分离。Workers 使用模型仅作配置证据，不能替代独立 Workers-only
+  machine Billing receipt。其 validator/recorder、owner/SYSTEM-only ACL、fresh observation 绑定与
+  两阶段 account/adoption/profile ticket 已在 infra 本地实现并接入条件写门，但没有签发真实 receipt，
+  因而当前门仍不满足。SQLite-backed Durable Objects
+  支持 Workers Free，Free 超限后操作失败而非计费。实际 Host/VM runtime secret 尚未 provision；尤其缺少
   disposable VM 对应 CurrentUser 的 DPAPI provisioning context，因此初始两组 secret 写入与
   placeholder Worker 创建均保持 fail closed。
 - `lib/vm-fast-lane-readiness.ps1` 明确区分 `CanStartVmBootstrap` 与

@@ -29,7 +29,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | P10A-0A | 双机 Fast Lane MVP 前置门 | **CONTROLLED_PAUSE**；所有旧 bundle/prompt superseded，不得进入 VM | 只有在 realtime relay 独立工作流完成评审后，另行决定是否从新 clean commit 重新 finalization |
-| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY / BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE** | 完成独立 Free-plan Billing 核验、Host/VM DPAPI provisioning 与真实正负权限/回滚证明；不改变 P10/P11/P12 门 |
+| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED / NOT_PROVISIONED / NOT_ACTIVE** | 签发 fresh machine Billing receipt，完成 Host/VM DPAPI provisioning 与真实正负权限/回滚证明；不改变 P10/P11/P12 门 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -67,6 +67,14 @@ automation prompt、bundle 和 readiness receipt 只绑定暂停前 commit；本
 VM task 若存在也必须保持 `PAUSED`。没有可靠 VM receipt 时不得推断最新 ZIP 已执行或 task 已
 创建。本工作包已实施纯本地、DevelopmentOnly watcher 和独立 infra 源码，但不创建 Cloudflare
 外部资源、不触发 automation、不访问 VM、不执行产品 Live。
+
+2026-07-21 经用户授权，只读复用其个人 Edge 既有登录态查看 Cloudflare Billing →
+Subscriptions：未列出 Workers/Workers Paid，另列出 active 的 Teams Free Base 与无关 R2 Paid。
+这不把整个账号分类为 Free；Workers Paid 与其他产品计划分离，R2 Paid 不授权 relay 使用 R2。
+SQLite-backed Durable Objects 支持 Workers Free，Free 限额超出后操作失败而非计费。用于固化该
+脱敏观察的 machine receipt validator/recorder 已在 infra 本地实现并接入条件写门，但没有签发真实
+receipt，门仍不满足；资源、secret、endpoint 仍未 provision，
+且缺少 VM CurrentUser DPAPI context，automation 继续 `PAUSED`。
 
 R0 是与既有 P10A-0A/P10A/P10B/P11/P12 编号正交的 operator workflow，不重编号也不替代任何
 阶段门。推荐架构与约束见 `REALTIME_RELAY_PROPOSAL.md`，分步实施计划为：
@@ -780,16 +788,18 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
 2. 先评审 R0-DESIGN 的 schema、HMAC/key separation、replay/order/ACK、payload pointer、
    本地 validator、watcher 固定唤醒、Git fallback、速率限制和禁用/回滚。
 3. 本地 Worker/DO 源码与测试只存在于独立 sibling workspace；用户已集中授权 1–7 项并限定
-   Free-only。精确 Node LTS、lock-bound Wrangler/TypeScript、keyring helper、typecheck、105/105
-   离线测试、52-file secret scan、实际本地 workerd/SQLite/Hibernation forced-eviction test 和
+   Free-only。精确 Node LTS、lock-bound Wrangler/TypeScript、keyring helper、typecheck、119/119
+   离线测试、58-file secret scan、实际本地 workerd/SQLite/Hibernation forced-eviction test 和
    Wrangler dry-run 已通过。用户在知悉既有 encrypted keyring `default` profile 有 29 项 scope、
    其中 25 项超出四项必需集合后，明确授权直接复用且不要求 exact-scope equality。本地已实现
    owner-only crash recovery、过期 receipt 原子续期和 account-bound credential snapshot。真实
-   infra root 的 exact/inherited binding absence、generation-1 adoption receipt 与固定四 GET
-   preflight 已完成；结果为单账号、既有 workers.dev subdomain、目标 Worker 不存在、
-   `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
-   BILLING_VERIFICATION_REQUIRED`。usage model 不证明订阅，独立 Billing Dashboard 登录前已按要求
-   提示用户。产品仓库和 VM runtime 不安装 Node/npm。
+    infra root 的 exact/inherited binding absence、generation-1 adoption receipt 与固定四 GET
+    preflight 已完成；结果为单账号、既有 workers.dev subdomain、目标 Worker 不存在、
+    `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
+    BILLING_VERIFICATION_REQUIRED`。usage model 不证明订阅；随后经用户授权复用个人 Edge 既有
+    登录态完成只读 Billing → Subscriptions 核对，未列出 Workers/Workers Paid。machine receipt
+    validator/recorder 已本地实现并测试，但未签发真实 receipt；既有观察不得在过期后重用。
+    产品仓库和 VM runtime 不安装 Node/npm。
 4. Cloudflare account、deployment credential、两个 lane identity 与 HMAC key 均由外部
    provisioner 独立发放；公网 URL 不是 sender authority，secret 不进入仓库、prompt 或对话。
 5. 先完成本地和临时环境攻击矩阵，再由一次独立激活授权决定是否部署客户端；默认 disabled，
@@ -813,19 +823,22 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
   publish/watch、pending/ACK 恢复、fixed Codex resume/wake proof、受控 cleanup、DPAPI credential
   provider 与 focused fake tests。独立 infra 本地 commit
   `a74ef5986b801bf5c9c500e473590d5167a062a8` 为安装前基线，当前实现提交为
-  `e3355ab9fedb56e7291b37df49751d9a26614f84`；当前 105/105 Node 离线测试、52-file
+  `0a07fd6b540213dd9aa9ca8328dace2532af5e3a`；当前 119/119 Node 离线测试、58-file
   secret scan、固定 typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 和 fresh
   Wrangler dry-run artifact scan 已通过且没有 remote；产品 relay focused tests 在 PowerShell 7 与
   Windows PowerShell 5.1 各 67/67、完整双引擎 HostSandbox gate 与 39-file Release Simulation
   DryRun 已通过。本地 forced eviction 不替代生产 idle scheduling、平台日志或公网 Hibernation
   evidence。既有 Cloudflare encrypted keyring `default` credential 已完成真实 infra root 的
-  binding-absence proof、generation-1 adoption receipt 与 account GET preflight；但 Free-plan
-  Billing receipt、resource receipt、relay endpoint、两个 lane runtime secret、真实正负权限 evidence
-  和启用授权均不存在。状态必须是 `AUTHENTICATED_READ_ONLY /
-  BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`。
+  binding-absence proof、generation-1 adoption receipt 与 account GET preflight；只读 Dashboard
+  人工核对已观察到订阅列表未出现 Workers/Workers Paid，同时存在 active Teams Free Base 与无关
+  R2 Paid。已签发的 machine Billing receipt、resource receipt、relay endpoint、两个 lane runtime secret、真实
+  正负权限 evidence 和启用授权均不存在。状态必须是 `AUTHENTICATED_READ_ONLY /
+  BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
+  NOT_PROVISIONED / NOT_ACTIVE`。
 - Free-only GET preflight 只记录 `default_usage_model=standard` 并明确输出
-  `BillingPlanVerified=false`；任何 usage model 都不能充当 subscription receipt。独立 Dashboard
-  核验、既有 workers.dev subdomain、目标 Worker 无冲突和单账号必须同时成立，否则首个写操作前
+  `BillingPlanVerified=false`；任何 usage model 都不能充当 subscription receipt。Dashboard 人工
+  观察不能冒充 machine receipt，也不能把整个账号称为 Free；R2 Paid 不授权 relay 使用 R2。
+  既有 workers.dev subdomain、目标 Worker 无冲突和单账号必须继续同时成立，否则首个写操作前
   停止。初始 bulk 还缺 disposable VM CurrentUser DPAPI
   provisioning context，不能先创建 placeholder Worker 或只写宿主机 secret。
 - VM 不负责重查上述宿主机 retained path/task/PR/CI/remote；它只验证最终提示词的外部

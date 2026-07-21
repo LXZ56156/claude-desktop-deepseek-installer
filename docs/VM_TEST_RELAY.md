@@ -27,12 +27,16 @@ tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 re
 
 现有 HostCoordinator automation 必须继续 `PAUSED`；VM automation 若存在也必须继续
 `PAUSED`，没有 VM 侧可靠 receipt 时不得推断其实际存在或状态。本轮用户已授权 Cloudflare
-外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、105/105 离线测试、52-file
+外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、119/119 离线测试、58-file
 secret scan、typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 与 Wrangler
 dry-run 已通过；既有 encrypted keyring `default` credential 已完成 generation-1 adoption 与固定
 四 GET preflight，确认单账号、既有 workers.dev subdomain、目标 Worker 不存在并报告
-`STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。独立 Billing verification、
-provision 与在线 relay 激活尚未完成，也不执行
+`STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。随后经用户授权，只读复用
+其个人 Edge 既有登录态查看 Billing → Subscriptions：未列出 Workers/Workers Paid，active 的
+Teams Free Base 与无关 R2 Paid 不改变 Workers 的独立订阅边界，也不授权 relay 使用 R2。SQLite
+DO 支持 Workers Free，Free 超限后操作失败而非计费；该观察不把整个账号称为 Free。machine
+receipt validator/recorder 与两阶段账号绑定已在 infra 本地实现并测试，但未签发真实 receipt，
+条件写门仍不满足；provision 与在线 relay 激活尚未完成，也不执行
 产品 Live。缺少 VM CurrentUser DPAPI provisioning context 时不得先写任一 runtime secret 或创建
 placeholder Worker。本地 Worker/DO 与 PowerShell watcher 实现及外部授权本身都不改变暂停。
 暂停后的精确事实和恢复条件只看 `HANDOFF.md` 顶部与实际 Git/remote/PR/CI/automation/evidence。
@@ -150,11 +154,12 @@ Cloudflare Worker、SQLite-backed Durable Object 与 WebSocket Hibernation，以
 DevelopmentOnly operator plane 中的纯 PowerShell 客户端。完整协议、威胁模型、授权点和回滚见
 `REALTIME_RELAY_PROPOSAL.md`。当前状态严格为 `LOCAL_GATES_PASSED /
 EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`；用户已授权
+BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED /
+MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED / NOT_PROVISIONED / NOT_ACTIVE`；用户已授权
 Free-only 外部门 1–7 项，并在知悉 scope 超集后明确允许直接复用既有 encrypted keyring
 `default` OAuth profile；真实精确 infra root 的 binding-absence proof、owner-marked adoption receipt
-与 GET-only preflight 已完成，但 Free-plan Billing receipt、endpoint、runtime secret、部署 receipt
-或 live 权限证据仍不存在。该授权也不允许
+与 GET-only preflight 已完成，脱敏 Dashboard 人工核对也已完成，但已签发并通过验证的 machine
+Billing receipt、endpoint、runtime secret、部署 receipt 或 live 权限证据仍不存在。该授权也不允许
 越过分阶段 fail-closed 前置条件或自行激活任何 watcher/automation。
 
 该 accelerator 只传两条方向隔离 lane 的 12-field 固定 schema 通知及 immutable payload

@@ -5,13 +5,14 @@
 ## 当前动态状态（唯一入口）
 
 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
-AUTHENTICATED_READ_ONLY / BILLING_VERIFICATION_REQUIRED /
+AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
+WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
 NOT_PROVISIONED / NOT_ACTIVE / CONTROLLED_PAUSE。**
 
 2026-07-21 本轮继续前从实际磁盘复核：分支仍为
-`codex/repair/p10a-0a-fast-lane`；上一轮文档提交已正常推送为
-`f61068c41e2be68d262b385a7e35b1697bfb0e93`，PR #1 仍是现有唯一 PR，其 Release dry-run
-run `29828984442` 与双引擎 CI run `29828984437` 均已成功。本轮 tracked 修改继续按同一 PR
+`codex/repair/p10a-0a-fast-lane`；上一轮已推送 HEAD 为
+`45943fa1207e8f1b61ac71cc3319dfb5381c6561`，PR #1 仍是现有唯一 PR，其 Release dry-run
+run `29831979425` 与双引擎 CI run `29831979357` 均已成功。本轮 tracked 修改继续按同一 PR
 追加。本段不嵌入会自引用的最终 commit；实际 HEAD/upstream、PR head 和 CI 必须从
 Git/GitHub 回读，且只有绑定同一最终 commit 的新 CI 可证明远端字节。旧 CI、tree 和任何旧
 finalization 不能证明本轮字节。
@@ -39,12 +40,12 @@ assertion 与 Live 确认，并在任何 publisher chain/pending state 存在时
 
 独立 infra workspace 已初始化**仅本地** Git `main`，无 remote；基线提交为
 `a74ef5986b801bf5c9c500e473590d5167a062a8`，当前离线提交为
-`e3355ab9fedb56e7291b37df49751d9a26614f84`、tree
-`128d6a5d441a9b3cc076adf357aa156e4b3aa616`。用户已授权外部门 1–7 项并限定
+`0a07fd6b540213dd9aa9ca8328dace2532af5e3a`、tree
+`e99204fb1704b3c3293cd8144015defe35f9a348`。用户已授权外部门 1–7 项并限定
 Free-only。授权后使用 Node `24.16.0` 的 bundled npm `11.13.0` 生成精确
 `package-lock.json`，安装 workspace-local `wrangler@4.112.0`、`typescript@6.0.3`，并在
 Wrangler global native helper 精确前缀安装/回读 `@napi-rs/keyring@1.3.0`；未使用 global
-Wrangler 或 PATH npm。当前 infra 离线测试 105/105、52 文件格式/secret scan、固定
+Wrangler 或 PATH npm。当前 infra 离线测试 119/119、58 文件格式/secret scan、固定
 `wrangler types`/TypeScript 均通过；真实 Wrangler dry-run 的 1 bundle、1 source map、1
 metafile 共 4 文件/151106 bytes 扫描为 secret=0、console=0。GET-only Cloudflare readback
 固定了单账号、usage-model 枚举、既有 workers.dev subdomain、目标 Worker无碰撞，以及部署后
@@ -60,10 +61,13 @@ fail-close，以及 account-bound 私有 credential snapshot。snapshot 只由
 `auth token --profile default` 取得，并用唯一 account GET 对照 adoption receipt 的 account hash；
 后续 deploy/secret/list 只使用该内存 token 与固定 account target，不再解析磁盘 profile，且不会
 把 token、账号 ID 或原始 CLI/API 输出写入 evidence。
-共享 code-pinned Cloudflare write policy 还把 Free-plan receipt、coordinated provisioner、Host/VM
-DPAPI receipts、bulk semantics 与 two-secret staging receipt 全部固定为 false；当前 `deploy`、
+共享 code-pinned Cloudflare write policy 先把 coordinated provisioner、Host/VM DPAPI receipts、
+bulk semantics 与 two-secret staging receipt 固定为 false；当前 `deploy`、
 `stage-initial`、`stage-rotation` 均在 Node/toolchain/profile/credential/network/stdin/child spawn 前
-只返回 `CLOUDFLARE_WRITE_PREREQUISITES_NOT_MET`。OAuth 与 GET-only preflight 保持独立可用。
+只返回 `CLOUDFLARE_WRITE_PREREQUISITES_NOT_MET`。用于固化脱敏 Billing 观察的 Workers-only
+machine receipt validator/recorder、owner/SYSTEM-only ACL、fresh observation 绑定和两阶段
+account/adoption/profile ticket 已在 infra 本地实现并通过测试；没有签发真实 receipt，因此条件
+写门仍不满足。OAuth 与 GET-only preflight 保持独立可用。
 
 产品本地完成门已通过：realtime relay focused tests 在 PowerShell 7 与 Windows PowerShell 5.1
 各 67/67，通过两套引擎各 25/25 的 operator coordination boundary tests；完整
@@ -71,8 +75,9 @@ DPAPI receipts、bulk semantics 与 two-secret staging receipt 全部固定为 f
 outside-sandbox、forbidden access、unexpected ledger、secret finding 和 mutation spy 指标均为 0；
 Release Simulation DryRun 通过 39 个 package files，source/staging/ZIP/extract secret findings 均为 0，
 精确 inventory/hash 与 deterministic ZIP 校验通过。上述证据只证明本地离线实现，不得把
-`LOCAL_GATES_PASSED` 解释为已部署或可激活。当前只有本地 OAuth adoption 与只读 account
-preflight receipt；没有 Free-plan/Billing receipt、Worker URL、Durable Object namespace、runtime
+`LOCAL_GATES_PASSED` 解释为已部署或可激活。当前只有本地 OAuth adoption、只读 account
+preflight receipt 与下述脱敏 Dashboard 人工观察；没有已签发并通过写门验证的 machine Billing receipt、
+Worker URL、Durable Object namespace、runtime
 secret、客户端 live credential、部署 receipt 或真实端到端权限证据。
 本轮已按授权执行 npm 网络访问、精确 infra toolchain 安装、keyring helper 安装、typecheck 与
 Wrangler dry-run，并已采用既有 Cloudflare OAuth credential、执行固定四 GET preflight；尚未执行
@@ -83,9 +88,13 @@ keyring 加密 `default.enc`：单账号、29 项权限，包含本任务四项�
 已绑定 `default.enc`、account 和 permission hashes。随后 preflight 确认单账号、既有 account
 workers.dev subdomain、目标 `cddsi-realtime-relay` 不存在，并报告
 `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
-BILLING_VERIFICATION_REQUIRED`。Cloudflare 官方合同表明 usage model 不是订阅 receipt；当前已打开
-隔离 Dashboard 登录页等待用户自行登录后只读核对 Billing → Subscriptions。没有 DNS/域名变更、
-系统服务/计划任务注册或 infra 远端。
+BILLING_VERIFICATION_REQUIRED`。Cloudflare 官方合同表明 usage model 不是订阅 receipt。随后经用户
+授权，只读复用其个人 Edge 既有登录态查看 Billing → Subscriptions：列表未出现 Workers 或
+Workers Paid；显示 active 的 Teams Free Base 与另一个无关的 R2 Paid。该结果已经脱敏，仓库与测试
+evidence 不记录 account id、邮箱、地址、付款方式、cookie、截图或其他身份明文，也不得把整个
+Cloudflare 账号称为 Free。Cloudflare 官方合同表明 Workers Paid 与其他 Cloudflare 产品计划分离；R2 Paid 不隐式升级
+Workers，也不授权 relay 使用 R2。SQLite-backed Durable Objects 支持 Workers Free，Free 限额超出
+后操作失败而不是产生按量账单。没有 DNS/域名变更、系统服务/计划任务注册或 infra 远端。
 
 永久强制值继续为：
 
@@ -108,15 +117,18 @@ BILLING_VERIFICATION_REQUIRED`。Cloudflare 官方合同表明 usage model 不�
 receipt，绑定 `default.enc` hash、permissions 与脱敏 readback，并验证明文 profile 不存在、
 `account:read`、`user:read`、`workers_scripts:write`、`offline_access` 四项均存在且只返回单一
 account；不要求 scope 集合精确相等，额外 scope 不再构成失败，也不扩大本任务授权。采用未触发
-新 OAuth 登录；独立 Billing Dashboard 核验需要浏览器认证时，已按用户要求先明确提示。
+新 OAuth 登录；随后经用户明确授权，复用其个人 Edge 既有登录态完成只读 Billing Dashboard
+核对，没有执行新的登录、订阅、付款或计划变更。
 GET 与未来写入先用 `auth token --profile default` 形成内存 snapshot，再以唯一 account GET 核对
 receipt account hash；deploy/secret/list 使用 snapshot token 和固定 account target，不传 profile
 argv。receipt 到期只允许 `auth:renew-default` 在严格 owner/root、canonical、无 reparse 且确实过期
 时原子续期；有效、伪造或未知状态不得覆盖。
 OAuth/deploy credential 与 Host/VM runtime credential 必须继续完全分离。
 固定 GET-only account/subdomain/collision preflight 已完成；它记录 `STANDARD` 但不能把任何
-Workers account usage model 冒充 billing-plan receipt。独立 Billing Dashboard 尚未确认没有有效
-Workers Paid subscription，因此首个资源写继续停止。缺少既有 workers.dev subdomain、多账号、
+Workers account usage model 冒充 billing-plan receipt。脱敏 Dashboard 人工观察已确认订阅列表未
+列出 Workers/Workers Paid；active 的 Teams Free Base 与无关 R2 Paid 不改变 Workers 的独立订阅
+边界，也不授权 relay 使用 R2。machine receipt 实现已完成但未签发，条件写门仍不满足，因此首个资源写继续
+停止。缺少既有 workers.dev subdomain、多账号、
 目标 Worker 碰撞、付费/升级提示或无法确认 Free 同样必须停止。初始 secret bulk 还要求同一
 受保护 provisioner 先持有 Host 与 disposable VM 两份 DPAPI CurrentUser 客户端副本；当前没有
 VM 侧该上下文，因此 OAuth/read-only preflight 不会自动推进到 placeholder Worker/secret 写入。

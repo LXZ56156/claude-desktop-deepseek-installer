@@ -288,12 +288,15 @@ harness runtime。
   的 generation-1 adoption 与固定四 GET preflight 已完成；尚未创建 Worker/DO、写入 secret 或
   部署。preflight 确认单账号、既有 workers.dev subdomain、目标 Worker 不存在，并报告
   `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage model 都不是账单订阅
-  receipt；独立 Billing Dashboard 核验需要浏览器认证时，已先明确提示用户。部署后 readback 还
-  必须确认精确 Worker/DO bindings 与唯一 active deployment。缺少 disposable
+  receipt；随后经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions 核对未列出
+  Workers/Workers Paid。active Teams Free Base 与无关 R2 Paid 不把整个账号称为 Free、不升级
+  Workers，也不授权 relay 使用 R2；脱敏 machine receipt validator/recorder 与两阶段账号绑定已在
+  infra 本地实现并测试，但未签发真实 receipt，条件写门仍不满足。部署后
+  readback 还必须确认精确 Worker/DO bindings 与唯一 active deployment。缺少 disposable
   VM 对应 CurrentUser 的 DPAPI provisioning context 时，不允许只写一侧 secret，也不
   允许先创建 placeholder Worker，避免产生半配置外部资源。
-- 独立 infra 的共享 write policy 在代码中把 Free-plan、Host/VM DPAPI、coordinated parent、
-  bulk semantics 与 two-secret staging receipt 全部固定为未满足；因此 direct deploy 与两种
+- 独立 infra 的共享 write policy 已接入 Workers-only receipt validator，但没有真实 receipt；
+  Host/VM DPAPI、coordinated parent、bulk semantics 与 two-secret staging receipt 仍固定为未满足；因此 direct deploy 与两种
   secret staging 在读取 profile/credential、网络、stdin 或启动 Wrangler 之前统一 fail closed。
 
 必须防御以下威胁：

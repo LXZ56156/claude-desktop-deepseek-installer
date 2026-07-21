@@ -15,14 +15,15 @@ receipt its existence or state is not inferred.
 
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` now has status
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`. A pure
+BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
+NOT_PROVISIONED / NOT_ACTIVE`. A pure
 PowerShell DevelopmentOnly publish/watch/fixed-wake client exists under
 `operator/realtime-relay/`; its exact client, threat, credential rotation,
 rollback, cleanup, and troubleshooting contract is in
 `operator/realtime-relay/README.md`. The separate local sibling workspace
 `D:\projects(WIN)\cddsi-relay-infra`
 contains Worker/Durable Object source, an exact lock-bound Node/Wrangler toolchain,
-keyring helper, 105 passing offline tests, a real local workerd SQLite/Hibernation
+keyring helper, 119 passing offline tests, a real local workerd SQLite/Hibernation
 forced-eviction test, and a passing typecheck/dry-run artifact scan. The local
 runtime result does not prove production idle scheduling or public-platform
 Hibernation. The sibling has no remote. The user explicitly authorized reuse of the
@@ -33,8 +34,15 @@ binding-absence proof, generation-1 owner-marked adoption receipt and account-bo
 preflight have completed. They confirm an existing workers.dev subdomain, absent target
 Worker and `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED` without
 printing identity or token. Cloudflare resource, runtime credential, endpoint, and deployment
-have not occurred. Dashboard Billing login was clearly prompted before its isolated login page
-was opened. Independent Free-plan verification and
+have not occurred. With explicit user authorization, the existing signed-in personal Edge profile
+was used only to read Billing → Subscriptions. Workers/Workers Paid was not listed; active Teams
+Free Base and unrelated R2 Paid entries were listed. No account ID, email, address, payment method,
+cookie, screenshot, or other identity text was committed or retained as project evidence. Workers Paid is separate from other
+Cloudflare product plans, so R2 Paid neither upgrades Workers nor authorizes this relay to use R2;
+the account as a whole is not described as Free. SQLite-backed Durable Objects are available on
+Workers Free, whose exceeded limits fail instead of generating usage charges. The scoped receipt
+validator/recorder and two-phase account-binding ticket are implemented and tested locally, but no
+real receipt has been issued, so that write gate is not satisfied. It and
 the missing disposable-VM DPAPI context both block any partial secret/placeholder
 Worker write. The existing two protected Git control repositories remain the
 durable source and minute-poll fallback. The realtime accelerator cannot

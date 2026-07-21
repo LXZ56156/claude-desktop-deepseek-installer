@@ -11,7 +11,8 @@ polling, reset, product testing, Cloudflare provisioning, or watcher startup.
 
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` is currently
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`. Its pure
+BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
+NOT_PROVISIONED / NOT_ACTIVE`. Its pure
 PowerShell publish/watch/fixed-wake client and separate local Worker/Durable
 Object workspace are only offline, DevelopmentOnly implementation evidence.
 The exact operator client, threat model, credential rotation, rollback,
@@ -25,9 +26,15 @@ extra-scope rejection. The real infra root's binding-absence proof, generation-1
 adoption receipt and four-GET account preflight have completed; the latter reports
 `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`, an existing
 workers.dev subdomain and no target Worker. No resource, secret, endpoint, deployment,
-watcher startup, or automation change has been performed. Independent Dashboard Billing
-verification is still required; the user was clearly prompted before its login page opened.
-Missing VM CurrentUser DPAPI provisioning context
+watcher startup, or automation change has been performed. With explicit user authorization,
+Billing → Subscriptions was read through the existing signed-in personal Edge profile: no
+Workers/Workers Paid entry was listed, while active Teams Free Base and unrelated R2 Paid entries
+were present. This redacted observation neither labels the whole account Free nor authorizes relay
+use of R2; Workers Paid is separate from other Cloudflare product plans, and SQLite-backed Durable
+Objects remain supported on Workers Free with over-limit operations failing rather than billing.
+The scoped receipt validator/recorder and two-phase account-binding ticket are locally implemented
+and tested, but no real receipt has been issued, so the conditional write gate remains unsatisfied. Missing VM
+CurrentUser DPAPI provisioning context
 prevents any partial runtime-secret or placeholder Worker write. The two protected-history Git control
 repositories and minute poll remain the durable audit and fallback path.
 Resuming this runbook later requires an explicit decision and full

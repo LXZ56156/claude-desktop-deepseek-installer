@@ -140,7 +140,7 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   `operator/fast-lane/invoke-synthetic-rehearsal.ps1` 演练本地双 outbox。该演练必须为
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
-- sibling `cddsi-relay-infra` workspace 的 105/105 本地测试、52-file secret scan、guarded
+- sibling `cddsi-relay-infra` workspace 的 119/119 本地测试、58-file secret scan、guarded
   TypeScript typecheck、Wrangler dry-run，以及实际 workerd/SQLite/Hibernation forced-eviction
   integration 为独立 Cloudflare infra evidence；本地 runtime 证明 eviction 后 SQLite 恢复与原
   WebSocket 继续投递，但不证明生产 idle 调度或公网平台行为。它们不是本产品仓库的 L0-L4、

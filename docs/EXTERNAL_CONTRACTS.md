@@ -115,7 +115,7 @@ public control repository 的所有历史 envelope、ACK 与脱敏诊断对互�
 
 项目影响是把秒级通知实现限制在独立 sibling `cddsi-relay-infra` workspace：Worker、
 SQLite-backed `RelayRoom`、Wrangler/Node/TypeScript 和所有 Cloudflare 配置均不得进入产品
-安装器或 Release。当前精确本地 toolchain、105/105 离线测试、52-file secret scan、guarded
+安装器或 Release。当前精确本地 toolchain、119/119 离线测试、58-file secret scan、guarded
 typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wrangler dry-run 已
 通过；本地 forced eviction 不替代生产 idle scheduling 或公网平台证据。用户已授权 Free-only
 认证、创建、secret、部署与真实正负测试，并在知悉既有 encrypted keyring `default` profile 的
@@ -126,7 +126,11 @@ typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wr
 scope、既有 account subdomain 与目标 script 不存在，并报告
 `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
 BILLING_VERIFICATION_REQUIRED`；未创建 Worker/DO，未写 runtime secret，也没有 relay endpoint。
-独立 Dashboard Free 套餐确认仍未完成；未满足时不得产生部分资源。
+经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions 核对未列出 Workers/Workers
+Paid；active Teams Free Base 与无关 R2 Paid 不把整个账号分类为 Free，不升级 Workers，也不授权
+relay 使用 R2。Workers-only machine receipt validator/recorder 已在 infra 本地实现并通过测试，
+但没有签发真实 receipt；既有人工观察不会自动升级为机器证据，未满足写门时
+不得产生部分资源。SQLite-backed Durable Objects 支持 Workers Free，Free 超限后操作失败而非计费。
 
 ## Anthropic Third-Party Desktop
 
@@ -346,8 +350,9 @@ HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并
 WebSocket Hibernation 与本地 readback/dry-run gates；产品仓库的
 `operator/realtime-relay/realtime-relay-client.ps1` 只消费固定通知 schema 并调用固定 wake
 adapter。两者都仍是未激活的 coordination plane：既有 encrypted keyring `default` OAuth
-profile 已完成 generation-1 adoption 与 GET-only preflight，但 Billing verification、Host/VM
-DPAPI provisioning 与资源写入尚未完成；当前没有 Worker/DO、runtime secret 或 endpoint。现有 control repositories 继续作为
+profile 已完成 generation-1 adoption、GET-only preflight 与 Edge Billing dashboard 人工核对；
+Workers Paid 未列出，但 fresh machine-verifiable Billing receipt、Host/VM DPAPI provisioning
+与资源写入尚未完成；当前没有 Worker/DO、runtime secret 或 endpoint。现有 control repositories 继续作为
 持久审计与断线 fallback，automation 继续保持暂停。
 
 这些文件属于 OperatorCoordination development plane，不进入默认 bootstrap、

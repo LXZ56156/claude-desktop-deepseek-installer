@@ -38,12 +38,16 @@ realtime relay 工作流已完成本地离线实现与质量门，而不是继�
 
 `REALTIME_RELAY_PROPOSAL.md` 的事实级别为
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`。外部步骤 1–7 虽已获 Free-only
+BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
+NOT_PROVISIONED / NOT_ACTIVE`。外部步骤 1–7 虽已获 Free-only
 授权，且用户已明确允许直接复用既有 encrypted keyring `default` OAuth profile；generation-1
 adoption receipt 与 Cloudflare 四 GET preflight 已完成，确认单账号、既有 workers.dev subdomain、
 目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage
-model 都不是 subscription receipt；独立 Dashboard Billing 核验、resource/secret write 和部署仍未
-完成。需要 Dashboard 登录时已按用户要求先提示。该授权也不能启用 watcher、改变 automation
+model 都不是 subscription receipt。经用户授权复用个人 Edge 既有登录态的只读 Dashboard 核对已
+确认 Billing → Subscriptions 未列出 Workers/Workers Paid；active 的 Teams Free Base 与无关 R2
+Paid 不把整个账号变成 Free，也不授权 relay 使用 R2。machine receipt validator/recorder 已本地
+实现并测试但未签发真实 receipt，条件写门仍不满足，
+resource/secret write 和部署仍未完成。该授权也不能启用 watcher、改变 automation
 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
 本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，
 以后两者为准。

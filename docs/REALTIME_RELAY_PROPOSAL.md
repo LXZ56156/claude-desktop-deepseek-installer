@@ -1,7 +1,8 @@
 # Realtime Relay 提案
 
 状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
-AUTHENTICATED_READ_ONLY / BILLING_VERIFICATION_REQUIRED /
+AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
+WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
 NOT_PROVISIONED / NOT_ACTIVE**
 
 静态产品/Release 分类：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
@@ -270,7 +271,7 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 2. **RT1 — sibling infra repo（本地实现）**：独立 workspace 已建立 Worker/SQLite Durable
    Object/WebSocket Hibernation、声明式 `exports` lifecycle 合同、协议 kernel 和离线测试；没有
    remote 或生产 identity。授权后已安装精确 lock-bound Node/Wrangler/TypeScript 与 keyring helper，
-   105/105 离线测试、52-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
+   119/119 离线测试、58-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
    workerd/SQLite/Hibernation forced-eviction integration 均通过；owner-only crash recovery、
    过期 adoption receipt 原子续期、malformed binding fail-close 与 account-bound credential snapshot
    也已完成离线验证；既有 credential 已完成 generation-1 adoption 与固定四 GET preflight，但尚未
@@ -285,9 +286,11 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 4. **RT3 — 外部 provisioning（已授权、尚未开始资源写）**：用户已一次性授权 1–7 项并限定
    Free-only；在知悉既有 encrypted keyring `default` profile 的 29 项 scope 中有 25 项额外项后，
    又明确授权直接复用。真实精确 root binding-absence proof、owner-marked adoption receipt、GET-only
-   account/subdomain/collision preflight 已完成；独立 Billing verification、两组 relay identity/secret、
-   窄 route 和 runtime assertion 仍须依次过门；deploy credential 不得保存为 automation credential
-   或复用为 runtime secret。
+   account/subdomain/collision preflight 已完成；经用户授权复用个人 Edge 既有登录态的只读 Billing
+   → Subscriptions 核对也已完成，列表未出现 Workers/Workers Paid。用于固化该脱敏观察的 machine
+   receipt validator/recorder 已本地实现并测试但未签发真实 receipt，条件写门仍不满足；两组 relay
+   identity/secret、窄 route 和 runtime assertion
+   仍须依次过门。deploy credential 不得保存为 automation credential 或复用为 runtime secret。
 5. **RT4 — disposable 环境校准**：仅在重新 finalization 后，以非产品 synthetic payload
    验证正反权限、重放、掉线、顺序、限流和 fallback；两端 automation 先保持 PAUSED。
 6. **RT5 — canary 激活门**：独立审阅部署 receipt、客户端 hash、runtime assertion 和负向
@@ -348,8 +351,9 @@ Free-only，并要求浏览器登录时明确提示；该授权不改变逐阶�
    scope 语义无法识别或返回多个 account 仍必须停止，但额外项不再构成失败。receipt 过期只能在
    owner/root、canonical、无 reparse 且确实过期的状态下原子续期，并链接 previous-receipt hash；
    有效、伪造或未知状态不得覆盖。既有 profile 已完成 generation-1 adoption 与重验证，当前为
-   `AUTHENTICATED_READ_ONLY`。OAuth 复用未触发新登录；独立 Billing Dashboard 核验需要浏览器认证
-   时，已在打开登录页前明确提示用户。不得把创建全新 `cddsi-relay` 命名
+   `AUTHENTICATED_READ_ONLY`。OAuth 复用未触发新登录；随后经用户明确授权，只读复用其个人 Edge
+   既有登录态完成 Billing Dashboard 核对，没有执行新的登录或订阅变更。不得把创建全新
+   `cddsi-relay` 命名
    profile 设为前置条件。该 deploy OAuth grant 是 account 级 Worker 管理权限，并不天然缩窄到
    本 Worker；额外 scope 不扩大本任务允许的资源、写操作或后续激活范围。窄 lane 权限只由两组
    完全分离的 runtime HMAC capability 提供，deploy credential 与 runtime credential 不得复用；
@@ -371,19 +375,25 @@ Free-only，并要求浏览器登录时明确提示；该授权不改变逐阶�
 Worker 创建 draft，但不得产生第二个 Worker。精确 account subdomain 和最终 URL 只能由 credential
 采用后的固定 GET-only preflight 确定，不能预先猜测。授权不包含自有域名、DNS、公开 infra
 remote、系统服务、计划任务、
-付费升级或其他 Cloudflare 产品；出现多 account、付费/升级提示或额外资源计划必须停止并重新
+付费升级、R2 或其他 Cloudflare 产品；出现多 account、付费/升级提示或额外资源计划必须停止并重新
 请求决定。
 
 成本门只允许 Workers Free plan：当前官方额度包含 Worker/DO 每日请求限额，SQLite DO
-另有每日 row read/write 与总存储限额；超过 Free 限额应失败而不是自动付费。Workers Paid 是独立
-的 account 级订阅且当前最低为每月 5 美元，不在本授权内。WebSocket Hibernation 用于降低空闲
+另有每日 row read/write 与总存储限额，SQLite-backed Durable Objects 支持 Workers Free；超过
+Free 限额时操作失败而不是自动计费。Workers Paid 与其他 Cloudflare 产品计划分离，不在本授权内。
+2026-07-21 经用户授权只读查看 Billing → Subscriptions 时，列表未出现 Workers 或 Workers Paid，
+但列出 active 的 Teams Free Base 与无关的 R2 Paid；这不是“整个账号为 Free”的结论。R2 Paid 不
+隐式升级 Workers，也不授权本 relay 创建、读写或依赖 R2。仓库与测试 evidence 未记录 account id、
+邮箱、地址、付款方式、cookie、截图或其他身份明文。WebSocket Hibernation 用于降低空闲
 duration，但它不是零成本保证。本任务四项必需 scope 不含 Billing Read/Write；即使
 `workers_scripts:write` 允许读取 Workers account settings，也不能读取 Billing subscription。因此
 GET-only preflight 只把已知 usage model 作为配置枚举输出，并始终明确
 `BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`；`standard`、`bundled` 与 `unbound`
 都不是 Workers Free subscription receipt。实际 preflight 报告 `STANDARD`、既有 workers.dev
-subdomain 与目标 Worker 不存在。任何无法通过独立 Billing Dashboard 确认 Free 的情况都在首次
-secret bulk/placeholder Worker 写入前停止，不得扩大 scope 或猜测。
+subdomain 与目标 Worker 不存在。Dashboard 人工观察仍不是 machine receipt；其 validator/recorder、
+protected ACL、fresh observation 与两阶段账号绑定已在 infra 本地实现并测试，但没有签发真实 receipt，
+因此条件写门仍不满足。任何无法证明 Free-only 条件的情况都在首次 secret bulk/
+placeholder Worker 写入前停止，不得扩大 scope 或猜测。
 
 初始 provisioning 还要求同一受保护 parent 先保留 HostCoordinator 与 disposable VM 两个正确
 CurrentUser 上的匹配 DPAPI 客户端副本，再一次性向 Cloudflare 写入两项 secret。当前没有可用的
@@ -428,10 +438,11 @@ assertion 发生漂移，默认动作是 fail closed 和回退，而不是自动
   新 bundle、automation binding、remote、PR CI 和 retained receipt 精确一致；
 - 用户对外部 provisioning 和最终激活分别作出所需的明确确认。
 
-当前本地离线实现和质量门已通过，外部授权仅限 Free-only；OAuth adoption 与只读 preflight 已
-完成，但 Billing、provisioning 与激活条件仍未证明。本文状态保持 **LOCAL_GATES_PASSED /
-EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE**。
+当前本地离线实现和质量门已通过，外部授权仅限 Free-only；OAuth adoption、只读 preflight 与
+脱敏 Dashboard 人工核对已完成，但 machine receipt 仅完成实现而未签发，条件写门、provisioning 与激活条件仍未
+证明。本文状态保持 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
+AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
+WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED / NOT_PROVISIONED / NOT_ACTIVE**。
 
 ## 官方技术参考
 
