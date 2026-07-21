@@ -6,6 +6,8 @@
         . (Join-Path $script:RepoRoot 'operator\fast-lane\invoke-synthetic-rehearsal.ps1')
         $script:RunnerPath = Join-Path $script:RepoRoot 'operator\fast-lane\invoke-git-outbox.ps1'
         . $script:RunnerPath
+        $script:ProductionBoundedGitProcess =
+            (Get-Command Invoke-CddsiFastLaneBoundedGitProcess -CommandType Function -ErrorAction Stop).ScriptBlock
         $script:FixtureRoots = [Collections.ArrayList]::new()
         $capturedFunctionDefinitions = [Collections.Generic.List[string]]::new()
         $runnerTokens = $null; $runnerParseErrors = $null
@@ -151,10 +153,205 @@
 
         function Invoke-FixtureGit {
             param([Parameter(Mandatory = $true)][string[]]$Arguments)
-            $output = & $script:GitExecutable -c core.hooksPath=NUL -c credential.helper= `
-                -c gc.auto=0 -c maintenance.auto=false @Arguments 2>&1
-            if ($LASTEXITCODE -ne 0) { throw ('Fixture Git failed: ' + (($output | ForEach-Object { [string]$_ }) -join ' ')) }
-            return @($output | ForEach-Object { [string]$_ })
+
+            $candidatePaths = [Collections.Generic.List[string]]::new()
+            foreach ($argument in @($Arguments)) {
+                if ($argument.StartsWith('--git-dir=', [StringComparison]::Ordinal)) {
+                    $candidatePaths.Add($argument.Substring('--git-dir='.Length))
+                }
+                elseif ([IO.Path]::IsPathRooted($argument)) { $candidatePaths.Add($argument) }
+            }
+            $ownerRoots = @($script:FixtureRoots | Where-Object {
+                $root = [string]$_
+                @($candidatePaths | Where-Object {
+                    Test-CddsiFastLanePathWithinRoot -Path $_ -Root $root
+                }).Count -gt 0
+            })
+            if ($ownerRoots.Count -ne 1) { throw 'FIXTURE_GIT_OWNER_ROOT_INVALID' }
+            $workingDirectory = [IO.Path]::GetFullPath([string]$ownerRoots[0])
+            $environment = @{
+                GIT_CONFIG_NOSYSTEM = '1'; GIT_CONFIG_GLOBAL = 'NUL'
+                GIT_TERMINAL_PROMPT = '0'; GCM_INTERACTIVE = 'Never'
+                HOME = $workingDirectory; USERPROFILE = $workingDirectory
+                TEMP = $workingDirectory; TMP = $workingDirectory; LC_ALL = 'C'
+            }
+            $gitArguments = @(
+                '-c', 'core.hooksPath=NUL', '-c', 'credential.helper=',
+                '-c', 'gc.auto=0', '-c', 'maintenance.auto=false'
+            ) + @($Arguments)
+            $result = Invoke-DeterministicFixtureGitProcess `
+                -Executable $script:GitExecutable -Arguments $gitArguments `
+                -WorkingDirectory $workingDirectory -Environment $environment `
+                -StandardInput $null -TimeoutMilliseconds 2000 -MaximumOutputBytes 1048576
+            if ($result.Truncated) { throw 'Fixture Git output exceeded its test bound.' }
+            if ($result.ExitCode -ne 0) {
+                throw ('Fixture Git failed: ' + $result.StandardOutput.Replace("`r", ' ').Replace("`n", ' '))
+            }
+            if ([string]::IsNullOrEmpty($result.StandardOutput)) { return @() }
+            return @($result.StandardOutput.TrimEnd("`r", "`n") -split "`n" | ForEach-Object {
+                $_.TrimEnd("`r")
+            })
+        }
+
+        $script:DeterministicGitArgumentTrace = [Collections.Generic.List[object]]::new()
+        $script:DeterministicGitTimeoutTrace = [Collections.Generic.List[int]]::new()
+        $script:SyntheticJobSentinelCount = 0
+
+        function Invoke-DeterministicFixtureGitProcess {
+            param(
+                [Parameter(Mandatory = $true)][string]$Executable,
+                [Parameter(Mandatory = $true)][string[]]$Arguments,
+                [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+                [Parameter(Mandatory = $true)][hashtable]$Environment,
+                [AllowNull()][string]$StandardInput,
+                [Parameter(Mandatory = $true)][int]$TimeoutMilliseconds,
+                [Parameter(Mandatory = $true)][int]$MaximumOutputBytes
+            )
+
+            if (-not [string]::IsNullOrEmpty($StandardInput)) {
+                throw 'DETERMINISTIC_GIT_STANDARD_INPUT_UNSUPPORTED'
+            }
+            [void]$script:DeterministicGitArgumentTrace.Add(
+                [object]([string[]]@($Arguments)))
+            [void]$script:DeterministicGitTimeoutTrace.Add($TimeoutMilliseconds)
+            if (
+                $Executable -cne $script:GitExecutable -or
+                $TimeoutMilliseconds -lt 1 -or $TimeoutMilliseconds -gt 2000
+            ) { throw 'DETERMINISTIC_GIT_GRANT_OR_REQUESTED_TIMEOUT_INVALID' }
+
+            $fullWorkingDirectory = [IO.Path]::GetFullPath($WorkingDirectory)
+            $ownerRoots = @($script:FixtureRoots | Where-Object {
+                Test-CddsiFastLanePathWithinRoot -Path $fullWorkingDirectory -Root ([string]$_)
+            })
+            if ($ownerRoots.Count -ne 1 -or
+                -not (Test-CddsiFastLanePathWithoutReparsePoint -Path $fullWorkingDirectory)) {
+                throw 'DETERMINISTIC_GIT_OWNER_ROOT_INVALID'
+            }
+            $ownerRoot = [IO.Path]::GetFullPath([string]$ownerRoots[0]).TrimEnd(
+                [IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+            $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd(
+                [IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+            $ownerParent = [IO.Directory]::GetParent($ownerRoot)
+            if (
+                $null -eq $ownerParent -or
+                -not $ownerParent.FullName.Equals($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                [IO.Path]::GetFileName($ownerRoot) -notmatch '^cddsi-test-[a-f0-9]{32}$'
+            ) { throw 'DETERMINISTIC_GIT_OWNER_ROOT_INVALID' }
+            $owner = Read-CddsiFastLaneCanonicalFile `
+                -Path (Join-Path $ownerRoot '.cddsi-owner.json') -MaximumBytes 8192
+            $expectedOwner = [pscustomobject][ordered]@{
+                SchemaVersion = 1; ContractVersion = 'cddsi-fast-lane-local-transport-owner-v1'
+                Owner = 'CDDsiFastLaneGitOutboxTests'; SyntheticOnly = $true
+            }
+            if ((ConvertTo-CddsiVmTestRelayCanonicalJson $owner) -cne
+                (ConvertTo-CddsiVmTestRelayCanonicalJson $expectedOwner)) {
+                throw 'DETERMINISTIC_GIT_OWNER_ROOT_INVALID'
+            }
+
+            foreach ($argument in @($Arguments)) {
+                $candidate = $null
+                if ($argument.StartsWith('--git-dir=', [StringComparison]::Ordinal)) {
+                    $candidate = $argument.Substring('--git-dir='.Length)
+                }
+                elseif ([IO.Path]::IsPathRooted($argument)) { $candidate = $argument }
+                if ($null -ne $candidate -and
+                    -not (Test-CddsiFastLanePathWithinRoot -Path $candidate -Root $ownerRoot)) {
+                    throw 'DETERMINISTIC_GIT_ARGUMENT_ESCAPES_OWNER_ROOT'
+                }
+            }
+            foreach ($name in @('HOME', 'USERPROFILE', 'TEMP', 'TMP', 'GIT_INDEX_FILE')) {
+                if ($Environment.ContainsKey($name) -and
+                    -not (Test-CddsiFastLanePathWithinRoot -Path ([string]$Environment[$name]) -Root $ownerRoot)) {
+                    throw 'DETERMINISTIC_GIT_ENVIRONMENT_ESCAPES_OWNER_ROOT'
+                }
+            }
+
+            $safeGitEnvironment = @{
+                GIT_ALLOW_PROTOCOL = 'file'; GIT_CONFIG_COUNT = '0'
+                GIT_CONFIG_GLOBAL = 'NUL'; GIT_CONFIG_NOSYSTEM = '1'
+                GIT_CONFIG_SYSTEM = 'NUL'; GIT_PROTOCOL_FROM_USER = '0'
+                GIT_TERMINAL_PROMPT = '0'; GCM_INTERACTIVE = 'Never'
+                GIT_PAGER = 'cat'; PAGER = 'cat'
+            }
+            $ambientGitNames = @(Get-ChildItem -Path Env: | Where-Object {
+                $_.Name -match '^(?i:(?:GIT|GCM|SSH)_)' -or
+                $_.Name -match '^(?i:(?:ALL|HTTP|HTTPS|NO)_PROXY)$'
+            } | ForEach-Object { [string]$_.Name })
+            $managedNames = @(
+                @($Environment.Keys) + @($safeGitEnvironment.Keys) + $ambientGitNames + @(
+                    'COMSPEC', 'HOME', 'LC_ALL', 'PATH', 'PATHEXT',
+                    'TEMP', 'TMP', 'USERPROFILE'
+                )
+            ) | Sort-Object -Unique
+            $savedEnvironment = [ordered]@{}
+            foreach ($name in $managedNames) {
+                $item = Get-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
+                $savedEnvironment[$name] = [pscustomobject]@{
+                    Exists = $null -ne $item
+                    Value = $(if ($null -ne $item) { [string]$item.Value } else { $null })
+                }
+            }
+            $lastExitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global `
+                -ErrorAction SilentlyContinue
+            $lastExitCodeExisted = $null -ne $lastExitCodeVariable
+            $previousLastExitCode = if ($lastExitCodeExisted) {
+                $lastExitCodeVariable.Value
+            } else { $null }
+            try {
+                foreach ($name in $managedNames) {
+                    Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
+                }
+                foreach ($entry in $Environment.GetEnumerator()) {
+                    Set-Item -LiteralPath ('Env:' + [string]$entry.Key) -Value ([string]$entry.Value)
+                }
+                foreach ($entry in $safeGitEnvironment.GetEnumerator()) {
+                    Set-Item -LiteralPath ('Env:' + [string]$entry.Key) -Value ([string]$entry.Value)
+                }
+                $fixtureArguments = @(
+                    '--no-pager', '-c', 'protocol.allow=never',
+                    '-c', 'protocol.file.allow=always'
+                ) + @($Arguments)
+                Push-Location -LiteralPath $fullWorkingDirectory
+                try {
+                    $previousErrorActionPreference = $ErrorActionPreference
+                    $ErrorActionPreference = 'Continue'
+                    try {
+                        $output = @(& $script:GitExecutable @fixtureArguments 2>&1)
+                        $exitCode = [int]$LASTEXITCODE
+                    }
+                    finally { $ErrorActionPreference = $previousErrorActionPreference }
+                }
+                finally { Pop-Location }
+            }
+            finally {
+                foreach ($name in $managedNames) {
+                    Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
+                }
+                foreach ($name in $savedEnvironment.Keys) {
+                    if ($savedEnvironment[$name].Exists) {
+                        Set-Item -LiteralPath ('Env:' + $name) -Value $savedEnvironment[$name].Value
+                    }
+                }
+                if ($lastExitCodeExisted) {
+                    Set-Variable -Name LASTEXITCODE -Scope Global -Value $previousLastExitCode
+                }
+                else {
+                    Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+                }
+            }
+
+            $text = (@($output | ForEach-Object { [string]$_ }) -join "`n")
+            if ($output.Count -gt 0) { $text += "`n" }
+            $maximumCharacters = [Math]::Max(256, [int]($MaximumOutputBytes / 2))
+            $truncated = $text.Length -gt $maximumCharacters
+            if ($truncated) { $text = $text.Substring(0, $maximumCharacters) }
+            $script:SyntheticJobSentinelCount++
+            return [pscustomobject]@{
+                ExitCode = $exitCode; TimedOut = $false; Truncated = $truncated
+                JobAssigned = $true; ProcessTreeTerminated = $false
+                StandardOutput = $text; StandardError = ''
+                SyntheticJobSentinel = $true
+            }
         }
 
         function Initialize-OutboxFixtureTemplate {
@@ -1115,9 +1312,26 @@
             throw 'GIT_OUTBOX_FIXTURE_RETENTION_NOT_BOUNDED'
         }
         $script:FixtureRootCountBeforeTest = $script:FixtureRoots.Count
+        $script:DeterministicGitArgumentTrace.Clear()
+        $script:DeterministicGitTimeoutTrace.Clear()
+        $script:SyntheticJobSentinelCount = 0
+        # Protocol/state tests use only the owner-marked local Git fixture and
+        # do not make wall-clock timing an assertion. The dedicated process-
+        # tree test below calls the captured production seam with the real
+        # two-second bound and supplies the Job Object evidence.
+        Mock Invoke-CddsiFastLaneBoundedGitProcess {
+            Invoke-DeterministicFixtureGitProcess -Executable $Executable `
+                -Arguments $Arguments -WorkingDirectory $WorkingDirectory `
+                -Environment $Environment -StandardInput $StandardInput `
+                -TimeoutMilliseconds $TimeoutMilliseconds `
+                -MaximumOutputBytes $MaximumOutputBytes
+        }
     }
 
     AfterEach {
+        if ($script:SyntheticJobSentinelCount -ne $script:DeterministicGitArgumentTrace.Count) {
+            throw 'DETERMINISTIC_GIT_SYNTHETIC_JOB_SENTINEL_MISMATCH'
+        }
         $cleanupFailures = [Collections.Generic.List[string]]::new()
         for ($index = $script:FixtureRoots.Count - 1;
             $index -ge $script:FixtureRootCountBeforeTest; $index--) {
@@ -1405,6 +1619,12 @@
         $first.ProcessedMessageCount | Should -Be 1
         $first.MoreAvailable | Should -BeTrue
         $first.RelayState.ActiveStatus | Should -BeExactly 'TEST_REQUESTED'
+        $fetches = @($script:DeterministicGitArgumentTrace | Where-Object { $_ -ccontains 'fetch' })
+        $fetches.Count | Should -Be 1
+        $fetches[0] -ccontains $fixture.Remote | Should -BeTrue
+        $fetches[0] -ccontains 'origin' | Should -BeFalse
+        @($script:DeterministicGitTimeoutTrace | Where-Object { $_ -gt 2000 }).Count |
+            Should -Be 0
         $second = Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live -AcknowledgeOperatorPlaneLive -MaximumMessageCount 1 @parameters
         $second.ProcessedMessageCount | Should -Be 1
         $second.MoreAvailable | Should -BeFalse
@@ -1836,9 +2056,35 @@
         $runnerSource | Should -Match 'bool outputJoined'
         $runnerSource | Should -Match 'bool errorJoined'
         $runnerSource | Should -Match 'GIT_PROCESS_TREE_QUIESCENCE_FORCED'
+        $runnerSource | Should -Match 'function Invoke-CddsiFastLaneBoundedGitProcess'
+        $runnerSource | Should -Match 'return \[Cddsi\.FastLane\.BoundedProcessRunner\]::Run\('
+        $runnerSource | Should -Match '\$result = Invoke-CddsiFastLaneBoundedGitProcess'
+
+        $wiringScript = Join-Path $fixture.Root 'seam wiring probe.ps1'
+        [IO.File]::WriteAllText(
+            $wiringScript,
+            "param([string]`$Value)`r`nStart-Sleep -Milliseconds 250`r`n[Console]::Out.Write(`$Value)`r`n",
+            (New-Object Text.UTF8Encoding($true)))
+        $wiringValue = 'value with spaces and a "quoted" segment'
+        $wiringEnvironment = @{
+            SystemRoot = $systemRoot; WINDIR = $systemRoot
+            HOME = $fixture.Root; USERPROFILE = $fixture.Root
+            TEMP = $fixture.Root; TMP = $fixture.Root
+        }
+        $wiring = & $script:ProductionBoundedGitProcess `
+            -Executable (Join-Path $systemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+            -Arguments @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $wiringScript, $wiringValue) `
+            -WorkingDirectory $fixture.Root -Environment $wiringEnvironment `
+            -StandardInput $null -TimeoutMilliseconds 2000 -MaximumOutputBytes 4096
+        $wiring.ExitCode | Should -Be 0
+        $wiring.TimedOut | Should -BeFalse
+        $wiring.JobAssigned | Should -BeTrue
+        $wiring.ProcessTreeTerminated | Should -BeFalse
+        $wiring.StandardOutput | Should -BeExactly $wiringValue
+
         $failureContext = @{
             StateRoot = $fixture.Root; GitExecutable = $script:GitExecutable
-            MaximumRuntimeSeconds = 10; MaximumGitCommandSeconds = 10; MaximumOutputBytes = 4096
+            MaximumRuntimeSeconds = 10; MaximumGitCommandSeconds = 2; MaximumOutputBytes = 4096
             Stopwatch = [Diagnostics.Stopwatch]::StartNew(); TransportKind = 'LocalFile'
         }
         $failureMessage = $null
@@ -1850,16 +2096,16 @@
         $failureMessage | Should -Match '^GIT_COMMAND_FAILED:1:[-0-9]+$'
         $failureMessage | Should -Not -Match ([regex]::Escape($fixture.Root))
         $probeCode = 'echo %GIT_CONFIG_COUNT%^|%GIT_SSH_COMMAND%^|%HTTPS_PROXY%^|%SAFE_VALUE%'
-        $probeArguments = (@('/d', '/c', $probeCode) |
-            ForEach-Object { ConvertTo-CddsiFastLaneGitQuotedArgument $_ }) -join ' '
         $cleanEnvironment = @{
             SystemRoot = $systemRoot
             WINDIR = $systemRoot
             ComSpec = $commandProcessor
             SAFE_VALUE = 'clean'
         }
-        $probe = [Cddsi.FastLane.BoundedProcessRunner]::Run(
-            $commandProcessor, $probeArguments, $fixture.Root, $cleanEnvironment, $null, 10000, 4096)
+        $probe = & $script:ProductionBoundedGitProcess `
+            -Executable $commandProcessor -Arguments @('/d', '/c', $probeCode) `
+            -WorkingDirectory $fixture.Root -Environment $cleanEnvironment `
+            -StandardInput $null -TimeoutMilliseconds 10000 -MaximumOutputBytes 4096
         $probe.ExitCode | Should -Be 0
         $probe.JobAssigned | Should -BeTrue
         $probe.StandardOutput.Trim() | Should -BeExactly '%GIT_CONFIG_COUNT%|%GIT_SSH_COMMAND%|%HTTPS_PROXY%|clean'
@@ -1874,10 +2120,10 @@
             "`"`r`n`"%SystemRoot%\System32\ping.exe`" -n 31 127.0.0.1 >NUL`r`n"
         [IO.File]::WriteAllText($childScript, $childBody, [Text.Encoding]::ASCII)
         [IO.File]::WriteAllText($parentScript, $parentBody, [Text.Encoding]::ASCII)
-        $treeArguments = (@('/d', '/c', 'call', $parentScript) |
-            ForEach-Object { ConvertTo-CddsiFastLaneGitQuotedArgument $_ }) -join ' '
-        $tree = [Cddsi.FastLane.BoundedProcessRunner]::Run(
-            $commandProcessor, $treeArguments, $treeWorkingRoot, $cleanEnvironment, $null, 2000, 4096)
+        $tree = & $script:ProductionBoundedGitProcess `
+            -Executable $commandProcessor -Arguments @('/d', '/c', 'call', $parentScript) `
+            -WorkingDirectory $treeWorkingRoot -Environment $cleanEnvironment `
+            -StandardInput $null -TimeoutMilliseconds 2000 -MaximumOutputBytes 4096
         $tree.TimedOut | Should -BeTrue
         $tree.JobAssigned | Should -BeTrue
         $tree.ProcessTreeTerminated | Should -BeTrue
@@ -1899,11 +2145,10 @@
             "`"`r`nexit /b 0`r`n"
         [IO.File]::WriteAllText($normalChildScript, $normalChildBody, [Text.Encoding]::ASCII)
         [IO.File]::WriteAllText($normalParentScript, $normalParentBody, [Text.Encoding]::ASCII)
-        $normalArguments = (@('/d', '/c', 'call', $normalParentScript) |
-            ForEach-Object { ConvertTo-CddsiFastLaneGitQuotedArgument $_ }) -join ' '
-        $normal = [Cddsi.FastLane.BoundedProcessRunner]::Run(
-            $commandProcessor, $normalArguments, $normalWorkingRoot,
-            $cleanEnvironment, $null, 10000, 4096)
+        $normal = & $script:ProductionBoundedGitProcess `
+            -Executable $commandProcessor -Arguments @('/d', '/c', 'call', $normalParentScript) `
+            -WorkingDirectory $normalWorkingRoot -Environment $cleanEnvironment `
+            -StandardInput $null -TimeoutMilliseconds 10000 -MaximumOutputBytes 4096
         $normal.ExitCode | Should -Be 0
         $normal.TimedOut | Should -BeFalse
         $normal.JobAssigned | Should -BeTrue

@@ -375,6 +375,25 @@ namespace Cddsi.FastLane {
 '@
 }
 
+function Invoke-CddsiFastLaneBoundedGitProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][hashtable]$Environment,
+        [AllowNull()][string]$StandardInput,
+        [Parameter(Mandatory = $true)][int]$TimeoutMilliseconds,
+        [Parameter(Mandatory = $true)][int]$MaximumOutputBytes
+    )
+
+    $argumentText = (@($Arguments | ForEach-Object {
+        ConvertTo-CddsiFastLaneGitQuotedArgument -Value $_
+    }) -join ' ')
+    return [Cddsi.FastLane.BoundedProcessRunner]::Run(
+        $Executable, $argumentText, $WorkingDirectory, $Environment,
+        $StandardInput, $TimeoutMilliseconds, $MaximumOutputBytes)
+}
+
 function Invoke-CddsiFastLaneGitCommand {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Context,
@@ -404,7 +423,6 @@ function Invoke-CddsiFastLaneGitCommand {
         $allArguments += @('-c', ('core.sshCommand=' + [string]$Context.SshCommand))
     }
     $allArguments += $Arguments
-    $argumentText = (@($allArguments | ForEach-Object { ConvertTo-CddsiFastLaneGitQuotedArgument -Value $_ }) -join ' ')
     $environment = @{
         SystemRoot          = [Environment]::GetEnvironmentVariable('SystemRoot', 'Machine')
         WINDIR              = [Environment]::GetEnvironmentVariable('WINDIR', 'Machine')
@@ -425,9 +443,10 @@ function Invoke-CddsiFastLaneGitCommand {
     $Context.GitInvocationCount = [int]$Context.GitInvocationCount + 1
     if ($OperatorTransport) { $Context.OperatorGitTransportCount = [int]$Context.OperatorGitTransportCount + 1 }
     if ($LocalMutation) { $Context.LocalStateMutationCount = [int]$Context.LocalStateMutationCount + 1 }
-    $result = [Cddsi.FastLane.BoundedProcessRunner]::Run(
-        $Context.GitExecutable, $argumentText, $Context.StateRoot, $environment,
-        $StandardInput, $commandTimeout, $Context.MaximumOutputBytes)
+    $result = Invoke-CddsiFastLaneBoundedGitProcess -Executable $Context.GitExecutable `
+        -Arguments $allArguments -WorkingDirectory $Context.StateRoot `
+        -Environment $environment -StandardInput $StandardInput `
+        -TimeoutMilliseconds $commandTimeout -MaximumOutputBytes $Context.MaximumOutputBytes
     if (-not $result.JobAssigned) { throw 'PROCESS_JOB_ASSIGNMENT_REQUIRED' }
     $Context.JobAssignmentCount = [int]$Context.JobAssignmentCount + 1
     if ($result.ProcessTreeTerminated) { $Context.ProcessTreeTerminationCount = [int]$Context.ProcessTreeTerminationCount + 1 }
@@ -1253,29 +1272,27 @@ function Get-CddsiFastLaneGitRepositoryPath {
 function Initialize-CddsiFastLaneLocalGitRepository {
     param(
         [hashtable]$Context,
-        [string]$RepositoryPath,
-        [string]$RepositoryUri
+        [string]$RepositoryPath
     )
     if (-not [IO.Directory]::Exists($RepositoryPath)) {
         [void](Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments @('init', '--bare', '--quiet', $RepositoryPath) -LocalMutation)
-        [void](Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments @(('--git-dir=' + $RepositoryPath), 'remote', 'add', 'origin', $RepositoryUri) -LocalMutation)
     }
-    $remote = Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments @(('--git-dir=' + $RepositoryPath), 'remote', 'get-url', 'origin')
-    if ($remote.StandardOutput.TrimEnd("`r", "`n") -cne $RepositoryUri) { throw 'LOCAL_REMOTE_BINDING_MISMATCH' }
 }
 
 function Get-CddsiFastLaneRemoteSnapshot {
     param(
         [hashtable]$Context,
         [string]$RepositoryPath,
+        [string]$RepositoryUri,
         [string]$RemoteRef,
         [string]$ExpectedGenesisCommit,
         [AllowNull()][string]$AcceptedRemoteHead
     )
     $stagingRef = 'refs/cddsi/remote-snapshot'
-    [void](Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments @(('--git-dir=' + $RepositoryPath), 'update-ref', '-d', $stagingRef) -LocalMutation)
     [void](Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments @(
-        ('--git-dir=' + $RepositoryPath), 'fetch', '--quiet', '--no-tags', 'origin', ($RemoteRef + ':' + $stagingRef)
+        ('--git-dir=' + $RepositoryPath), 'fetch', '--quiet', '--no-tags',
+        '--no-write-fetch-head', '--no-recurse-submodules',
+        $RepositoryUri, ('+' + $RemoteRef + ':' + $stagingRef)
     ) -OperatorTransport -LocalMutation)
     $headResult = Invoke-CddsiFastLaneGitCommand -Context $Context -Arguments @(('--git-dir=' + $RepositoryPath), 'rev-parse', '--verify', $stagingRef)
     $head = $headResult.StandardOutput.Trim()
@@ -1787,10 +1804,13 @@ function Invoke-CddsiFastLaneGitOutbox {
             LocalStateMutationCount = $(if ($rootExisted) { 0 } else { 4 })
             TransportKind = $transportProfile.Kind; SshCommand = $sshCommand
         }
-        $repositoryPath = Get-CddsiFastLaneGitRepositoryPath $fullStateRoot $RepositoryIdentity
-        Initialize-CddsiFastLaneLocalGitRepository $context $repositoryPath $RepositoryUri
         $uriSha = Get-CddsiSupplyChainTextBindingToken -Text $RepositoryUri
         $entry = Get-CddsiFastLaneRepositoryEntry $state $RepositoryIdentity
+        if ($null -ne $entry -and $entry.RepositoryUriSha256 -cne $uriSha) {
+            throw 'LOCAL_REMOTE_BINDING_MISMATCH'
+        }
+        $repositoryPath = Get-CddsiFastLaneGitRepositoryPath $fullStateRoot $RepositoryIdentity
+        Initialize-CddsiFastLaneLocalGitRepository $context $repositoryPath
         $receiptRotated = $false
         if ($null -ne $entry) {
             if (
@@ -1837,7 +1857,8 @@ function Invoke-CddsiFastLaneGitOutbox {
             }
         }
         $acceptedHead = if ($null -eq $entry) { $null } else { [string]$entry.AcceptedRemoteHead }
-        $snapshot = Get-CddsiFastLaneRemoteSnapshot $context $repositoryPath $RemoteRef $ExpectedGenesisCommit $acceptedHead
+        $snapshot = Get-CddsiFastLaneRemoteSnapshot $context $repositoryPath $RepositoryUri `
+            $RemoteRef $ExpectedGenesisCommit $acceptedHead
         if ($null -eq $entry) {
             if ($null -ne $ProtectionEvidence.PreviousReceiptSha256) { throw 'PROTECTION_RECEIPT_GENESIS_PREDECESSOR_FORBIDDEN' }
             $entry = [pscustomobject][ordered]@{
@@ -2071,7 +2092,7 @@ function Invoke-CddsiFastLaneGitOutbox {
             $publishedCommit = New-CddsiFastLaneGitCommit $context $repositoryPath $snapshot.Head `
                 ([IO.Path]::GetFileName($publishedPath)) $canonicalMessage
             $remoteCheck = Invoke-CddsiFastLaneGitCommand -Context $context -Arguments @(
-                ('--git-dir=' + $repositoryPath), 'ls-remote', '--refs', 'origin', $RemoteRef
+                ('--git-dir=' + $repositoryPath), 'ls-remote', '--refs', $RepositoryUri, $RemoteRef
             ) -OperatorTransport
             $remoteParts = @($remoteCheck.StandardOutput.Trim() -split "\s+")
             if ($remoteParts.Count -ne 2 -or $remoteParts[0] -cne $ExpectedRemoteHead -or $remoteParts[1] -cne $RemoteRef) {
@@ -2095,11 +2116,12 @@ function Invoke-CddsiFastLaneGitOutbox {
             Write-CddsiFastLaneCanonicalFile -Path $pendingPublishPath -Value $journal -CreateOnly
             $context.LocalStateMutationCount = [int]$context.LocalStateMutationCount + 1
             [void](Invoke-CddsiFastLaneGitCommand -Context $context -Arguments @(
-                ('--git-dir=' + $repositoryPath), 'push', '--porcelain', 'origin', ($publishedCommit + ':' + $RemoteRef)
+                ('--git-dir=' + $repositoryPath), 'push', '--porcelain', $RepositoryUri,
+                ($publishedCommit + ':' + $RemoteRef)
             ) -OperatorTransport)
             $context.OperatorRemoteMutationCount = [int]$context.OperatorRemoteMutationCount + 1
             $verify = Invoke-CddsiFastLaneGitCommand -Context $context -Arguments @(
-                ('--git-dir=' + $repositoryPath), 'ls-remote', '--refs', 'origin', $RemoteRef
+                ('--git-dir=' + $repositoryPath), 'ls-remote', '--refs', $RepositoryUri, $RemoteRef
             ) -OperatorTransport
             $verifyParts = @($verify.StandardOutput.Trim() -split "\s+")
             if ($verifyParts.Count -ne 2 -or $verifyParts[0] -cne $publishedCommit) { throw 'PUBLISHED_REMOTE_HEAD_MISMATCH' }
