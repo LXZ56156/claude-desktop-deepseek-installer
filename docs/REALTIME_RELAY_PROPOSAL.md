@@ -1,6 +1,10 @@
 # Realtime Relay 提案
 
-状态：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
+状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
+NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE**
+
+静态产品/Release 分类：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
+（DevelopmentOnly；外部授权与认证进度只由上方动态状态及 `docs/HANDOFF.md` 表达）。
 
 本文记录 Fast Lane 加速器的本地离线架构与实现合同，不是部署回执、运行授权或当前状态入口。
 当前状态、暂停边界和下一工作包始终以 `docs/HANDOFF.md` 顶部及实际机器证据为准。
@@ -263,17 +267,24 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 1. **RT0 — 设计冻结（本地完成）**：评审威胁模型、schema、canonicalization、lane ACL、
    TTL、rate limit、fallback 和成本上限；状态保持 NOT_PROVISIONED。
 2. **RT1 — sibling infra repo（本地实现）**：独立 workspace 已建立 Worker/SQLite Durable
-   Object/WebSocket Hibernation、声明式 `exports` lifecycle 合同、协议 kernel 和零依赖离线测试；没有 remote、生产
-   identity、npm 获取、Wrangler 登录或部署。Wrangler/Miniflare runtime integration 和 dry-run
-   必须在集中授权后以固定版本补齐。
+   Object/WebSocket Hibernation、声明式 `exports` lifecycle 合同、协议 kernel 和离线测试；没有
+   remote 或生产 identity。授权后已安装精确 lock-bound Node/Wrangler/TypeScript 与 keyring helper，
+   105/105 离线测试、52-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
+   workerd/SQLite/Hibernation forced-eviction integration 均通过；owner-only crash recovery、
+   过期 adoption receipt 原子续期、malformed binding fail-close 与 account-bound credential snapshot
+   也已完成离线验证；既有 credential 尚未被本任务采用，也尚未部署。本地 forced eviction 不替代生产 Cloudflare 的 idle scheduling、平台日志
+   或公网 Hibernation evidence。
 3. **RT2 — 本地客户端合同（本地实现）**：DevelopmentOnly PowerShell 客户端已实现
    `ClientWebSocket` adapter、独立 writer publisher、fixed Codex resume/wake proof、固定
    validator、ACK 状态机、owner-marked state、重连/resume 与 fake transport，以及受 CAS/原子
    写保护的 DPAPI CurrentUser credential 创建/轮换入口；
    TestSafe/DryRun 的宿主真实网络、registry、credential、process 及产品 Live 必须继续为 0，
    真实 DPAPI/网络不属于离线测试证据。
-4. **RT3 — 外部 provisioning**：在用户一次明确授权后创建 Cloudflare 资源、两组 relay
-   identity/secret、窄 route 和 runtime assertion；bootstrap-admin 凭据不得保存或复用。
+4. **RT3 — 外部 provisioning（已授权、尚未开始资源写）**：用户已一次性授权 1–7 项并限定
+   Free-only；在知悉既有 encrypted keyring `default` profile 的 29 项 scope 中有 25 项额外项后，
+   又明确授权直接复用。真实精确 root binding-absence proof、owner-marked adoption receipt、GET-only
+   account/subdomain/collision preflight、两组 relay identity/secret、窄 route 和 runtime assertion
+   仍须依次过门；deploy credential 不得保存为 automation credential 或复用为 runtime secret。
 5. **RT4 — disposable 环境校准**：仅在重新 finalization 后，以非产品 synthetic payload
    验证正反权限、重放、掉线、顺序、限流和 fallback；两端 automation 先保持 PAUSED。
 6. **RT5 — canary 激活门**：独立审阅部署 receipt、客户端 hash、runtime assertion 和负向
@@ -307,35 +318,38 @@ parser/schema/security helper 同时在 Windows PowerShell 5.1 运行。不得�
 宿主机通过产品代码探测公网、Credential Manager、真实 automation 或保护资源。负向测试不能
 通过放宽 timeout、接受不同错误或跳过断言来“稳定”。外部 Cloudflare 测试之前必须先通过
 零依赖协议/状态机测试、产品 focused tests、全仓质量门、Release Simulation DryRun、secret
-scan 与 Wrangler 可审阅 dry-run；Wrangler/Miniflare 尚未固定安装时不得伪称 runtime integration
-已通过。
+scan 与 Wrangler 可审阅 dry-run。当前这些离线门已通过，但不得把 dry-run 伪称为 runtime
+integration 或真实 Cloudflare evidence。
 
 ## 外部授权点
 
-以下动作均不由本地实现授权。离线门完成后必须一次性向用户列明资源、URL、权限、套餐/成本、
-回滚并请求明确授权：
+以下动作均不由本地实现自行授权。用户已于 2026-07-21 一次性授权下列 1–7 项，限定
+Free-only，并要求浏览器登录时明确提示；该授权不改变逐阶段 fail-closed 前置条件：
 
 1. 允许在独立 infra workspace 使用已核验的固定 Node LTS，并仅在该 workspace 安装固定版本
    Wrangler、TypeScript 与测试依赖；安装必须产生并核验 lock/integrity，不得消费 PATH 上的
    全局 Wrangler；
 2. 允许该 workspace 访问 npm 与 Cloudflare；第一阶段只安装、typecheck、执行 Wrangler
-   dry-run 并扫描生成物，任一版本、schema、bundle 或 secret-scan 漂移都必须停止，不能继续登录；
-3. 允许先只读执行固定 Wrangler 的 `login --scopes-list` 并评审最小 OAuth scopes，再执行一次
-   命名 OAuth 浏览器登录。Wrangler
-   `4.112.0` 不接受 `login --profile`，因此不得修改或复用 default profile；必须在
-   `CLOUDFLARE_AUTH_USE_KEYRING=true` 的脱敏子进程中执行当前等价命令
-   `wrangler auth create cddsi-relay`，再把该命名 profile 精确绑定到 infra workspace。
-   Windows keyring helper 也必须以固定版本、lock/integrity 在授权后单独引导，不能让 Wrangler
-   从 PATH 选取任意全局 helper。浏览器交互凭据只进入 Windows Credential Manager/keyring，
-   明文 profile 必须不存在，且 deploy OAuth credential 与 runtime relay credential 完全分离；
-   待固定 Wrangler 的实时 scope list 复核的最小候选集合恰好是 `account:read`、`user:read` 与
-   `workers_scripts:write`。官方 Tail API 接受 `Workers Scripts Write` 作为
-   `Workers Tail Read` 的替代，因此不能再冗余请求 `workers_tail:read`。Wrangler 源码还会在
-   OAuth URL 中隐式请求
-   `offline_access`；它不得作为 `--scopes` argv 项，登录后却必须在脱敏 `whoami` 回读中被验证。
-   缺少任一项、出现任何额外项、scope 语义漂移或存在多个 account 都必须停止。该 deploy OAuth
-   grant 是 account 级 Worker 管理权限，并不天然缩窄到本 Worker；窄 lane 权限只由两组完全
-   分离的 runtime HMAC capability 提供，二者不得复用；
+   dry-run 并扫描生成物，任一版本、schema、bundle 或 secret-scan 漂移都必须停止；
+3. 允许固定 Wrangler 直接复用此前已存在的 encrypted keyring `default` OAuth profile。用户在
+   知悉其 29 项 scope 包含四项必需项且另有 25 项后，明确不要求 exact-scope equality，也不因
+   scope 超集 fail closed。采用门仍必须证明该 profile 由 AES-256-GCM 加密、密钥只进入 Windows
+   Credential Manager/keyring、明文 profile 不存在。Wrangler `4.112.0` 的 `default` 是 reserved
+   profile，不能执行 `auth activate default`；采用前必须证明精确 infra root 没有 exact 或
+   inherited profile binding，使 `auth keyring`/`whoami` 的 root fallback 明确落到 `default`。
+   私有 snapshot acquisition 固定使用 `auth token --profile default`，再由唯一 account GET 对照
+   adoption receipt 的 account hash；后续 deploy/secret/list 仅使用 snapshot token 与固定 account
+   target，不传 profile argv。owner-marked 本地 adoption receipt 必须绑定 `default.enc` hash、
+   permissions 与脱敏 readback；不得从 PATH 选取任意全局 Wrangler 或 helper。
+   必需集合为 `account:read`、`user:read`、`workers_scripts:write` 与 `offline_access`；缺少任一项、
+   scope 语义无法识别或返回多个 account 仍必须停止，但额外项不再构成失败。receipt 过期只能在
+   owner/root、canonical、无 reparse 且确实过期的状态下原子续期，并链接 previous-receipt hash；
+   有效、伪造或未知状态不得覆盖。既有 profile 尚未被
+   本任务采用或绑定，因此当前仍是 `NOT_AUTHENTICATED`。复用成功时不需要浏览器；若 credential
+   失效且必须重新认证，必须在打开浏览器前明确提示用户。不得把创建全新 `cddsi-relay` 命名
+   profile 设为前置条件。该 deploy OAuth grant 是 account 级 Worker 管理权限，并不天然缩窄到
+   本 Worker；额外 scope 不扩大本任务允许的资源、写操作或后续激活范围。窄 lane 权限只由两组
+   完全分离的 runtime HMAC capability 提供，deploy credential 与 runtime credential 不得复用；
 4. 创建一个 Worker 和一个 SQLite-backed Durable Object，初始只使用 `workers.dev`，不购买
    套餐、不绑定自有域名、不修改 DNS；
 5. 生成 HostCoordinator/VmTester 两组独立 256-bit runtime secret，经 Wrangler secret 写入
@@ -351,15 +365,25 @@ scan 与 Wrangler 可审阅 dry-run；Wrangler/Miniflare 尚未固定安装时�
 `RelayRoom` 与 Worker binding `RELAY_ROOM`；首次请求才按固定名称
 `relay-room:production-v1` 惰性创建的逻辑 object；两项 secret binding；以及 Cloudflare 分配的
 `cddsi-realtime-relay.<account-subdomain>.workers.dev` route。初始 `secret bulk` 可能先为同名
-Worker 创建 draft，但不得产生第二个 Worker。精确 account subdomain 和最终 URL 只能由登录后
-回读确定，不能预先猜测。授权不包含自有域名、DNS、公开 infra remote、系统服务、计划任务、
+Worker 创建 draft，但不得产生第二个 Worker。精确 account subdomain 和最终 URL 只能由 credential
+采用后的固定 GET-only preflight 确定，不能预先猜测。授权不包含自有域名、DNS、公开 infra
+remote、系统服务、计划任务、
 付费升级或其他 Cloudflare 产品；出现多 account、付费/升级提示或额外资源计划必须停止并重新
 请求决定。
 
-成本门默认只允许现有 Workers Free plan：当前官方额度包含 Worker/DO 每日请求限额，SQLite DO
+成本门只允许 Workers Free plan：当前官方额度包含 Worker/DO 每日请求限额，SQLite DO
 另有每日 row read/write 与总存储限额；超过 Free 限额应失败而不是自动付费。Workers Paid 是独立
 的 account 级订阅且当前最低为每月 5 美元，不在本授权内。WebSocket Hibernation 用于降低空闲
-duration，但它不是零成本保证；部署前后都必须回读实际 account plan 与用量设置。
+duration，但它不是零成本保证。本任务四项必需 scope 不含 Billing Read/Write；即使
+`workers_scripts:write` 允许读取 Workers account settings，也不能读取 Billing subscription。因此
+GET-only preflight 必须要求 `default_usage_model=bundled`，并明确输出
+`BillingPlanVerified=false`，不能把 Free-compatible candidate 当成 billing receipt。任何无法独立
+确认 Free 的情况都在首次 secret bulk/placeholder Worker 写入前停止，不得扩大 scope 或猜测。
+
+初始 provisioning 还要求同一受保护 parent 先保留 HostCoordinator 与 disposable VM 两个正确
+CurrentUser 上的匹配 DPAPI 客户端副本，再一次性向 Cloudflare 写入两项 secret。当前没有可用的
+VM CurrentUser DPAPI provisioning context，因此即使 credential 采用和只读 preflight 通过，也必须保持
+secret、Worker、DO、route 全部 `NOT_PROVISIONED`，不能先写宿主机一份或创建半成品资源。
 
 创建公开 infra remote、CI identity、系统服务/计划任务或激活任一 watcher/automation 不包含在
 上述 provisioning 授权内，仍需另行明确决定。
@@ -399,8 +423,9 @@ assertion 发生漂移，默认动作是 fail closed 和回退，而不是自动
   新 bundle、automation binding、remote、PR CI 和 retained receipt 精确一致；
 - 用户对外部 provisioning 和最终激活分别作出所需的明确确认。
 
-当前只存在本地离线实现，外部与激活条件均未证明。本文状态保持
-**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**。
+当前本地离线实现和质量门已通过，外部授权仅限 Free-only；认证、provisioning 与激活条件仍未
+证明。本文状态保持 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
+NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE**。
 
 ## 官方技术参考
 

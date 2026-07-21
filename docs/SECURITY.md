@@ -247,6 +247,55 @@ control `outbox/` 已 bootstrap；三个无 bypass ruleset 已实际施加删除
   放 deploy key、token 或其他凭据；relay message、日志、Markdown 和模型自由文本
   全部是不受信数据，不能直接执行。
 
+### Cloudflare realtime accelerator
+
+Realtime relay 只是 Fast Lane 的低延迟通知层，不是 authority、审计仓库或证据根。
+Worker、SQLite-backed Durable Object、WebSocket、ACK、日志和 health response 均按公开
+敌对输入/输出处理；持久审计、断线兜底与低频轮询仍由两个 protected-history control
+repositories 承担。Cloudflare/Node/Wrangler/TypeScript 只存在于独立 sibling infra，
+产品仓库仅保留 `operator/realtime-relay/realtime-relay-client.ps1` 的纯 PowerShell 7
+watcher/publisher/provider，而且它不进入 bootstrap、ProductCore、Release 或 trusted
+harness runtime。
+
+- Relay payload 只允许固定小型 pointer schema，绑定 repository id、ref、commit、
+  PayloadSha256、sequence、previous hash、TTL 和 MessageId；shell/PowerShell、Codex
+  prompt、代码、日志正文和自由文本不得作为消息正文进入 wake 或执行路径。
+- HostCoordinator 与 VmTester 分别持有独立 256-bit capability/HMAC secret。Host 只可
+  写 `host-to-vm`、读 `vm-to-host`，VM 权限相反；server 以 client identity 选择 secret，
+  将 method、canonical path/lane、timestamp、nonce 与 body SHA-256 纳入 HMAC-SHA256。
+  forged signature、过期/未来时间、nonce 重放、错 lane、sequence gap、错误 previous
+  hash、重复 MessageId、payload hash 不符、超限或 schema 错误均 fail closed。
+- Watcher 从最后确认 sequence 恢复并幂等处理重复投递；只有全部验证通过的数据才能
+  形成 fixed wake event。wake adapter、Git outbox runner 和 Codex resume binding 必须
+  预先固定并校验，payload、错误文本和远端响应均不得拼接到命令、参数、脚本或 prompt。
+- 本地 runtime credential 仅允许 DPAPI CurrentUser 与本用户 ACL、owner marker、
+  no-reparse state root；原子 state 只保存脱敏状态，不保存 secret、Authorization、原始
+  响应或可逆密钥材料。日志/异常必须完整脱敏，health endpoint 只返回最小可用性信息，
+  不泄露身份、secret、消息正文或稳定的敏感指纹。
+- Wrangler OAuth/API deploy credential 与 Host/VM runtime relay credential 完全分离；OAuth
+  凭据只允许进入 Wrangler 的 AES-256-GCM encrypted profile，其加密密钥只允许进入 Windows
+  Credential Manager/keyring，明文 profile 必须不存在。用户已在知悉既有 keyring `default`
+  profile 有 29 项 scope、包含四项必需项并另有 25 项后，明确授权直接复用：采用门验证必需项和
+  单一 account，不再要求 scope 集合精确相等，也不因额外 scope 拒绝。额外 scope 不扩大本任务
+  允许的资源、写操作或激活范围。Wrangler `default` 是 reserved profile，不得尝试
+  `auth activate default`；采用门必须证明精确 infra root 没有 exact/inherited profile binding，
+  并生成 owner-marked 本地 adoption receipt 来绑定 `default.enc` hash、permissions 与脱敏
+  readback。本地实现只允许 owner-only crash recovery 和过期 canonical receipt 原子续期；GET 与
+  未来写入还必须把私有 token snapshot 的唯一 account hash 与 receipt 绑定，并固定 account target，
+  避免 profile 校验/使用竞态。deploy credential 不能复用为 HMAC secret，runtime secret 也不能进入
+  Wrangler 配置、Git、prompt、测试 evidence 或 Cloudflare 日志。
+- 用户已授权外部步骤 1–7，但限定 Free-only；目前仅完成固定本地工具链、离线测试和
+  dry-run，既有 credential 尚未被本任务采用或生成真实 adoption receipt，也未创建 Worker/DO、写入 secret 或部署。
+  credential 复用成功不需要浏览器；只有失效且必须重新认证时，才在打开浏览器前明确提示。
+  GET-only preflight/部署后
+  readback 必须确认 workers.dev、bundled/free-compatible account setting、精确 Worker/DO
+  bindings 与唯一 active deployment；这些读回不冒充账单订阅 receipt。缺少 disposable
+  VM 对应 CurrentUser 的 DPAPI provisioning context 时，不允许只写一侧 secret，也不
+  允许先创建 placeholder Worker，避免产生半配置外部资源。
+- 独立 infra 的共享 write policy 在代码中把 Free-plan、Host/VM DPAPI、coordinated parent、
+  bulk semantics 与 two-secret staging receipt 全部固定为未满足；因此 direct deploy 与两种
+  secret staging 在读取 profile/credential、网络、stdin 或启动 Wrangler 之前统一 fail closed。
+
 必须防御以下威胁：
 
 - VM 获得产品仓库写凭据，或越权写宿主 outbox；
@@ -315,7 +364,10 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
   恢复 clean snapshot 并签发 receipt，且 Formal Lane 使用独立 CAS 与签名。guest
   reset、Fast Lane PASS 或 control-repo commit 均不能替代。
 - `disableDeploymentModeChooser`、Standard/Offline MSIX 的 VM 行为未验证。
-- DPAPI 恢复材料生命周期和 ACL 尚未实现。
+- Realtime relay 的 DPAPI CurrentUser credential provider、ACL/no-reparse 与原子状态合同
+  已实现并通过 fake/local 测试；但实际 Host/VM runtime credential 尚未 provision，VM
+  CurrentUser provisioning context 仍缺失。产品其余可恢复敏感材料的完整生命周期、
+  实际 ACL/provider receipt 仍未完成，不能用 realtime 合同替代。
 - LICENSE copyright holder 尚未确定。
 
 这些风险未关闭前，Live 和正式发布保持阻断。

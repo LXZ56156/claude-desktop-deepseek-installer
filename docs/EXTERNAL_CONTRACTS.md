@@ -1,13 +1,13 @@
 # 外部合同与调研基线
 
-最后核验：2026-07-17
+最后核验：2026-07-21
 
-项目影响更新：2026-07-17（同步 public visibility/protected-history cutover、双机
-Codex operator coordination、自动轮询与 clean-start 分层策略）
+项目影响更新：2026-07-21（同步 Cloudflare realtime relay 的 Free-only 外部合同、
+本地离线实现与未认证/未部署边界）
 
-本文件是 Anthropic、DeepSeek、Windows、Git 和 OpenAI Codex 外部事实的唯一项目内
-来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和实物证据
-写入合同。
+本文件是 Anthropic、DeepSeek、Windows、Git、Cloudflare 和 OpenAI Codex 外部事实的
+唯一项目内来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和
+实物证据写入合同。
 
 本文中的部署选择和代码差异只是外部事实对项目的影响摘要；产品/技术选择以
 `docs/DECISIONS.md` 为准，易变实现状态以 `docs/HANDOFF.md` 和实际 Git 状态为准。
@@ -72,6 +72,60 @@ public control repository 的所有历史 envelope、ACK 与脱敏诊断对互�
 - [GitHub rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
 - [GitHub deploy keys](https://docs.github.com/en/rest/deploy-keys/deploy-keys)
 - [GitHub repository visibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)
+
+## Cloudflare realtime relay
+
+截至本次核验，Cloudflare 官方文档确认：
+
+- Durable Objects 同时可用于 Workers Free 与 Workers Paid；Workers Free 只能创建和
+  访问 SQLite-backed Durable Objects，且 Cloudflare 推荐新 namespace 使用 SQLite。
+- 当前 Workers Free 额度为 Worker 请求 100,000 次/日；Durable Objects 请求
+  100,000 次/日、duration 13,000 GB-s/日；SQLite storage 为读取 5,000,000 rows/日、
+  写入 100,000 rows/日、SQL stored data 合计 5 GB。额度是上限合同，不是本项目的
+  容量目标；超过 Free 边界必须失败并暂停，不能自动切换付费方案。
+- WebSocket Hibernation API 是 Durable Objects WebSocket server 的推荐接口；休眠时
+  客户端连接仍保持，duration 不累计，事件到达后 object 重新初始化。内存状态会重置，
+  因此可恢复协议状态必须落在 SQLite storage 或受限 WebSocket attachment 中。
+- Wrangler 的声明式 `exports` 是当前 Durable Object class lifecycle 入口，并取代新实现
+  的命令式 `migrations` 流程；代码 export、配置声明与已 provision namespace 会在部署时
+  对账。新建 live class 的 `storage` 必须为 `sqlite`。
+- `GET /accounts/{account_id}/workers/subdomain` 返回账号的 Workers subdomain；
+  script subdomain GET 返回 Worker 是否在 `workers.dev` 启用。初始 relay endpoint 因此只用
+  `workers.dev`，不要求或授权自有域名、route 或 DNS 修改。
+- versions API 明确把列表第一项定义为最新 version；deployments API 明确把第一项定义为
+  当前主动承载流量的最新 deployment。部署后回读必须同时核对最新 version、主动 deployment、
+  binding、SQLite `RelayRoom` export 和 script 的 `workers.dev` 状态，不能只信 CLI 成功文本。
+- Worker account settings GET 的返回模型只有 `default_usage_model` 与 `green_compute`；
+  `default_usage_model=bundled` 只构成 Free-compatible preflight 候选，不是 Billing
+  subscription receipt。订阅列表是独立 API，并要求 Billing Read 或 Billing Write；本任务的
+  四项必需 OAuth scope 本身不包含该权限，既有 profile 的额外 scope 也不能把 account settings
+  推断成“已证明 Free 套餐”。
+
+官方来源：
+
+- [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+- [Durable Objects WebSocket Hibernation](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
+- [Durable Object declarative class exports](https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/)
+- [Worker account settings API](https://developers.cloudflare.com/api/resources/workers/subresources/account_settings/)
+- [Account workers.dev subdomain API](https://developers.cloudflare.com/api/resources/workers/subresources/subdomains/methods/get/)
+- [Worker workers.dev state API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/get/)
+- [Worker versions API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/list/)
+- [Worker deployments API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/)
+- [Account subscriptions API](https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/methods/get/)
+
+项目影响是把秒级通知实现限制在独立 sibling `cddsi-relay-infra` workspace：Worker、
+SQLite-backed `RelayRoom`、Wrangler/Node/TypeScript 和所有 Cloudflare 配置均不得进入产品
+安装器或 Release。当前精确本地 toolchain、105/105 离线测试、52-file secret scan、guarded
+typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wrangler dry-run 已
+通过；本地 forced eviction 不替代生产 idle scheduling 或公网平台证据。用户已授权 Free-only
+认证、创建、secret、部署与真实正负测试，并在知悉既有 encrypted keyring `default` profile 的
+29 项 scope 包含四项必需项及 25 项额外项后，明确授权直接复用且不要求 exact-scope equality。
+本地采用路径已实现可续期 owner-marked receipt 和 account-bound 私有 credential snapshot；截至
+2026-07-21，真实精确 infra root 的 exact/inherited binding absence 尚未证明，也没有生成绑定
+`default.enc` hash、permissions 与脱敏 readback 的本地 adoption receipt 或
+GET-only preflight；未创建 Worker/DO，未写 runtime secret，也没有 `workers.dev` endpoint。
+preflight 仍须先证明单一账号、必需 scope、既有 account subdomain、目标 script 不存在并取得
+独立 Free 套餐确认；未满足时不得产生部分资源。
 
 ## Anthropic Third-Party Desktop
 
@@ -286,6 +340,14 @@ HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并
   Formal readiness；
 - `operator/fast-lane/*` 保存固定 Git outbox runtime、deterministic onboarding builder、
   VM-only guest-reset dispatcher/provider boundary、两端 prompt/runbook 和 synthetic 演练。
+
+独立 `cddsi-relay-infra` workspace 已实现 Cloudflare Worker/SQLite Durable Object、
+WebSocket Hibernation 与本地 readback/dry-run gates；产品仓库的
+`operator/realtime-relay/realtime-relay-client.ps1` 只消费固定通知 schema 并调用固定 wake
+adapter。两者都仍是未激活的 coordination plane：既有 encrypted keyring `default` OAuth
+profile 已获明确复用授权，但真实精确 infra root 的 exact/inherited binding absence、本地 adoption
+receipt 与 GET-only preflight 尚未完成；当前没有 Worker/DO、runtime secret 或 endpoint。现有 control repositories 继续作为
+持久审计与断线 fallback，automation 继续保持暂停。
 
 这些文件属于 OperatorCoordination development plane，不进入默认 bootstrap、
 ProductCore 或 Release 包。三个 public protected repositories 已部署，产品旧 `main` 已推送，

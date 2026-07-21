@@ -99,15 +99,21 @@ Feature、Service、Credential、Clock。
 双机测试闭环属于独立 OperatorCoordination development plane，权威合同见
 `VM_TEST_RELAY.md`。它不进入产品 bootstrap、ProductCore、Release 或 trusted
 harness runtime；trusted harness 仅可从自己的 allow-listed 测试入口调用其
-synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-17，宿主机侧
-transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
-服务端 protected history 已部署；窄角色凭据、VM 设备 provisioning 和无人值守双机
-验证尚未完成：
+synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-21，宿主机侧
+Git transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
+服务端 protected history 已部署；Cloudflare realtime accelerator 的产品侧纯 PowerShell
+合同、独立 infra 实现和离线测试也已完成。Free-only 外部步骤虽已获授权，但尚未完成
+既有 Cloudflare credential 的本任务 adoption/provenance 与 GET-only preflight、资源创建、secret provisioning
+或部署；窄 Git 角色凭据、VM 设备 provisioning 和无人值守双机验证仍未完成：
 
 ~~~text
 Fast Lane logical control plane:
   HostCoordinator -> public protected host-to-VM repository -> VmTester (read only)
   HostCoordinator <- public protected VM-to-host repository <- VmTester (write only)
+Realtime notification accelerator (pointer only):
+  HostCoordinator -> host-to-vm lane -> Worker/RelayRoom -> VmTester
+  HostCoordinator <- vm-to-host lane <- Worker/RelayRoom <- VmTester
+  disconnect/replay fallback -> public protected control repositories
 Formal Lane: external clean snapshot + exact artifact
              -> independent CAS/signature/receipt validators
 ~~~
@@ -126,6 +132,40 @@ Formal Lane: external clean snapshot + exact artifact
   operator-plane `control-protection-trust` owner marker、receipt-specific authority
   assertion、独立预置的 assertion SHA-256/authority token 及单调 previous-receipt
   chain 交叉绑定，不能用 receipt 或 relay 自举信任。
+- 独立 sibling workspace `../cddsi-relay-infra` 才承载固定版本 Node/Wrangler、
+  TypeScript、Cloudflare Worker 和 SQLite-backed `RelayRoom` Durable Object；这些
+  工具、配置与源码不进入产品仓库、安装器或 Release package。
+- `operator/realtime-relay/realtime-relay-client.ps1` 是 DevelopmentOnly 的 PowerShell 7
+  watcher/publisher/provider：长连接使用 `ClientWebSocket`，断线从最后确认的 sequence
+  恢复；状态根必须 owner-marked、本用户 ACL 且无 reparse，状态更新采用原子替换。
+  它只由精确 OperatorCoordination 入口或 fake/local 测试加载，不进入 bootstrap、
+  ProductCore、Release 或 trusted harness runtime。
+- Realtime relay 只传递固定 schema 的 immutable notification pointer，包括 repository、
+  ref、commit 和 payload hash；代码、prompt、shell/PowerShell、日志正文与自由文本均不
+  进入可执行路径。protected-history control repositories 继续承担持久审计、断线重放
+  和低频 fallback，relay ACK 或消息不能替代其历史，也不能替代 Formal evidence。
+- HostCoordinator 与 VmTester 使用两组独立 256-bit HMAC capability：Host 仅写
+  `host-to-vm`、读 `vm-to-host`，VM 权限相反。请求签名绑定 client、method、canonical
+  path/lane、timestamp、nonce 和 body SHA-256；消费端还逐项验证 sequence、previous
+  hash、TTL、MessageId 和 payload hash，任何缺口、重放、错 lane 或 schema 漂移均
+  fail closed。
+- 客户端 runtime secret 只允许经 DPAPI CurrentUser provider 取得且不得进入日志、异常、
+  state 或 health output；wake 仅调用预绑定的 fixed adapter，绝不把 payload 拼接成命令、
+  参数或 prompt。Cloudflare OAuth/deploy credential 与两端 runtime HMAC credential 是
+  两套完全分离的身份生命周期。
+- 当前外部授权限定 Free-only。用户在知悉既有 encrypted keyring `default` profile 有 29 项
+  scope、包含四项必需 scope 且另有 25 项后，明确授权直接复用；认证门验证必需项存在而不再
+  要求 scope 集合精确相等，额外 scope 也不扩大本任务允许的资源或动作。本地已实现 owner-only
+  crash recovery、过期 receipt 原子续期及 account-bound credential snapshot，但尚未对真实精确
+  infra root 证明 exact/inherited binding absence，也未生成 owner-marked adoption receipt 来绑定
+  `default.enc` hash、permissions 与脱敏 readback；GET-only preflight 同样未执行，因此状态
+  仍为 `NOT_AUTHENTICATED`。复用成功不需要浏览器；只有 credential 失效且必须重新认证时，才在
+  打开浏览器前明确提示用户。
+- credential 采用后和部署后读回必须验证单一 account、Workers 使用模型、workers.dev、
+  Worker/DO 配置与 active deployment；明文 profile 必须不存在，OAuth/deploy credential 与
+  runtime HMAC credential 必须继续分离。实际 Host/VM runtime secret 尚未 provision；尤其缺少
+  disposable VM 对应 CurrentUser 的 DPAPI provisioning context，因此初始两组 secret 写入与
+  placeholder Worker 创建均保持 fail closed。
 - `lib/vm-fast-lane-readiness.ps1` 明确区分 `CanStartVmBootstrap` 与
   `CanStartVmIntegration`。前者只授权离线 bundle/key/task staging；后者还要求 protected
   history、窄 HostCoordinator credential 和保持暂停的 host task。policy 与 onboarding
@@ -186,8 +226,9 @@ bootstrap
 bootstrap 顶层仍只定义函数和常量，不得探测系统、访问网络、写文件、提权或控制
 进程。HostSandbox runner 属于独立 trusted-harness 执行平面，不进入产品
 bootstrap 加载顺序。`config/fast-lane-policy.psd1`、`lib/vm-test-relay.ps1`、
-`lib/vm-reset.ps1` 与 `operator/fast-lane/*` 只由 OperatorCoordination 的精确入口或
-测试显式加载，也不进入 ProductCore 或 Release。
+`lib/vm-reset.ps1`、`operator/fast-lane/*` 与 `operator/realtime-relay/*` 只由
+OperatorCoordination 的精确入口或测试显式加载，也不进入 ProductCore 或 Release；
+独立 sibling infra 更不进入此加载图。
 
 ## 统一结果
 

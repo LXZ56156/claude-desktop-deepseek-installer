@@ -14,15 +14,30 @@ automation, if one exists, must also remain `PAUSED`; without a current VM
 receipt its existence or state is not inferred.
 
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` now has status
-`LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE`. A pure
+`LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / NOT_AUTHENTICATED /
+NOT_PROVISIONED / NOT_ACTIVE`. A pure
 PowerShell DevelopmentOnly publish/watch/fixed-wake client exists under
 `operator/realtime-relay/`; its exact client, threat, credential rotation,
 rollback, cleanup, and troubleshooting contract is in
 `operator/realtime-relay/README.md`. The separate local sibling workspace
 `D:\projects(WIN)\cddsi-relay-infra`
-contains Worker/Durable Object source and offline tests. The sibling has no
-remote and no Cloudflare resource, credential, identity, endpoint, or deployment
-has been created. The existing two protected Git control repositories remain the
+contains Worker/Durable Object source, an exact lock-bound Node/Wrangler toolchain,
+keyring helper, 89 passing offline tests, a real local workerd SQLite/Hibernation
+forced-eviction test, and a passing typecheck/dry-run artifact scan. The local
+runtime result does not prove production idle scheduling or public-platform
+Hibernation. The sibling has no remote. The user explicitly authorized reuse of the
+existing encrypted-keyring `default` OAuth profile after being informed that its 29
+scopes include the four required scopes and 25 additional scopes; exact scope equality
+and extra-scope rejection are no longer adoption requirements. The exact infra root's
+local renewal and account-bound snapshot paths are implemented, but absence of exact/inherited
+profile bindings has not yet been proven against the real root, and no owner-marked local
+adoption receipt yet binds the `default.enc` hash, permissions, and redacted
+readback. Account preflight,
+Cloudflare resource, runtime credential, endpoint, and deployment have not occurred.
+Successful reuse needs no browser; an expired credential that requires browser
+reauthentication must still trigger a clear user prompt first. Free-only preflight and
+the missing disposable-VM DPAPI context both block any partial secret/placeholder
+Worker write. The existing two protected Git control repositories remain the
 durable source and minute-poll fallback. The realtime accelerator cannot
 execute payload text, expand either machine's product authority, weaken Formal
 Lane, or automate merge, release, promotion, or P12 approval.

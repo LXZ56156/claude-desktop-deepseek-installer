@@ -34,11 +34,17 @@
 不启动 bootstrap、integration、测试循环或 Formal Lane。暂停前 finalization 及其 bundle、
 automation prompt 和 readiness receipt 只绑定暂停前的精确 commit；本次 tracked 文档修改
 立即使这些绑定失效。当前四个 readiness/complete 标志全部为 false。独立 Cloudflare
-realtime relay 工作流正在完成本地离线实现与质量门，而不是继续旧 VM bootstrap。
+realtime relay 工作流已完成本地离线实现与质量门，而不是继续旧 VM bootstrap。
 
 `REALTIME_RELAY_PROPOSAL.md` 的事实级别为
-`LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE`。它不能授权创建 Cloudflare 资源、启用 watcher、
-改变 automation 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
+`LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / NOT_AUTHENTICATED / NOT_PROVISIONED /
+NOT_ACTIVE`。外部步骤 1–7 虽已获 Free-only 授权，且用户已明确允许直接复用既有 encrypted
+keyring `default` OAuth profile；本地可续期 adoption 与 account-bound credential snapshot 已实现，
+但当前尚未对真实精确 infra root 证明 exact/inherited profile binding absence，也未生成本地
+adoption receipt 或完成 Cloudflare GET-only readback、resource/secret
+write 或部署。复用成功不需要浏览器；若 credential
+失效且必须重新认证，仍须在打开浏览器前提示用户。该授权也不能启用 watcher、改变 automation
+状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
 本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，
 以后两者为准。
 

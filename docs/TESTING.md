@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-18
+更新日期：2026-07-21
 
 ## 核心原则
 
@@ -126,16 +126,30 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   `operator/fast-lane/providers/windows-vm-reset.ps1` 冻结 VM-only dispatcher/provider
   边界。宿主机/CI/伪造上下文必须在任何真实 provider dispatch 前失败；设备 trust、
   real system evidence 与 development-retest Live smoke 仍由 disposable VM 验证。
+- `operator/realtime-relay/realtime-relay-client.ps1` 是独立 operator coordination
+  PowerShell 客户端入口；`tests/Contract/RealtimeRelay.Tests.ps1` 当前 67 个用例在
+  PowerShell 7 与 Windows PowerShell 5.1 下覆盖 fake transport、publisher/watcher、
+  断线重连与 resume、原子 state、ACL/no-reparse、DPAPI provider、固定 wake adapter
+  和不执行 payload。所有产品 Live、真实 network/registry/process、outside-sandbox、
+  unexpected-ledger 与 mutation spy 指标必须为 0。
 - `tests/Contract/FastLanePolicy.Tests.ps1` 冻结两 repository 拓扑、角色权限和
   diagnostic-only 边界；`tests/Contract/OperatorCoordinationBoundary.Tests.ps1` 证明
-  operator modules 是 DevelopmentOnly、非默认 bootstrap、非 Release 且不能加载 Live。
+  realtime relay 在内的 operator modules 和入口具有固定 execution capability 边界，
+  是 DevelopmentOnly、非默认 bootstrap、非 ProductCore、非 Release 且不能越界加载 Live。
 - `tests/HostSandbox/FastLaneSyntheticRehearsal.Tests.ps1` 通过
   `operator/fast-lane/invoke-synthetic-rehearsal.ps1` 演练本地双 outbox。该演练必须为
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
+- sibling `cddsi-relay-infra` workspace 的 105/105 本地测试、52-file secret scan、guarded
+  TypeScript typecheck、Wrangler dry-run，以及实际 workerd/SQLite/Hibernation forced-eviction
+  integration 为独立 Cloudflare infra evidence；本地 runtime 证明 eviction 后 SQLite 恢复与原
+  WebSocket 继续投递，但不证明生产 idle 调度或公网平台行为。它们不是本产品仓库的 L0-L4、
+  Release Simulation 或可发布包证据，也不进入 Release。
 
-上述映射已证明 clean exact commit 可制作 VM onboarding，双引擎各 430 项和全部 zero
-metrics 可验证 PUBLIC 合同。tracked 文档不嵌入会自引用的最终 commit/tree/hash；只有同一
+截至 2026-07-21，最近一次完整 clean quality evidence 为 PowerShell 7 与 Windows
+PowerShell 5.1 各 525/525 项通过，且全部 zero metrics 成立；该数量只是当次测试清单
+快照，不是永久 API、schema 或发布合同。上述映射已证明 clean exact commit 可制作 VM
+onboarding 并验证 PUBLIC 合同。tracked 文档不嵌入会自引用的最终 commit/tree/hash；只有同一
 暂停 automation、PR CI、实际 Git/remote 与 immutable bundle 的外部机器事实全部匹配，
 才派生 bootstrap-only 的 `CanStartVmBootstrap=true`。真实 ruleset/effective-rules receipt
 已证明 protected history 生效；本地测试覆盖 public-protected 正向、visibility
