@@ -1,6 +1,6 @@
 # 宿主机与 VM Codex 测试中继协议
 
-更新日期：2026-07-20
+更新日期：2026-07-21
 
 ## 定位与权威范围
 
@@ -27,8 +27,9 @@ tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 re
 
 现有 HostCoordinator automation 必须继续 `PAUSED`；VM automation 若存在也必须继续
 `PAUSED`，没有 VM 侧可靠 receipt 时不得推断其实际存在或状态。本任务不进入 VM、不启用或
-触发 task、不安装或 provision relay，也不执行产品 Live。暂停后的精确事实和恢复条件只看
-`HANDOFF.md` 顶部与实际 Git/remote/PR/CI/automation/evidence。
+触发 task、不 provision 或激活在线 relay，也不执行产品 Live。本地 offline Worker/DO 与
+PowerShell watcher 实现不改变该暂停。暂停后的精确事实和恢复条件只看 `HANDOFF.md` 顶部与
+实际 Git/remote/PR/CI/automation/evidence。
 
 ## 暂停前实现快照（历史；不可执行）
 
@@ -135,26 +136,46 @@ Formal Lane 用于首次 P10A、将被消费以冻结事实的 P10A 轮、正式
 CycleId，从 clean snapshot 重跑。Fast Lane evidence 只能辅助诊断，不能被“晋升”或
 包装成 Formal Lane receipt。
 
-### 拟议 realtime accelerator（Fast Lane only）
+### 本地实现中的 realtime accelerator（Fast Lane only）
 
-为减少 minute polling 和人工搬运带来的反馈延迟，下一独立工作流拟在 Fast Lane 上增加
-Cloudflare realtime notification accelerator。推荐方向是 Cloudflare Worker、SQLite-backed
-Durable Object 与 WebSocket Hibernation；完整提案、威胁模型、授权点和回滚见
+为减少 minute polling 和人工搬运带来的反馈延迟，当前独立工作流已在本地实现 Fast Lane
+Cloudflare realtime notification accelerator 的离线源码：独立 sibling workspace 中的
+Cloudflare Worker、SQLite-backed Durable Object 与 WebSocket Hibernation，以及产品仓库
+DevelopmentOnly operator plane 中的纯 PowerShell 客户端。完整协议、威胁模型、授权点和回滚见
 `REALTIME_RELAY_PROPOSAL.md`。当前状态严格为
-`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`，本协议不授权创建或部署任何 Cloudflare 资源。
+`LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE`；没有 endpoint、runtime secret、
+部署 receipt 或 live 权限，本协议不授权创建、部署或激活任何 Cloudflare 资源。
 
-该 accelerator 只传两条方向隔离 lane 的固定 schema 通知及 immutable payload pointer：
-`host-to-vm` 与 `vm-to-host` 使用两个独立身份和相反读写权限。HMAC、timestamp、nonce、
-sequence、previous hash、TTL、MessageId、payload hash、ACK、重放防护与速率限制必须在本地
-固定 validator 之前全部通过。Cloudflare 公网 URL、WebSocket 连接或 Worker 自报角色都不是
-sender authority；watcher 只能唤醒固定入口，绝不能解释或执行 relay/free text。
+该 accelerator 只传两条方向隔离 lane 的 12-field 固定 schema 通知及 immutable payload
+pointer：`host-to-vm` 与 `vm-to-host` 使用两个独立身份和相反读写权限。请求用
+`CDDsi-HMAC-SHA256-v2` 绑定 audience、environment、key id、client id、method、canonical target、
+timestamp、nonce 与 body SHA-256；sequence、previous hash、TTL、全局 MessageId 去重、逐消息
+ACK、重放防护与速率限制必须在本地固定 validator 之前全部通过。Cloudflare 公网 URL、
+WebSocket 连接或 Worker 自报角色都不是 sender authority。reader watcher 与 writer publisher
+使用分离的 context、runtime assertion 和相反 lane ACL；publisher 在网络前原子保存规范 pending
+body，响应丢失、重启或 TTL 已过时只重发相同 bytes/MessageId，只有精确
+`PUBLISHED`/`PUBLISHED_IDEMPOTENT` 回执才能推进本地 sequence/hash。watcher 只能唤醒固定入口，
+绝不能解释或执行 relay/free text。
 
 两个 public protected Git control repositories 继续是 durable source、持久审计链和断线
 fallback。大日志、截图、报告与 Formal evidence 不通过 WebSocket 携带；只在 CAS/control
 repository 中保存不可变对象或引用。现有一分钟 polling 保留为断线兜底，不能因 realtime
-通道可用而删除、放宽或共享 credential。VM 客户端计划只使用 PowerShell 7
-`ClientWebSocket`；Wrangler/Node 只允许存在于独立 sibling infra repository，不能进入产品
-仓库或 VM runtime。
+通道可用而删除、放宽或共享 credential。VM 客户端只使用 PowerShell 7
+`ClientWebSocket`；可共享的 parser/schema/security helper 已由 PowerShell 7 与 Windows
+PowerShell 5.1 的同一 focused suite 验证。Wrangler/Node 只允许存在于独立 sibling infra
+repository，不能进入产品仓库或 VM runtime。TestSafe/DryRun 使用 fake
+transport/credential/state/wake provider，真实 network、
+registry、credential、process、outside-sandbox 与 unexpected-ledger 指标必须全部为 0。
+
+固定 wake 先让 Git outbox `Poll` 验证精确 repository/ref/commit/MessageId/payload hash，再原子
+记录 `PENDING` proof；随后只允许绝对路径且 hash-bound 的 `codex.exe` 执行固定
+`exec resume --json <fixed-session-uuid> <fixed-prompt>`。relay/model/report 正文不得进入 prompt、
+argv、environment、executable 或 working root。进程使用 job object、空 stdin、固定 timeout、
+无继承 PATH/proxy/token 的最小环境及有界输出 drain；exit code 0 和 runtime assertion 复验后才
+把 proof 提升为 `SUCCEEDED`，然后持久化 watcher state 并 ACK。匹配的已成功 proof 不重复
+spawn；exit 后、proof commit 前崩溃允许同一固定任务 at-least-once 重试，因此固定 inbox handler
+必须幂等。该未来 Live operator Codex spawn 只记作 operator-plane 指标；产品 process 指标仍为
+0，全部离线 TestSafe/DryRun focused tests 的真实 process 指标也必须为 0。
 
 该提案不改变 Formal Lane：P10A/P11 仍要求外部 snapshot receipt、独立 CAS、签名和正式
 validator；P12 仍需人工确认，禁止自动 merge、release 或 promotion。
@@ -695,14 +716,15 @@ VM TEST_RESULT
 
 ### 非交互 codex exec runner
 
-若 minute-based polling 的延迟过高，可选的确定性 watcher 只检查 control ref 和
-message hash；发现新消息后触发 `codex exec resume` 恢复对应任务。runner 也可以用
-`codex exec --json` 和固定 output schema 启动分析任务，将模型输出约束为建议或
-结构化摘要。执行系统操作的仍是经过 allow-list 的 runner，而不是把模型文本直接
-当脚本。
+若 minute-based polling 的延迟过高，realtime watcher 只消费已通过 relay schema/chain/TTL
+验证并经 control-repository `Poll` 二次绑定的 pointer。它不会从 relay 或模型文字选择命令；
+唯一 live effect 是上节所述 hash-bound absolute `codex.exe`、固定 session UUID、固定 prompt 的
+`exec resume --json`。不存在 caller-selected `codex exec` 参数、任意 output schema 或泛化分析
+runner。模型输出仍只是不可信建议；产品或系统操作继续由各自独立 allow-list/grant 控制。
 
-两种方案都必须提供：单实例锁、最大运行时、重试上限、输出大小上限、消息去重、
-审计日志脱敏、STOP 处理和人工接管。固定 Git runner 已实现这些 bounded contract；
+分钟轮询和 realtime fixed resume 都必须提供：单实例锁、最大运行时、重试上限、输出大小上限、
+消息去重、审计日志脱敏、STOP 处理和人工接管。固定 Git runner 与 realtime wake-proof 已实现这些
+bounded contract；
 服务端 protected history 已部署；凭据发放、runtime assertion、VM device provisioning、
 两端 paused task 的安全启用和
 unattended acceptance 仍属于外部 operator 工作，不改变产品 Live 授权边界。

@@ -910,8 +910,12 @@ function Get-CddsiOperatorRuntimeCapabilityObservation {
         @('fetch', 'push', 'ls-remote') -ccontains $_
     }).Count -gt 0 -and $commandNames -icontains 'Invoke-CddsiFastLaneGitCommand'
     $network = @($commandNames | Where-Object { $networkCommands -icontains $_ }).Count -gt 0 -or
-        @($typeNames | Where-Object { $_ -match '^System\.Net\.' }).Count -gt 0 -or
+        @($typeNames | Where-Object { $_ -match '^(?:System\.)?Net\.' }).Count -gt 0 -or
         $hasRemoteGitVerb
+
+    $credential = @($typeNames | Where-Object {
+        $_ -match '^(?:System\.)?Security\.Cryptography\.ProtectedData$'
+    }).Count -gt 0
 
     $reflection = $commandNames -icontains 'Add-Type' -or
         @(Get-CddsiForbiddenReflectionFindings -Ast $Ast).Count -gt 0 -or
@@ -948,6 +952,7 @@ function Get-CddsiOperatorRuntimeCapabilityObservation {
         FileSystem        = [bool]$fileSystem
         Process           = [bool]$process
         Network           = [bool]$network
+        Credential        = [bool]$credential
         Reflection        = [bool]$reflection
         VmInspection      = [bool]$vmInspection
         VmMutation        = [bool]$vmMutation
@@ -966,6 +971,7 @@ function Assert-CddsiOperatorRuntimeCapabilityAllowLists {
         FileSystem        = 'OperatorRuntimeFileSystemFiles'
         Process           = 'OperatorRuntimeProcessFiles'
         Network           = 'OperatorRuntimeNetworkFiles'
+        Credential        = 'OperatorRuntimeCredentialFiles'
         Reflection        = 'OperatorRuntimeReflectionFiles'
         VmInspection      = 'OperatorRuntimeVmInspectionFiles'
         VmMutation        = 'OperatorRuntimeVmMutationFiles'
@@ -1127,6 +1133,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         'OperatorRuntimeFileSystemFiles',
         'OperatorRuntimeProcessFiles',
         'OperatorRuntimeNetworkFiles',
+        'OperatorRuntimeCredentialFiles',
         'OperatorRuntimeReflectionFiles',
         'OperatorRuntimeVmInspectionFiles',
         'OperatorRuntimeVmMutationFiles',
@@ -1183,6 +1190,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         'operator/fast-lane/invoke-git-outbox.ps1'
         'operator/fast-lane/invoke-vm-reset-live.ps1'
         'operator/fast-lane/providers/windows-vm-reset.ps1'
+        'operator/realtime-relay/realtime-relay-client.ps1'
     )
     $expectedOperatorFiles = @($expectedOperatorLibraries + $expectedOperatorRuntimes)
     if ((@($boundary.Planes.OperatorCoordination | Sort-Object) -join "`n") -cne (@($expectedOperatorFiles | Sort-Object) -join "`n") -or
@@ -1463,8 +1471,8 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     $operatorRuntimeFiles = @($boundary.Rules.OperatorRuntimeFiles)
     $operatorRuntimeActualCapabilities = [ordered]@{}
     foreach ($capabilityName in @(
-        'DynamicInvocation', 'FileSystem', 'Process', 'Network', 'Reflection',
-        'VmInspection', 'VmMutation'
+        'DynamicInvocation', 'FileSystem', 'Process', 'Network', 'Credential',
+        'Reflection', 'VmInspection', 'VmMutation'
     )) {
         $operatorRuntimeActualCapabilities[$capabilityName] =
             New-Object System.Collections.Generic.List[string]
@@ -1492,6 +1500,17 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             'Test-CddsiWindowsVmResetAdapterDeviceSignature'
             'Invoke-CddsiWindowsVmResetAuthorizedRequest'
             'New-CddsiWindowsVmResetProvider'
+        )
+        'operator/realtime-relay/realtime-relay-client.ps1' = @(
+            'Invoke-CddsiRealtimeRelayWatcher'
+            'Invoke-CddsiRealtimeRelayPublish'
+            'Set-CddsiRealtimeRelayDpapiCredential'
+            'New-CddsiRealtimeRelayDpapiCredentialProvider'
+            'New-CddsiRealtimeRelayFixedGitOutboxWakeProvider'
+            'New-CddsiRealtimeRelayOwnedStateProvider'
+            'Remove-CddsiRealtimeRelayOwnedState'
+            'New-CddsiRealtimeRelayLiveProvider'
+            'New-CddsiRealtimeRelayLivePublisher'
         )
     }
     foreach ($relative in $operatorRuntimeFiles) {

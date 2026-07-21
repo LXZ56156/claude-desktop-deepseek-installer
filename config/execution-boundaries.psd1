@@ -57,6 +57,7 @@
             'tests/Contract/FastLanePolicy.Tests.ps1'
             'tests/Contract/FastLaneReadiness.Tests.ps1'
             'tests/Contract/OperatorCoordinationBoundary.Tests.ps1'
+            'tests/Contract/RealtimeRelay.Tests.ps1'
             'tests/Contract/VmReset.Tests.ps1'
             'tests/Contract/VmResetLiveAdapter.Tests.ps1'
             'tests/Contract/WindowsVmResetProvider.Tests.ps1'
@@ -88,6 +89,7 @@
             'operator/fast-lane/invoke-git-outbox.ps1'
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
+            'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
         PolicyData = @(
@@ -418,6 +420,7 @@
             'operator/fast-lane/invoke-git-outbox.ps1'
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
+            'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
         OperatorRuntimeEntryPoints = @{
@@ -442,28 +445,47 @@
                 'Invoke-CddsiWindowsVmResetAuthorizedRequest'
                 'New-CddsiWindowsVmResetProvider'
             )
+            'operator/realtime-relay/realtime-relay-client.ps1' = @(
+                'Invoke-CddsiRealtimeRelayWatcher'
+                'Invoke-CddsiRealtimeRelayPublish'
+                'Set-CddsiRealtimeRelayDpapiCredential'
+                'New-CddsiRealtimeRelayDpapiCredentialProvider'
+                'New-CddsiRealtimeRelayFixedGitOutboxWakeProvider'
+                'New-CddsiRealtimeRelayOwnedStateProvider'
+                'Remove-CddsiRealtimeRelayOwnedState'
+                'New-CddsiRealtimeRelayLiveProvider'
+                'New-CddsiRealtimeRelayLivePublisher'
+            )
         }
 
         OperatorRuntimeDynamicInvocationFiles = @(
             'operator/fast-lane/invoke-git-outbox.ps1'
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
+            'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
         OperatorRuntimeFileSystemFiles = @(
             'operator/fast-lane/build-vm-onboarding.ps1'
             'operator/fast-lane/invoke-git-outbox.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
+            'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
         OperatorRuntimeProcessFiles = @(
             'operator/fast-lane/build-vm-onboarding.ps1'
             'operator/fast-lane/invoke-git-outbox.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
+            'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
         OperatorRuntimeNetworkFiles = @(
             'operator/fast-lane/invoke-git-outbox.ps1'
+            'operator/realtime-relay/realtime-relay-client.ps1'
+        )
+
+        OperatorRuntimeCredentialFiles = @(
+            'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
         OperatorRuntimeReflectionFiles = @(

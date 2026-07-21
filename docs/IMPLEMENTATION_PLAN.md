@@ -1,6 +1,6 @@
 # 实现计划
 
-更新日期：2026-07-20
+更新日期：2026-07-21
 
 ## 总目标
 
@@ -29,7 +29,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | P10A-0A | 双机 Fast Lane MVP 前置门 | **CONTROLLED_PAUSE**；所有旧 bundle/prompt superseded，不得进入 VM | 只有在 realtime relay 独立工作流完成评审后，另行决定是否从新 clean commit 重新 finalization |
-| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **PROPOSED / NOT_PROVISIONED / NOT_ACTIVE** | 完成独立 infra、协议/攻击测试、外部授权与禁用回滚证明；不改变 P10/P11/P12 门 |
+| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE** | 完成本地质量门、固定 Wrangler dry-run、外部授权与真实正负权限/回滚证明；不改变 P10/P11/P12 门 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -54,7 +54,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 - P10B 未完成，不得开始 P11 全面 VM Live。
 - P11 未通过，不得宣称产品完成或进入 P12。
 
-## 2026-07-20 controlled pause 与独立 realtime relay 工作流
+## 2026-07-21 controlled pause 与独立 realtime relay 工作流
 
 旧 VM bootstrap 路径已受控暂停。不得继续交付或执行任何 onboarding ZIP/prompt，不进入
 VM，不运行 integration、reset、测试循环或 Formal Lane。暂停前最后一个 finalization、CI、
@@ -65,19 +65,27 @@ automation prompt、bundle 和 readiness receipt 只绑定暂停前 commit；本
 当前强制值为：`CanStartVmBootstrap=false`、`CanStartVmIntegration=false`、
 `P10A0AComplete=false`、`CanStartFormalP10A=false`。HostCoordinator 必须保持 `PAUSED`；
 VM task 若存在也必须保持 `PAUSED`。没有可靠 VM receipt 时不得推断最新 ZIP 已执行或 task 已
-创建。本工作包不创建 Cloudflare 资源、不实施 watcher、不触发 automation、不执行产品 Live。
+创建。本工作包已实施纯本地、DevelopmentOnly watcher 和独立 infra 源码，但不创建 Cloudflare
+外部资源、不触发 automation、不访问 VM、不执行产品 Live。
 
 R0 是与既有 P10A-0A/P10A/P10B/P11/P12 编号正交的 operator workflow，不重编号也不替代任何
 阶段门。推荐架构与约束见 `REALTIME_RELAY_PROPOSAL.md`，分步实施计划为：
 
-1. **R0-DESIGN**：冻结两条 lane、固定 schema、HMAC/nonce/sequence/previous-hash/TTL/ACK、
-   本地 validator、威胁模型、速率限制、断线 fallback 和禁用开关；只评审文档。
-2. **R0-INFRA-SCAFFOLD**：在独立 sibling infra repository 建立 Worker、SQLite-backed
-   Durable Object、WebSocket Hibernation 与固定测试；Wrangler/Node 不进入产品仓库或 VM。
-3. **R0-PROVISION**：取得一次明确 Cloudflare 管理授权后，才创建最小资源和两个独立身份，
+1. **R0-DESIGN（本地完成）**：冻结两条 lane、12-field pointer schema、
+   `CDDsi-HMAC-SHA256-v2`、nonce/sequence/previous-hash/TTL/逐消息 ACK、本地 validator、威胁
+   模型、速率/连接/bytes 限制、断线 fallback 和禁用开关。
+2. **R0-INFRA-SCAFFOLD（本地实现）**：在独立 sibling workspace 建立 Worker、SQLite-backed
+   Durable Object、WebSocket Hibernation、声明式 `exports` lifecycle、协议 kernel 与固定离线
+   tests；Wrangler/Node 不进入产品仓库或 VM，workspace 没有 remote 或部署。
+3. **R0-CLIENT（本地实现）**：Host/VM 使用 PowerShell 7 `ClientWebSocket`；reader watcher 与
+   writer publisher 使用分离的 context/assertion 和相反 lane ACL。publisher 必须
+   pending-before-network，并在响应丢失、重启或 TTL 后只补发相同规范 bytes/MessageId；watcher
+   只在 Git `Poll` 二次验证后，经 `PENDING`/`SUCCEEDED` proof 唤醒 hash-bound 固定
+   `codex exec resume --json` 入口，不能执行 relay/free text。owner-marked state、ACL/no-reparse、
+   原子更新、resume/duplicate/ACK/backoff、DPAPI CurrentUser credential provider 与 fake
+   transport 必须由 focused tests 证明；部署初始必须 disabled，既有分钟 polling 继续作 fallback。
+4. **R0-PROVISION**：取得一次明确 Cloudflare 管理授权后，才创建最小资源和两个独立身份，
    将 secret 写入对应安全存储；管理员会话不能成为客户端或 automation credential。
-4. **R0-CLIENT**：Host/VM 使用 PowerShell 7 `ClientWebSocket`；watcher 只验证通知并唤醒固定
-   入口，不能执行 relay/free text。部署初始必须 disabled，既有分钟 polling 继续作 fallback。
 5. **R0-VERIFY**：完成 schema/HMAC/replay/order/expiry/ACK/rate-limit、断线重连、错误身份、
    payload pointer、Git fallback、STOP、禁用/回滚与 secret 扫描矩阵；只有独立授权后才可考虑
    激活，且仍不能进入 Formal Lane 或自动 merge/release/promotion。
@@ -766,13 +774,15 @@ receipt/onboarding/prompts/runbooks/tests 随后升版。2026-07-17 三仓均已
 ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、无 bypass，
 并经 effective-rules API 验证目标 refs 的删除、非快进和线性历史约束。
 
-下一独立工作包只推进 **Cloudflare realtime relay 设计与实现**：
+当前独立工作包只推进 **Cloudflare realtime relay 设计与实现**：
 
 1. 从 `HANDOFF.md` 顶部和 `REALTIME_RELAY_PROPOSAL.md` 开始，不从旧聊天或 ZIP 恢复状态。
 2. 先评审 R0-DESIGN 的 schema、HMAC/key separation、replay/order/ACK、payload pointer、
    本地 validator、watcher 固定唤醒、Git fallback、速率限制和禁用/回滚。
-3. 只有明确授权后，才在独立 sibling infra repository 创建 Wrangler/Node/Worker/Durable
-   Object 实现；产品仓库和 VM runtime 不安装 Node/npm。
+3. 本地 Worker/DO 源码与零依赖测试只存在于独立 sibling workspace；只有集中明确授权后才
+   固定安装/使用 Node LTS、Wrangler/测试依赖并访问 npm/Cloudflare，完成 Wrangler dry-run，
+   随后才登录、创建 Worker/Durable Object、写入 secret 和部署。产品仓库和 VM runtime 不安装
+   Node/npm。
 4. Cloudflare account、deployment credential、两个 lane identity 与 HMAC key 均由外部
    provisioner 独立发放；公网 URL 不是 sender authority，secret 不进入仓库、prompt 或对话。
 5. 先完成本地和临时环境攻击矩阵，再由一次独立激活授权决定是否部署客户端；默认 disabled，
@@ -792,9 +802,16 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
 - 服务端 protected history 已完成，但 controlled pause 明确覆盖旧 bootstrap 派生逻辑；
   `CanStartVmBootstrap=false`。即使未来 clean HEAD、bundle、暂停 task、remote/PR/CI 再次
   匹配，也必须先有新的显式恢复决定和 readiness receipt，不能自动沿用暂停前结论。
-- Realtime relay 当前缺少经评审的 frozen schema、独立 sibling infra repository、Cloudflare
-  account/resource receipt、部署 credential、两个 lane identity、HMAC key provisioning、客户端
-  watcher bytes、攻击矩阵和启用授权；状态必须是 `NOT_PROVISIONED / NOT_ACTIVE`。
+- Realtime relay 已有本地 sibling infra/Worker/DO/Hibernation 源码、协议 kernel、PowerShell
+  publish/watch、pending/ACK 恢复、fixed Codex resume/wake proof、受控 cleanup、DPAPI credential
+  provider 与 focused fake tests。独立 infra 本地 commit
+  `a74ef5986b801bf5c9c500e473590d5167a062a8` 的 77/77 Node 离线测试、44-file secret scan
+  与 36-file syntax gate 已通过且没有 remote；产品 relay focused tests 在 PowerShell 7 与
+  Windows PowerShell 5.1 各 67/67、完整双引擎 HostSandbox gate 与 39-file Release Simulation
+  DryRun 已通过。固定 Wrangler/Miniflare runtime integration、typecheck 和 dry-run 仍待集中授权
+  后执行。Cloudflare account/resource receipt、部署
+  credential、workers.dev endpoint、两个 lane runtime secret、真实正负权限 evidence 和启用
+  授权均不存在；状态必须是 `NOT_PROVISIONED / NOT_ACTIVE`。
 - VM 不负责重查上述宿主机 retained path/task/PR/CI/remote；它只验证最终提示词的外部
   ZIP hash/length、commit/tree 与 tokens。新 key 只是 `KEYPAIR_STAGED`，必须完成注册及真实
   正/负向权限测试后才可能 credential ready。

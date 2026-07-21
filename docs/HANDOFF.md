@@ -1,8 +1,80 @@
 # 新任务交接
 
-更新日期：2026-07-20
+更新日期：2026-07-21
 
 ## 当前动态状态（唯一入口）
+
+**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE / CONTROLLED_PAUSE。**
+
+2026-07-21 本任务从实际磁盘重新审计：起点为分支
+`codex/repair/p10a-0a-fast-lane`、commit
+`de0816a768cdf5401ea968dee098d66fac7c3731`、tree
+`c61819da0f7ee18792810c19fd6f8b5466ae0ecc`，当时与 upstream 精确一致且 worktree/index
+clean；GitHub PR #1 仍是唯一 PR，状态为 OPEN/DRAFT/CLEAN，起点 commit 的两个必需检查均为
+success。当前 tracked 修改属于本次 realtime relay 本地实现，因而起点 CI、tree 和任何旧
+finalization 都不能证明当前工作树。
+
+当前已在产品仓库的 DevelopmentOnly `OperatorCoordination` plane 增加纯 PowerShell relay
+客户端及 fake/contract tests；本地 sibling workspace
+`D:\projects(WIN)\cddsi-relay-infra` 已创建 Worker、SQLite-backed Durable Object、WebSocket
+Hibernation、协议 kernel 与离线测试的**源码实现**，并未创建任何同名云资源。两个 workspace
+保持分离：产品/Release 不含
+Node、npm、Wrangler、Worker 源码或 Cloudflare 配置；infra workspace 目前没有 remote，亦未
+发布。实现只接受两条窄 lane 的固定 immutable-pointer schema，不携带或执行 prompt、脚本、
+命令、日志正文或自由文本。Git protected-history control repos 仍是持久审计与断线 fallback，
+一分钟轮询合同未删除或放宽。
+
+产品侧 reader watcher 与 writer publisher 使用分离的 context/runtime assertion 和相反 lane ACL。
+publisher 的五字段 pointer 包含从已创建 immutable control envelope 复制的 `MessageId`，在首次
+网络前原子保存规范 pending body；响应丢失、重启或 TTL 已过时都只重发相同 bytes/MessageId，
+只有精确 `PUBLISHED`/`PUBLISHED_IDEMPOTENT` 回执才能推进 sequence/hash。
+watcher 经 relay 验证后仍必须让固定 Git outbox `Poll` 二次绑定 repository/ref/commit/MessageId/
+payload hash，再按 `PENDING` proof、hash-bound absolute `codex.exe` 固定 `exec resume --json`、
+exit 0、assertion 复验、`SUCCEEDED` proof、state commit、ACK 的顺序执行。relay/Git/model/free text
+均不进入 executable、argv、prompt 或 environment。owner-marked cleanup 需要独立 action-bound
+assertion 与 Live 确认，并在任何 publisher chain/pending state 存在时拒绝清理；它不能静默退役
+出站链。
+
+独立 infra workspace 已初始化**仅本地** Git `main`，无 remote；当前离线提交为
+`a74ef5986b801bf5c9c500e473590d5167a062a8`，tree
+`83ce0d0918edac139da5133e7b215c3a68e0e5e9`。Node built-in 测试 77/77 通过，仓库检查覆盖
+44 个文件且 secret findings=0，全部 36 个 `.mjs`/`.ts` 文件通过 `node --check`。固定本地
+Wrangler/TypeScript、auth create 与 secret staging guard 在未安装 lock-bound toolchain 时均以
+exit 78 fail closed；`package-lock.json`、`node_modules`、`dist` 均不存在。本地提交不是部署
+回执，亦不表示 Miniflare/workerd、真实 SQLite DO 或 WebSocket Hibernation runtime 已测试。
+
+产品本地完成门已通过：realtime relay focused tests 在 PowerShell 7 与 Windows PowerShell 5.1
+各 67/67，通过两套引擎各 25/25 的 operator coordination boundary tests；完整
+`scripts/check.ps1` 双引擎 HostSandbox gate 通过，所有产品真实 network/process/registry、
+outside-sandbox、forbidden access、unexpected ledger、secret finding 和 mutation spy 指标均为 0；
+Release Simulation DryRun 通过 39 个 package files，source/staging/ZIP/extract secret findings 均为 0，
+精确 inventory/hash 与 deterministic ZIP 校验通过。上述证据只证明本地离线实现，不得把
+`LOCAL_OFFLINE_IMPLEMENTATION` 解释为已部署或可激活。当前没有 Cloudflare account/resource
+receipt、Worker URL、Durable Object namespace、runtime secret、客户端 live credential、部署
+receipt 或真实端到端权限证据。
+本任务至今未执行 npm 网络访问、Wrangler 安装/登录、Cloudflare 登录、secret 写入、Worker/DO
+创建、workers.dev 部署、DNS/域名变更、系统服务/计划任务注册，也未创建 infra 远端。
+
+永久强制值继续为：
+
+- `CanStartVmBootstrap=false`；
+- `CanStartVmIntegration=false`；
+- `P10A0AComplete=false`；
+- `CanStartFormalP10A=false`；
+- HostCoordinator automation `cddsi-fast-lane-hostcoordinator-minute-poll` 必须继续
+  `PAUSED`；不推断 VM automation 存在，也不创建、触发、更新或启用任何 automation；
+- 不进入 VM、不执行产品 Live、不自动 merge/release/promotion、不越过 P12；
+- 所有旧 onboarding ZIP、prompt、finalization、bundle 与 automation binding 继续为
+  `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`。
+
+本地实现、零依赖攻击矩阵、secret scan、产品完整质量门和两个 workspace 的 Git 状态均明确
+后，只进入一次集中外部授权门。由于用户同时把固定 Node/Wrangler 安装和 npm 访问置于该门内，
+Wrangler runtime typecheck/dry-run 不能在授权前伪造：一次授权必须按阶段执行，先只安装并核验
+workspace-local lock-bound toolchain、运行 typecheck/dry-run 和生成物扫描；任何漂移立即停止，
+不登录或创建资源。只有该阶段真实通过后，同一授权才继续命名 keyring profile、资源、secret、
+部署和正负 smoke。授权不自动激活 watcher、恢复 VM bootstrap 或启用 automation。
+
+## 2026-07-20 controlled-pause baseline（历史；由上方当前状态覆盖）
 
 **CONTROLLED_PAUSE：不得继续 VM bootstrap。** 2026-07-20T15:19:09Z
 （北京时间 2026-07-20 23:19:09），本任务在宿主机审计到
@@ -108,11 +180,12 @@ owner receipt 或启动记录。为避免把不明进程误认成本任务进程
 延迟不满足下一轮高频双机协作，需要先独立设计并实现秒级通知 accelerator，同时保持 Git
 control repositories 的 durable audit/fallback 与全部原有权限边界。
 
-下一独立任务名称：**Cloudflare realtime relay 设计与实现**。入口为
-`docs/REALTIME_RELAY_PROPOSAL.md`，当前事实级别只能是
-`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`。本任务不创建 Cloudflare Worker、Durable Object、
-域名、secret、token、sibling infra repository 或 watcher，也不改变一分钟 fallback。任何后续
-provisioning、网络、Cloudflare/GitHub 管理动作都必须在新任务中取得明确外部授权。
+当时冻结的下一独立任务名称为 **Cloudflare realtime relay 设计与实现**；它现在就是本文顶部
+记录的当前工作包，入口为 `docs/REALTIME_RELAY_PROPOSAL.md`。本历史段的
+`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE` 已由顶部的本地实现状态覆盖，但“不得在未授权时创建
+Cloudflare Worker、Durable Object、域名、secret、token、远端或激活 watcher”仍持续有效。
+一分钟 fallback 不变；任何后续 provisioning、网络、Cloudflare/GitHub 管理动作仍必须取得明确
+外部授权。
 
 恢复旧 VM bootstrap 前必须从未来新的最终 clean exact commit 重新执行完整双引擎
 HostSandbox、Release Simulation DryRun、diff/编码门、远端/PR/CI 核验，重新生成并自校验

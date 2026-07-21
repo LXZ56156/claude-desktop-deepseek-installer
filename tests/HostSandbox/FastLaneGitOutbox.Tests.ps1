@@ -373,6 +373,28 @@
             return ([string](Invoke-FixtureGit @('-C', $Fixture.Work, 'rev-parse', 'HEAD') | Select-Object -First 1)).Trim()
         }
 
+        function New-RealtimeWakePointer {
+            param(
+                [Parameter(Mandatory = $true)]$Fixture,
+                [Parameter(Mandatory = $true)]$Message,
+                [Parameter(Mandatory = $true)][string]$Commit,
+                [long]$Sequence = 1
+            )
+
+            return [pscustomobject][ordered]@{
+                SchemaVersion = 'cddsi-realtime-relay-wake-event-v1'
+                Verb = 'CONTROL_REPO_POINTER_AVAILABLE'
+                Lane = $Fixture.Direction
+                MessageId = [string]$Message.Envelope.MessageId
+                Sequence = $Sequence
+                RepositoryId = ([long]$Fixture.Evidence.RepositoryNumericId).ToString(
+                    [Globalization.CultureInfo]::InvariantCulture)
+                Ref = 'refs/heads/main'
+                Commit = $Commit
+                PayloadSha256 = Get-CddsiVmTestRelayPayloadSha256 -Payload $Message.Payload
+            }
+        }
+
         function Set-ProtectionTrustInput {
             param(
                 [Parameter(Mandatory = $true)]$Fixture,
@@ -1357,6 +1379,157 @@
         $second.ProcessedMessageCount | Should -Be 1
         $second.MoreAvailable | Should -BeFalse
         $second.RelayState.StoppedCycleIds | Should -Contain $request.Envelope.CycleId
+        $second.WakeReceipt | Should -BeNullOrEmpty
+    }
+
+    It 'consumes one exact realtime wake pointer and returns an exact target-bound receipt' {
+        $fixture = New-OutboxFixture -NumericId 121
+        $parameters = Get-OutboxParameters $fixture
+        $state = New-CddsiVmTestRelayState synthetic/host-to-vm synthetic/vm-to-host synthetic/product
+        $request = New-InitialRequestMessage -State $state `
+            -MessageId '92000000-0000-4000-8000-000000000121'
+        $commit = Add-OutboxCommit $fixture $request 'wake target'
+        $pointer = New-RealtimeWakePointer -Fixture $fixture -Message $request -Commit $commit -Sequence 17
+
+        $result = Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live `
+            -AcknowledgeOperatorPlaneLive -ExpectedWakePointer $pointer @parameters
+
+        $result.ProcessedMessageCount | Should -Be 1
+        $result.MaximumMessageCount | Should -Be 1
+        $result.MoreAvailable | Should -BeFalse
+        Test-CddsiExactPropertySet -InputObject $result.WakeReceipt -Expected @(
+            'SchemaVersion', 'ContractVersion', 'Status', 'Lane', 'MessageId',
+            'Sequence', 'RepositoryId', 'Ref', 'Commit', 'PayloadSha256',
+            'FixedEntryInvoked', 'Consumed', 'RepositoryIdentityVerified',
+            'PayloadSha256Verified'
+        ) | Should -BeTrue
+        $result.WakeReceipt.SchemaVersion | Should -Be 1
+        $result.WakeReceipt.ContractVersion | Should -BeExactly 'cddsi-fast-lane-wake-receipt-v1'
+        $result.WakeReceipt.Status | Should -BeExactly 'CONSUMED_NOW'
+        foreach ($name in @('Lane', 'MessageId', 'Sequence', 'RepositoryId', 'Ref', 'Commit', 'PayloadSha256')) {
+            $result.WakeReceipt.$name | Should -Be $pointer.$name
+        }
+        foreach ($name in @(
+            'FixedEntryInvoked', 'Consumed', 'RepositoryIdentityVerified', 'PayloadSha256Verified'
+        )) { $result.WakeReceipt.$name | Should -BeTrue }
+
+        $retry = Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live `
+            -AcknowledgeOperatorPlaneLive -ExpectedWakePointer $pointer @parameters
+        $retry.ProcessedMessageCount | Should -Be 0
+        $retry.WakeReceipt.Status | Should -BeExactly 'ALREADY_CONSUMED'
+        $retry.WakeReceipt.Commit | Should -BeExactly $commit
+        $retry.WakeReceipt.MessageId | Should -BeExactly $request.Envelope.MessageId
+        $retry.WakeReceipt.PayloadSha256 | Should -BeExactly $request.Envelope.PayloadSha256
+    }
+
+    It 'recognizes a realtime pointer already consumed by fallback polling after the cursor advanced' {
+        $fixture = New-OutboxFixture -NumericId 122
+        $parameters = Get-OutboxParameters $fixture
+        $state = New-CddsiVmTestRelayState synthetic/host-to-vm synthetic/vm-to-host synthetic/product
+        $request = New-InitialRequestMessage -State $state `
+            -MessageId '92000000-0000-4000-8000-000000000122'
+        $firstCommit = Add-OutboxCommit $fixture $request 'fallback first'
+        $requestTransition = Resolve-CddsiVmTestRelayTransition -State $state `
+            -Envelope $request.Envelope -Payload $request.Payload `
+            -ValidationTimeUtc '2030-01-01T00:05:00.0000000Z' `
+            -AuthenticatedSenderRole HostCoordinator -AuthenticatedOutbox host-to-vm
+        $stopPayload = New-CddsiFastLaneSyntheticPayload STOP $request.Envelope.CycleId $request.Envelope.RunId
+        $stopEnvelope = New-CddsiFastLaneSyntheticEnvelope -State $requestTransition.State -Payload $stopPayload `
+            -MessageId '92000000-0000-4000-8000-000000000222' -CycleId $request.Envelope.CycleId `
+            -Sequence 2 -MessageType STOP -SenderRole HostCoordinator -Outbox host-to-vm `
+            -Status STOPPED -RunId $request.Envelope.RunId `
+            -PreviousMessageSha256 $requestTransition.MessageSha256 `
+            -Nonce '93000000-0000-4000-8000-000000000222'
+        [void](Add-OutboxCommit $fixture ([pscustomobject][ordered]@{
+            Envelope = $stopEnvelope; Payload = $stopPayload
+        }) 'fallback second')
+        $pointer = New-RealtimeWakePointer -Fixture $fixture -Message $request `
+            -Commit $firstCommit -Sequence 23
+
+        $fallback = Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live `
+            -AcknowledgeOperatorPlaneLive @parameters
+        $fallback.ProcessedMessageCount | Should -Be 2
+        $fallback.RelayState.SeenMessageIds | Should -Contain $request.Envelope.MessageId
+        $fallback.RelayState.SeenMessageIds | Should -Contain $stopEnvelope.MessageId
+
+        $woken = Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live `
+            -AcknowledgeOperatorPlaneLive -ExpectedWakePointer $pointer @parameters
+        $woken.ProcessedMessageCount | Should -Be 0
+        $woken.WakeReceipt.Status | Should -BeExactly 'ALREADY_CONSUMED'
+        $woken.WakeReceipt.Commit | Should -BeExactly $firstCommit
+        $woken.MoreAvailable | Should -BeFalse
+    }
+
+    It 'fails closed for malformed, wrong-direction, and forged realtime wake pointers without executing data' {
+        $fixture = New-OutboxFixture -NumericId 123
+        $parameters = Get-OutboxParameters $fixture
+        $state = New-CddsiVmTestRelayState synthetic/host-to-vm synthetic/vm-to-host synthetic/product
+        $request = New-InitialRequestMessage -State $state `
+            -MessageId '92000000-0000-4000-8000-000000000123'
+        $commit = Add-OutboxCommit $fixture $request 'negative wake target'
+        $pointer = New-RealtimeWakePointer -Fixture $fixture -Message $request -Commit $commit
+        $sentinel = Join-Path $fixture.Root 'wake-data-executed.txt'
+
+        $withCommand = ConvertTo-CddsiFastLaneJsonData (ConvertFrom-Json `
+            (ConvertTo-CddsiVmTestRelayCanonicalJson $pointer))
+        Add-Member -InputObject $withCommand -NotePropertyName Command `
+            -NotePropertyValue ('Set-Content -LiteralPath "' + $sentinel + '" -Value bad')
+        { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode TestSafe `
+            -ExpectedWakePointer $withCommand @parameters } | Should -Throw '*WAKE_POINTER_SCHEMA_INVALID*'
+
+        foreach ($case in @(
+            @{ Name = 'Lane'; Value = 'vm-to-host'; Error = 'WAKE_POINTER_OUTBOX_MISMATCH' },
+            @{ Name = 'RepositoryId'; Value = '0123'; Error = 'WAKE_POINTER_REPOSITORY_ID_MISMATCH' },
+            @{ Name = 'Ref'; Value = 'refs/heads/other'; Error = 'WAKE_POINTER_REF_MISMATCH' },
+            @{ Name = 'Sequence'; Value = [double]1; Error = 'WAKE_POINTER_SEQUENCE_INVALID' }
+        )) {
+            $forged = ConvertTo-CddsiFastLaneJsonData (ConvertFrom-Json `
+                (ConvertTo-CddsiVmTestRelayCanonicalJson $pointer))
+            $forged.($case.Name) = $case.Value
+            { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode TestSafe `
+                -ExpectedWakePointer $forged @parameters } | Should -Throw ('*' + $case.Error + '*')
+        }
+        [IO.File]::Exists($sentinel) | Should -BeFalse
+
+        $wrongPayload = ConvertTo-CddsiFastLaneJsonData (ConvertFrom-Json `
+            (ConvertTo-CddsiVmTestRelayCanonicalJson $pointer))
+        $wrongPayload.PayloadSha256 = 'b' * 64
+        { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live -AcknowledgeOperatorPlaneLive `
+            -ExpectedWakePointer $wrongPayload @parameters } | Should -Throw '*WAKE_POINTER_PAYLOAD_HASH_MISMATCH*'
+
+        $wrongMessage = ConvertTo-CddsiFastLaneJsonData (ConvertFrom-Json `
+            (ConvertTo-CddsiVmTestRelayCanonicalJson $pointer))
+        $wrongMessage.MessageId = '92000000-0000-4000-8000-000000000999'
+        { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live -AcknowledgeOperatorPlaneLive `
+            -ExpectedWakePointer $wrongMessage @parameters } | Should -Throw '*WAKE_POINTER_MESSAGE_ID_MISMATCH*'
+
+    }
+
+    It 'rejects a wake target that would skip an unconsumed protected-history commit' {
+        $fixture = New-OutboxFixture -NumericId 124
+        $parameters = Get-OutboxParameters $fixture
+        $state = New-CddsiVmTestRelayState synthetic/host-to-vm synthetic/vm-to-host synthetic/product
+        $request = New-InitialRequestMessage -State $state `
+            -MessageId '92000000-0000-4000-8000-000000000124'
+        [void](Add-OutboxCommit $fixture $request 'gap first')
+        $requestTransition = Resolve-CddsiVmTestRelayTransition -State $state `
+            -Envelope $request.Envelope -Payload $request.Payload `
+            -ValidationTimeUtc '2030-01-01T00:05:00.0000000Z' `
+            -AuthenticatedSenderRole HostCoordinator -AuthenticatedOutbox host-to-vm
+        $stopPayload = New-CddsiFastLaneSyntheticPayload STOP $request.Envelope.CycleId $request.Envelope.RunId
+        $stopEnvelope = New-CddsiFastLaneSyntheticEnvelope -State $requestTransition.State -Payload $stopPayload `
+            -MessageId '92000000-0000-4000-8000-000000000224' -CycleId $request.Envelope.CycleId `
+            -Sequence 2 -MessageType STOP -SenderRole HostCoordinator -Outbox host-to-vm `
+            -Status STOPPED -RunId $request.Envelope.RunId `
+            -PreviousMessageSha256 $requestTransition.MessageSha256 `
+            -Nonce '93000000-0000-4000-8000-000000000224'
+        $stopMessage = [pscustomobject][ordered]@{ Envelope = $stopEnvelope; Payload = $stopPayload }
+        $secondCommit = Add-OutboxCommit $fixture $stopMessage 'gap second'
+        $pointer = New-RealtimeWakePointer -Fixture $fixture -Message $stopMessage `
+            -Commit $secondCommit -Sequence 25
+
+        { Invoke-CddsiFastLaneGitOutbox -Operation Poll -Mode Live -AcknowledgeOperatorPlaneLive `
+            -ExpectedWakePointer $pointer @parameters } | Should -Throw '*WAKE_POINTER_SEQUENCE_GAP*'
     }
 
     It 'derives exactly one relay sender role from repository direction and credential profile' {

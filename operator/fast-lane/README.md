@@ -4,7 +4,7 @@ This directory is development-only operator coordination material. It is not
 loaded by `lib/bootstrap.ps1`, is not part of the product execution plane, and
 must never enter a Release ZIP.
 
-## Controlled pause (2026-07-20)
+## Controlled pause and local realtime implementation (2026-07-21)
 
 VM onboarding, bootstrap, integration, reset/test loops, and Formal Lane are
 paused. Every previously generated onboarding ZIP and prompt is retained for
@@ -13,12 +13,17 @@ delivered or executed. The host automation must remain `PAUSED`. A VM
 automation, if one exists, must also remain `PAUSED`; without a current VM
 receipt its existence or state is not inferred.
 
-The next independent work item is the proposal in
-`docs/REALTIME_RELAY_PROPOSAL.md`. Its status is strictly
-`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`. No Cloudflare resource, credential,
-identity, watcher, or sibling infrastructure repository is created by this
-pause task. The existing two protected Git control repositories remain the
-durable source and minute-poll fallback. A future realtime accelerator cannot
+The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` now has status
+`LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE`. A pure
+PowerShell DevelopmentOnly publish/watch/fixed-wake client exists under
+`operator/realtime-relay/`; its exact client, threat, credential rotation,
+rollback, cleanup, and troubleshooting contract is in
+`operator/realtime-relay/README.md`. The separate local sibling workspace
+`D:\projects(WIN)\cddsi-relay-infra`
+contains Worker/Durable Object source and offline tests. The sibling has no
+remote and no Cloudflare resource, credential, identity, endpoint, or deployment
+has been created. The existing two protected Git control repositories remain the
+durable source and minute-poll fallback. The realtime accelerator cannot
 execute payload text, expand either machine's product authority, weaken Formal
 Lane, or automate merge, release, promotion, or P12 approval.
 

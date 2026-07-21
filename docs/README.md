@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-20
+更新日期：2026-07-21
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -21,23 +21,23 @@
 9. `docs/IMPLEMENTATION_PLAN.md`：从已完成 P1 的当前基线到 VM-ready 的阶段门。
 10. `docs/VM_TEST_RELAY.md`：宿主机修复端、VM 只读测试端，以及 Fast Lane 日常
     自动修复与 Formal Lane 正式证据回传的 operator coordination 权威协议。
-11. `docs/REALTIME_RELAY_PROPOSAL.md`：Cloudflare realtime accelerator 的非权威提案；
-    只描述待实现架构、授权点和回滚，不表示资源已经 provision 或启用。
+11. `docs/REALTIME_RELAY_PROPOSAL.md`：Cloudflare realtime accelerator 的本地离线实现合同；
+    描述架构、协议、授权点和回滚，不表示资源已经 provision 或启用。
 12. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
     `docs/VM_ACCEPTANCE_PLAN.md`：发布候选、窄范围虚拟机校准与后续全面验收。
 
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
 
-截至 2026-07-20，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前动态状态”。
+截至 2026-07-21，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前动态状态”。
 项目已经进入受控暂停：不得继续交付或执行任何既有 onboarding ZIP/prompt，不进入 VM，
 不启动 bootstrap、integration、测试循环或 Formal Lane。暂停前 finalization 及其 bundle、
 automation prompt 和 readiness receipt 只绑定暂停前的精确 commit；本次 tracked 文档修改
-立即使这些绑定失效。当前四个 readiness/complete 标志全部为 false。下一独立工作流是
-Cloudflare realtime relay 的设计与实现准备，而不是继续旧 VM bootstrap。
+立即使这些绑定失效。当前四个 readiness/complete 标志全部为 false。独立 Cloudflare
+realtime relay 工作流正在完成本地离线实现与质量门，而不是继续旧 VM bootstrap。
 
-`REALTIME_RELAY_PROPOSAL.md` 的事实级别固定为
-`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`。它不能授权创建 Cloudflare 资源、启用 watcher、
+`REALTIME_RELAY_PROPOSAL.md` 的事实级别为
+`LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE`。它不能授权创建 Cloudflare 资源、启用 watcher、
 改变 automation 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
 本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，
 以后两者为准。

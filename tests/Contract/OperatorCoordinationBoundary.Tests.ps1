@@ -13,9 +13,11 @@
         'operator/fast-lane/invoke-git-outbox.ps1'
         'operator/fast-lane/invoke-vm-reset-live.ps1'
         'operator/fast-lane/providers/windows-vm-reset.ps1'
+        'operator/realtime-relay/realtime-relay-client.ps1'
     )
     $script:RehearsalRelative = 'operator/fast-lane/invoke-synthetic-rehearsal.ps1'
     $script:RealtimeRelayProposalRelative = 'docs/REALTIME_RELAY_PROPOSAL.md'
+    $script:RealtimeRelayReadmeRelative = 'operator/realtime-relay/README.md'
     . (Join-Path $script:RepoRoot 'scripts\check-worker.ps1') `
         -RepositoryRoot $script:RepoRoot `
         -SandboxRoot $script:RepoRoot `
@@ -32,7 +34,7 @@
 }
 
 Describe 'operator coordination static isolation boundary' {
-    It 'classifies the realtime relay proposal as inactive DevelopmentOnly documentation' {
+    It 'classifies the local realtime relay contract as inactive DevelopmentOnly documentation' {
         @($script:ReleaseManifest.PackageFiles | Where-Object {
                 $_ -ceq $script:RealtimeRelayProposalRelative
             }).Count | Should -Be 0
@@ -47,11 +49,12 @@ Describe 'operator coordination static isolation boundary' {
             [Text.UTF8Encoding]::new($false, $true)
         )
         foreach ($requiredText in @(
-            'PROPOSED / NOT_PROVISIONED / NOT_ACTIVE'
+            'LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE'
             'Cloudflare Worker + SQLite-backed Durable Object + WebSocket Hibernation'
             '`host-to-vm`'
             '`vm-to-host`'
             'HMAC 请求认证'
+            '`CDDsi-HMAC-SHA256-v2`'
             '`ClientWebSocket`'
             'sibling infra repo'
             'immutable payload pointer'
@@ -62,6 +65,34 @@ Describe 'operator coordination static isolation boundary' {
             '禁止自动 merge、release、promotion'
         )) {
             $proposal.IndexOf($requiredText, [StringComparison]::Ordinal) |
+                Should -BeGreaterOrEqual 0
+        }
+
+        @($script:ReleaseManifest.PackageFiles | Where-Object {
+                $_ -ceq $script:RealtimeRelayReadmeRelative
+            }).Count | Should -Be 0
+        @($script:ReleaseManifest.DevelopmentOnlyFiles | Where-Object {
+                $_ -ceq $script:RealtimeRelayReadmeRelative
+            }).Count | Should -Be 1
+        $readmePath = Join-Path $script:RepoRoot $script:RealtimeRelayReadmeRelative
+        Test-Path -LiteralPath $readmePath -PathType Leaf | Should -BeTrue
+        $readme = [IO.File]::ReadAllText(
+            $readmePath,
+            [Text.UTF8Encoding]::new($false, $true)
+        )
+        foreach ($requiredText in @(
+            'LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE'
+            'New-CddsiRealtimeRelayLivePublisher'
+            'Invoke-CddsiRealtimeRelayPublish'
+            '`PendingPublish`'
+            'PUBLISHED_IDEMPOTENT'
+            '`exec resume --json <fixed-session-uuid> <fixed-source-prompt>`'
+            '`REALTIME_WEBSOCKET_IDLE`'
+            '`REMOVE_OWNED_RELAY_STATE`'
+            'new environment epoch'
+            'automation stays `PAUSED`'
+        )) {
+            $readme.IndexOf($requiredText, [StringComparison]::Ordinal) |
                 Should -BeGreaterOrEqual 0
         }
     }
@@ -108,19 +139,38 @@ Describe 'operator coordination static isolation boundary' {
                 'Invoke-CddsiFastLaneGitOutbox'
                 'Invoke-CddsiFastLaneVmBootstrapHandoffOnboarding'
             )
+        @($script:Boundary.Rules.OperatorRuntimeEntryPoints['operator/realtime-relay/realtime-relay-client.ps1']) |
+            Should -BeExactly @(
+                'Invoke-CddsiRealtimeRelayWatcher'
+                'Invoke-CddsiRealtimeRelayPublish'
+                'Set-CddsiRealtimeRelayDpapiCredential'
+                'New-CddsiRealtimeRelayDpapiCredentialProvider'
+                'New-CddsiRealtimeRelayFixedGitOutboxWakeProvider'
+                'New-CddsiRealtimeRelayOwnedStateProvider'
+                'Remove-CddsiRealtimeRelayOwnedState'
+                'New-CddsiRealtimeRelayLiveProvider'
+                'New-CddsiRealtimeRelayLivePublisher'
+            )
         @($script:Boundary.Rules.OperatorRuntimeNetworkFiles) |
-            Should -BeExactly @('operator/fast-lane/invoke-git-outbox.ps1')
+            Should -BeExactly @(
+                'operator/fast-lane/invoke-git-outbox.ps1'
+                'operator/realtime-relay/realtime-relay-client.ps1'
+            )
+        @($script:Boundary.Rules.OperatorRuntimeCredentialFiles) |
+            Should -BeExactly @('operator/realtime-relay/realtime-relay-client.ps1')
         @($script:Boundary.Rules.OperatorRuntimeFileSystemFiles) |
             Should -BeExactly @(
                 'operator/fast-lane/build-vm-onboarding.ps1'
                 'operator/fast-lane/invoke-git-outbox.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
+                'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeProcessFiles) |
             Should -BeExactly @(
                 'operator/fast-lane/build-vm-onboarding.ps1'
                 'operator/fast-lane/invoke-git-outbox.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
+                'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeReflectionFiles) |
             Should -BeExactly @(
@@ -133,6 +183,7 @@ Describe 'operator coordination static isolation boundary' {
                 'operator/fast-lane/invoke-git-outbox.ps1'
                 'operator/fast-lane/invoke-vm-reset-live.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
+                'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeVmInspectionFiles) |
             Should -BeExactly @('operator/fast-lane/providers/windows-vm-reset.ps1')
@@ -171,6 +222,7 @@ Describe 'operator coordination static isolation boundary' {
             FileSystem        = @()
             Process           = @()
             Network           = @()
+            Credential        = @()
             Reflection        = @()
             VmInspection      = @()
             VmMutation        = @()
@@ -207,6 +259,8 @@ Describe 'operator coordination static isolation boundary' {
         @{ Capability = 'FileSystem'; Primitive = 'file read'; Source = "function Invoke-Synthetic { [IO.File]::ReadAllText('x') }" }
         @{ Capability = 'Process'; Primitive = 'process start'; Source = "function Invoke-Synthetic { [System.Diagnostics.Process]::Start('x') }" }
         @{ Capability = 'Network'; Primitive = 'web request'; Source = 'function Invoke-Synthetic { Invoke-WebRequest https://example.invalid }' }
+        @{ Capability = 'Network'; Primitive = 'Net alias type'; Source = 'function Invoke-Synthetic { [Net.Http.HttpClient]::new() }' }
+        @{ Capability = 'Credential'; Primitive = 'DPAPI CurrentUser'; Source = 'function Invoke-Synthetic { [Security.Cryptography.ProtectedData]::Protect($a, $b, [Security.Cryptography.DataProtectionScope]::CurrentUser) }' }
         @{ Capability = 'Reflection'; Primitive = 'Add-Type'; Source = "function Invoke-Synthetic { Add-Type -TypeDefinition 'class X {}' }" }
         @{ Capability = 'VmInspection'; Primitive = 'CIM inspection'; Source = 'function Invoke-Synthetic { Get-CimInstance Win32_ComputerSystem }' }
         @{ Capability = 'VmInspection'; Primitive = 'AppX inspection'; Source = 'function Invoke-Synthetic { Get-AppxPackage }' }
@@ -254,6 +308,7 @@ Describe 'operator coordination static isolation boundary' {
             OperatorRuntimeFileSystemFiles        = @()
             OperatorRuntimeProcessFiles           = @()
             OperatorRuntimeNetworkFiles           = @()
+            OperatorRuntimeCredentialFiles        = @()
             OperatorRuntimeReflectionFiles        = @()
             OperatorRuntimeVmInspectionFiles      = @()
             OperatorRuntimeVmMutationFiles        = @()
@@ -263,6 +318,7 @@ Describe 'operator coordination static isolation boundary' {
             FileSystem        = @('synthetic-runtime.ps1')
             Process           = @()
             Network           = @()
+            Credential        = @()
             Reflection        = @()
             VmInspection      = @()
             VmMutation        = @()
@@ -278,6 +334,38 @@ Describe 'operator coordination static isolation boundary' {
             Assert-CddsiOperatorRuntimeCapabilityAllowLists `
                 -RuntimeFiles $runtimeFiles -Rules $rules -ActualByCapability $actual
         } | Should -Throw '*OperatorRuntimeFileSystemFiles actual capability set drifted*'
+    }
+
+    It 'rejects credential capability in every operator runtime except the exact relay client' {
+        $runtimeFiles = @(
+            'operator/realtime-relay/realtime-relay-client.ps1'
+            'synthetic-other-runtime.ps1'
+        )
+        $rules = [ordered]@{
+            OperatorRuntimeDynamicInvocationFiles = @()
+            OperatorRuntimeFileSystemFiles        = @()
+            OperatorRuntimeProcessFiles           = @()
+            OperatorRuntimeNetworkFiles           = @()
+            OperatorRuntimeCredentialFiles        = @('operator/realtime-relay/realtime-relay-client.ps1')
+            OperatorRuntimeReflectionFiles        = @()
+            OperatorRuntimeVmInspectionFiles      = @()
+            OperatorRuntimeVmMutationFiles        = @()
+        }
+        $actual = [ordered]@{
+            DynamicInvocation = @()
+            FileSystem        = @()
+            Process           = @()
+            Network           = @()
+            Credential        = @('operator/realtime-relay/realtime-relay-client.ps1', 'synthetic-other-runtime.ps1')
+            Reflection        = @()
+            VmInspection      = @()
+            VmMutation        = @()
+        }
+
+        {
+            Assert-CddsiOperatorRuntimeCapabilityAllowLists `
+                -RuntimeFiles $runtimeFiles -Rules $rules -ActualByCapability $actual
+        } | Should -Throw '*OperatorRuntimeCredentialFiles actual capability set drifted*'
     }
 
     It 'keeps operator libraries declaration-only and free of direct host capabilities' {

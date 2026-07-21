@@ -1351,6 +1351,95 @@ function Read-CddsiFastLaneMessageAtCommit {
     return [pscustomobject]@{ Path = $path; Message = $message }
 }
 
+function Assert-CddsiFastLaneExpectedWakePointer {
+    param(
+        [Parameter(Mandatory = $true)]$Pointer,
+        [Parameter(Mandatory = $true)][ValidateSet('Poll', 'Publish')][string]$Operation,
+        [Parameter(Mandatory = $true)][ValidateSet('host-to-vm', 'vm-to-host')][string]$AuthenticatedOutbox,
+        [Parameter(Mandatory = $true)][long]$ExpectedRepositoryNumericId,
+        [Parameter(Mandatory = $true)][string]$RemoteRef
+    )
+
+    if ($Operation -cne 'Poll') { throw 'WAKE_POINTER_POLL_ONLY' }
+    if (-not (Test-CddsiExactPropertySet -InputObject $Pointer -Expected @(
+        'SchemaVersion', 'Verb', 'Lane', 'MessageId', 'Sequence',
+        'RepositoryId', 'Ref', 'Commit', 'PayloadSha256'
+    ))) { throw 'WAKE_POINTER_SCHEMA_INVALID' }
+    foreach ($propertyName in @(
+        'SchemaVersion', 'Verb', 'Lane', 'MessageId', 'RepositoryId',
+        'Ref', 'Commit', 'PayloadSha256'
+    )) {
+        if ($Pointer.$propertyName -isnot [string]) { throw 'WAKE_POINTER_FIELD_TYPE_INVALID' }
+    }
+    if (
+        $Pointer.SchemaVersion -cne 'cddsi-realtime-relay-wake-event-v1' -or
+        $Pointer.Verb -cne 'CONTROL_REPO_POINTER_AVAILABLE'
+    ) { throw 'WAKE_POINTER_CONTRACT_INVALID' }
+    if ($Pointer.Lane -cne $AuthenticatedOutbox) { throw 'WAKE_POINTER_OUTBOX_MISMATCH' }
+    if ($Pointer.MessageId -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') {
+        throw 'WAKE_POINTER_MESSAGE_ID_INVALID'
+    }
+    if (
+        ($Pointer.Sequence -isnot [int] -and $Pointer.Sequence -isnot [long]) -or
+        [long]$Pointer.Sequence -lt 1 -or [long]$Pointer.Sequence -gt 9007199254740991L
+    ) { throw 'WAKE_POINTER_SEQUENCE_INVALID' }
+    $expectedRepositoryId = $ExpectedRepositoryNumericId.ToString(
+        [Globalization.CultureInfo]::InvariantCulture)
+    if (
+        $Pointer.RepositoryId -cnotmatch '^[1-9][0-9]{0,18}$' -or
+        $Pointer.RepositoryId -cne $expectedRepositoryId
+    ) { throw 'WAKE_POINTER_REPOSITORY_ID_MISMATCH' }
+    if ($Pointer.Ref -cne 'refs/heads/main' -or $Pointer.Ref -cne $RemoteRef) {
+        throw 'WAKE_POINTER_REF_MISMATCH'
+    }
+    if ($Pointer.Commit -cnotmatch '^[a-f0-9]{40}$') { throw 'WAKE_POINTER_COMMIT_INVALID' }
+    if ($Pointer.PayloadSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'WAKE_POINTER_PAYLOAD_HASH_INVALID' }
+}
+
+function Assert-CddsiFastLaneWakePointerTarget {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Context,
+        [Parameter(Mandatory = $true)][string]$RepositoryPath,
+        [Parameter(Mandatory = $true)]$Pointer
+    )
+
+    $record = Read-CddsiFastLaneMessageAtCommit -Context $Context `
+        -RepositoryPath $RepositoryPath -Commit $Pointer.Commit
+    if ($record.Message.Envelope.MessageId -cne $Pointer.MessageId) {
+        throw 'WAKE_POINTER_MESSAGE_ID_MISMATCH'
+    }
+    $payloadSha256 = Get-CddsiVmTestRelayPayloadSha256 -Payload $record.Message.Payload
+    if (
+        $payloadSha256 -cne $Pointer.PayloadSha256 -or
+        $record.Message.Envelope.PayloadSha256 -cne $Pointer.PayloadSha256
+    ) { throw 'WAKE_POINTER_PAYLOAD_HASH_MISMATCH' }
+    return $record
+}
+
+function New-CddsiFastLaneWakeReceipt {
+    param(
+        [Parameter(Mandatory = $true)]$Pointer,
+        [Parameter(Mandatory = $true)][ValidateSet('CONSUMED_NOW', 'ALREADY_CONSUMED')][string]$Status
+    )
+
+    return [pscustomobject][ordered]@{
+        SchemaVersion              = 1
+        ContractVersion            = 'cddsi-fast-lane-wake-receipt-v1'
+        Status                     = $Status
+        Lane                       = $Pointer.Lane
+        MessageId                  = $Pointer.MessageId
+        Sequence                   = [long]$Pointer.Sequence
+        RepositoryId               = $Pointer.RepositoryId
+        Ref                        = $Pointer.Ref
+        Commit                     = $Pointer.Commit
+        PayloadSha256              = $Pointer.PayloadSha256
+        FixedEntryInvoked          = $true
+        Consumed                   = $true
+        RepositoryIdentityVerified = $true
+        PayloadSha256Verified      = $true
+    }
+}
+
 function New-CddsiFastLaneGitCommit {
     param(
         [hashtable]$Context,
@@ -1467,6 +1556,7 @@ function Invoke-CddsiFastLaneGitOutbox {
         [Parameter(Mandatory = $true)][string]$ProductRepositoryIdentity,
         [Parameter(Mandatory = $true)][ValidateSet('host-to-vm', 'vm-to-host')][string]$AuthenticatedOutbox,
         [Parameter(Mandatory = $true)][ValidateSet('HostCoordinator', 'VmTester')][string[]]$AuthenticatedSenderRoles,
+        [AllowNull()]$ExpectedWakePointer = $null,
         [AllowNull()]$Message = $null,
         [AllowNull()][string]$ExpectedRemoteHead = $null,
         [AllowNull()][string]$SnapshotTrustRoot = $null,
@@ -1490,7 +1580,7 @@ function Invoke-CddsiFastLaneGitOutbox {
 
     foreach ($required in @(
         'ConvertTo-CddsiVmTestRelayCanonicalJson', 'Get-CddsiSupplyChainTextBindingToken',
-        'Get-CddsiVmTestRelayMessageSha256',
+        'Get-CddsiVmTestRelayMessageSha256', 'Get-CddsiVmTestRelayPayloadSha256',
         'New-CddsiVmTestRelayState', 'Test-CddsiVmTestRelayState',
         'Resolve-CddsiVmTestRelayTransition', 'Test-CddsiExactPropertySet'
     )) {
@@ -1530,6 +1620,11 @@ function Invoke-CddsiFastLaneGitOutbox {
         -AuthenticatedOutbox $AuthenticatedOutbox -CredentialProfileId $CredentialProfileId `
         -TransportKind $transportProfile.Kind -ExpectedProtectionAuthority $ExpectedProtectionAuthority `
         -Operation $Operation
+    if ($null -ne $ExpectedWakePointer) {
+        Assert-CddsiFastLaneExpectedWakePointer -Pointer $ExpectedWakePointer -Operation $Operation `
+            -AuthenticatedOutbox $AuthenticatedOutbox `
+            -ExpectedRepositoryNumericId $ExpectedRepositoryNumericId -RemoteRef $RemoteRef
+    }
     $sshCommand = $null
     if ($transportProfile.Kind -ceq 'Ssh') {
         foreach ($requiredSshValue in @(
@@ -1615,6 +1710,8 @@ function Invoke-CddsiFastLaneGitOutbox {
     }
     elseif ($null -ne $Message -or -not [string]::IsNullOrEmpty($ExpectedRemoteHead)) { throw 'POLL_INPUT_INVALID' }
 
+    $effectiveMaximumMessageCount = if ($null -ne $ExpectedWakePointer) { 1 } else { $MaximumMessageCount }
+
     if ($Mode -cne 'Live') {
         return [pscustomobject][ordered]@{
             SchemaVersion = 1; ContractVersion = $script:CddsiFastLaneGitOutboxResultContract
@@ -1640,11 +1737,12 @@ function Invoke-CddsiFastLaneGitOutbox {
             JobAssignmentCount = 0; ProcessTreeTerminationCount = 0
             LocalStateMutationCount = 0; ProductNetworkRequestCount = 0
             HostProductLiveInvocationCount = 0; VmProductWriteCount = 0
-            MaximumMessageCount = $MaximumMessageCount; MaximumRuntimeSeconds = $MaximumRuntimeSeconds
+            MaximumMessageCount = $effectiveMaximumMessageCount; MaximumRuntimeSeconds = $MaximumRuntimeSeconds
             MaximumOutputBytes = $MaximumOutputBytes; MaximumMessageBodyBytes = $MaximumMessageBodyBytes
             MaximumAgeSeconds = $MaximumAgeSeconds; MaximumClockSkewSeconds = $MaximumClockSkewSeconds
             MaximumRetryCount = $MaximumRetryCount; RetryCount = 0
             ChildEnvironmentInheritedCount = 0; ProcessJobRequired = $true; RelayState = $null
+            WakeReceipt = $null
         }
     }
     if (-not $AcknowledgeOperatorPlaneLive) { throw 'OPERATOR_PLANE_LIVE_CONFIRMATION_REQUIRED' }
@@ -1779,6 +1877,7 @@ function Invoke-CddsiFastLaneGitOutbox {
         $more = $false
         $recoveredPublishCount = 0
         $resultStatus = 'SUCCEEDED'
+        $wakeReceipt = $null
         $skipRequestedOperation = $false
         $pendingPublishPath = Get-CddsiFastLanePendingPublishPath -StateRoot $fullStateRoot
         if ([IO.File]::Exists($pendingPublishPath)) {
@@ -1871,27 +1970,85 @@ function Invoke-CddsiFastLaneGitOutbox {
             )
             $remaining = 0L
             if (-not [long]::TryParse($countResult.StandardOutput.Trim(), [ref]$remaining) -or $remaining -lt 0) { throw 'REMOTE_COMMIT_COUNT_INVALID' }
-            while ($remaining -gt 0 -and $processed -lt $MaximumMessageCount) {
-                if ($context.Stopwatch.Elapsed.TotalSeconds -ge $MaximumRuntimeSeconds) { $more = $true; break }
-                $commit = Get-CddsiFastLaneNextCommit $context $repositoryPath $entry.AcceptedRemoteHead $snapshot.Head $remaining
-                $record = Read-CddsiFastLaneMessageAtCommit $context $repositoryPath $commit
-                $role = [string]$record.Message.Envelope.SenderRole
-                if ($AuthenticatedSenderRoles -cnotcontains $role) { throw 'OUTBOX_SENDER_ROLE_NOT_AUTHENTICATED' }
-                $transition = Resolve-CddsiFastLaneBoundRelayTransition -State $state.RelayState `
-                    -Message $record.Message `
-                    -ValidationTimeUtc $ValidationTimeUtc -AuthenticatedSenderRole $role `
-                    -AuthenticatedOutbox $AuthenticatedOutbox -SnapshotTrust $snapshotTrust `
-                    -MaximumAgeSeconds $MaximumAgeSeconds `
-                    -MaximumClockSkewSeconds $MaximumClockSkewSeconds -MaximumMessageBodyBytes $MaximumMessageBodyBytes
-                if (-not $transition.Accepted -or -not $transition.Advanced) { throw ('RELAY_REJECTED:' + $transition.ErrorCode) }
-                $state.RelayState = $transition.State
-                $entry.AcceptedRemoteHead = $commit
-                Set-CddsiFastLaneRepositoryEntry $state $entry
-                $state.Revision = [long]$state.Revision + 1
-                Write-CddsiFastLaneCanonicalFile $statePath $state
-                $context.LocalStateMutationCount = [int]$context.LocalStateMutationCount + 1
-                $processed++
-                $remaining--
+            if ($null -ne $ExpectedWakePointer) {
+                $protectedHistory = Invoke-CddsiFastLaneGitCommand -Context $context -Arguments @(
+                    ('--git-dir=' + $repositoryPath), 'merge-base', '--is-ancestor',
+                    $ExpectedWakePointer.Commit, $snapshot.Head
+                ) -AllowedExitCodes @(0, 1)
+                if ($protectedHistory.ExitCode -ne 0) { throw 'WAKE_POINTER_COMMIT_NOT_IN_PROTECTED_HISTORY' }
+                $record = Assert-CddsiFastLaneWakePointerTarget -Context $context `
+                    -RepositoryPath $repositoryPath -Pointer $ExpectedWakePointer
+                $acceptedHistory = Invoke-CddsiFastLaneGitCommand -Context $context -Arguments @(
+                    ('--git-dir=' + $repositoryPath), 'merge-base', '--is-ancestor',
+                    $ExpectedWakePointer.Commit, $entry.AcceptedRemoteHead
+                ) -AllowedExitCodes @(0, 1)
+                $messageWasSeen = $state.RelayState.SeenMessageIds -ccontains $ExpectedWakePointer.MessageId
+                if ($messageWasSeen) {
+                    if ($acceptedHistory.ExitCode -ne 0) { throw 'WAKE_POINTER_CONSUMED_STATE_MISMATCH' }
+                    $messageHistory = Invoke-CddsiFastLaneGitCommand -Context $context -Arguments @(
+                        ('--git-dir=' + $repositoryPath), 'rev-list', '--first-parent', '--max-count=2',
+                        $entry.AcceptedRemoteHead, '--', ('outbox/*-' + $ExpectedWakePointer.MessageId + '.json')
+                    )
+                    $matchingCommits = @($messageHistory.StandardOutput -split "`r?`n" | Where-Object { $_.Length -gt 0 })
+                    if ($matchingCommits.Count -ne 1 -or $matchingCommits[0] -cne $ExpectedWakePointer.Commit) {
+                        throw 'WAKE_POINTER_CONSUMED_HISTORY_MISMATCH'
+                    }
+                    $wakeReceipt = New-CddsiFastLaneWakeReceipt -Pointer $ExpectedWakePointer `
+                        -Status ALREADY_CONSUMED
+                }
+                else {
+                    if ($acceptedHistory.ExitCode -eq 0) { throw 'WAKE_POINTER_CONSUMED_STATE_MISMATCH' }
+                    if ($remaining -lt 1) { throw 'WAKE_POINTER_TARGET_NOT_PENDING' }
+                    if ($context.Stopwatch.Elapsed.TotalSeconds -ge $MaximumRuntimeSeconds) {
+                        throw 'WAKE_POINTER_RUNTIME_EXHAUSTED'
+                    }
+                    $commit = Get-CddsiFastLaneNextCommit $context $repositoryPath `
+                        $entry.AcceptedRemoteHead $snapshot.Head $remaining
+                    if ($commit -cne $ExpectedWakePointer.Commit) { throw 'WAKE_POINTER_SEQUENCE_GAP' }
+                    $role = [string]$record.Message.Envelope.SenderRole
+                    if ($AuthenticatedSenderRoles -cnotcontains $role) { throw 'OUTBOX_SENDER_ROLE_NOT_AUTHENTICATED' }
+                    $transition = Resolve-CddsiFastLaneBoundRelayTransition -State $state.RelayState `
+                        -Message $record.Message `
+                        -ValidationTimeUtc $ValidationTimeUtc -AuthenticatedSenderRole $role `
+                        -AuthenticatedOutbox $AuthenticatedOutbox -SnapshotTrust $snapshotTrust `
+                        -MaximumAgeSeconds $MaximumAgeSeconds `
+                        -MaximumClockSkewSeconds $MaximumClockSkewSeconds -MaximumMessageBodyBytes $MaximumMessageBodyBytes
+                    if (-not $transition.Accepted -or -not $transition.Advanced) { throw ('RELAY_REJECTED:' + $transition.ErrorCode) }
+                    $state.RelayState = $transition.State
+                    $entry.AcceptedRemoteHead = $commit
+                    Set-CddsiFastLaneRepositoryEntry $state $entry
+                    $state.Revision = [long]$state.Revision + 1
+                    Write-CddsiFastLaneCanonicalFile $statePath $state
+                    $context.LocalStateMutationCount = [int]$context.LocalStateMutationCount + 1
+                    $processed = 1
+                    $remaining--
+                    $wakeReceipt = New-CddsiFastLaneWakeReceipt -Pointer $ExpectedWakePointer `
+                        -Status CONSUMED_NOW
+                }
+            }
+            else {
+                while ($remaining -gt 0 -and $processed -lt $effectiveMaximumMessageCount) {
+                    if ($context.Stopwatch.Elapsed.TotalSeconds -ge $MaximumRuntimeSeconds) { $more = $true; break }
+                    $commit = Get-CddsiFastLaneNextCommit $context $repositoryPath $entry.AcceptedRemoteHead $snapshot.Head $remaining
+                    $record = Read-CddsiFastLaneMessageAtCommit $context $repositoryPath $commit
+                    $role = [string]$record.Message.Envelope.SenderRole
+                    if ($AuthenticatedSenderRoles -cnotcontains $role) { throw 'OUTBOX_SENDER_ROLE_NOT_AUTHENTICATED' }
+                    $transition = Resolve-CddsiFastLaneBoundRelayTransition -State $state.RelayState `
+                        -Message $record.Message `
+                        -ValidationTimeUtc $ValidationTimeUtc -AuthenticatedSenderRole $role `
+                        -AuthenticatedOutbox $AuthenticatedOutbox -SnapshotTrust $snapshotTrust `
+                        -MaximumAgeSeconds $MaximumAgeSeconds `
+                        -MaximumClockSkewSeconds $MaximumClockSkewSeconds -MaximumMessageBodyBytes $MaximumMessageBodyBytes
+                    if (-not $transition.Accepted -or -not $transition.Advanced) { throw ('RELAY_REJECTED:' + $transition.ErrorCode) }
+                    $state.RelayState = $transition.State
+                    $entry.AcceptedRemoteHead = $commit
+                    Set-CddsiFastLaneRepositoryEntry $state $entry
+                    $state.Revision = [long]$state.Revision + 1
+                    Write-CddsiFastLaneCanonicalFile $statePath $state
+                    $context.LocalStateMutationCount = [int]$context.LocalStateMutationCount + 1
+                    $processed++
+                    $remaining--
+                }
             }
             $more = $more -or $remaining -gt 0
         }
@@ -1989,11 +2146,12 @@ function Invoke-CddsiFastLaneGitOutbox {
             LocalStateMutationCount = [int]$context.LocalStateMutationCount
             ProductNetworkRequestCount = 0; HostProductLiveInvocationCount = 0; VmProductWriteCount = 0
             MaximumRetryCount = $MaximumRetryCount; RetryCount = 0
-            MaximumMessageCount = $MaximumMessageCount; MaximumRuntimeSeconds = $MaximumRuntimeSeconds
+            MaximumMessageCount = $effectiveMaximumMessageCount; MaximumRuntimeSeconds = $MaximumRuntimeSeconds
             MaximumOutputBytes = $MaximumOutputBytes; MaximumMessageBodyBytes = $MaximumMessageBodyBytes
             MaximumAgeSeconds = $MaximumAgeSeconds; MaximumClockSkewSeconds = $MaximumClockSkewSeconds
             ChildEnvironmentInheritedCount = 0; ProcessJobRequired = $true
             RelayState = $state.RelayState
+            WakeReceipt = $wakeReceipt
         }
     }
     finally { $lock.Dispose() }

@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-19
+更新日期：2026-07-21
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -41,6 +41,20 @@ exit code。
 这一结论不改变本文开头的限制：HostSandbox 不是 OS 权限边界，不能抵御恶意代码
 或未知静态门绕过。后续阶段可以开始纯领域/provider/fake 开发，但宿主机仍不得
 加载 live adapter、执行 Live 或发起 sandbox 外产品 I/O。
+
+Realtime relay 的 PowerShell 客户端是 DevelopmentOnly `OperatorCoordination` runtime，
+不由 `lib/bootstrap.ps1` 加载、不进入 Release，也不属于产品 Live adapter。它的
+TestSafe/DryRun/focused tests 只能使用显式 fake transport、fake credential、fake state 和
+fixed wake spy；缺 provider、错误 mode 或 runtime assertion 时必须在网络、credential、state
+mutation 和 wake 前 fail closed。PowerShell 7 覆盖完整 watcher 状态机，可共享的
+parser/schema/security helper 同时在 Windows PowerShell 5.1 运行。
+
+源码中面向未来 Live 的 `ClientWebSocket` 与 DPAPI CurrentUser credential provider 只在显式
+Live context、未过期 runtime assertion、精确 client/environment/key-id/state binding 和固定
+wake provider 全部成立后才可使用。本地/CI/Release Simulation 不得构造或加载其真实 provider，
+不得读取 Credential Manager/registry、解密真实 DPAPI blob、发起真实网络、启动进程或访问
+sandbox 外 state。DPAPI runtime secret 不能离开 credential provider；HMAC 计算后所有 plaintext
+byte buffer 必须清零，日志/异常/状态/测试 evidence 均不得包含 secret。
 
 P10A-0A 现在包含 DevelopmentOnly 的 operator coordination 合同、固定 Git outbox
 runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
@@ -133,6 +147,7 @@ P10A-0A 或 P10A 完成。三个
 | HostSandbox | 本次唯一 sandbox | 虚拟 map | 默认拒绝/fake | 记录型 fake | fake DPAPI |
 | Release Simulation | 本次唯一解压 sandbox | 虚拟 map | 拒绝 | fake | synthetic |
 | Fast Lane synthetic rehearsal | 本次唯一 sandbox 双 outbox | 不访问 | 拒绝 | 不启动真实进程 | synthetic/no secret |
+| Realtime relay focused | `TestDrive:` 或 owner-marked fake root | 不访问 | fake transport | 不启动 | synthetic fake；真实 DPAPI=0 |
 | CI | runner sandbox | 虚拟 map | 仅依赖引导白名单 | fake | synthetic |
 | VM Live | VM 内显式授权范围 | VM registry | 官方端点 | VM 内真实 | VM 专用 Key |
 

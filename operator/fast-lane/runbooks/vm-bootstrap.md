@@ -1,6 +1,6 @@
 # VM bootstrap runbook
 
-Status: **CONTROLLED PAUSE — NOT EXECUTABLE (2026-07-20).** Do not enter the VM
+Status: **CONTROLLED PAUSE — NOT EXECUTABLE (reviewed 2026-07-21).** Do not enter the VM
 or deliver/run any existing onboarding ZIP or prompt. Every pre-pause bundle
 and prompt is retained for audit with status
 `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`. HostCoordinator must remain
@@ -9,11 +9,21 @@ preserves the reviewed historical target workflow and does not authorize VM
 bootstrap, Fast Lane integration, Formal P10A, product Live, repository
 polling, reset, product testing, Cloudflare provisioning, or watcher startup.
 
-The next independent work item is `docs/REALTIME_RELAY_PROPOSAL.md`, currently
-`PROPOSED / NOT_PROVISIONED / NOT_ACTIVE`. Resuming this runbook later requires
-an explicit decision and full finalization from a new clean exact commit,
-including a newly generated bundle, still-paused automation readback, final
-remote/PR/CI verification, and a new readiness receipt.
+The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` is currently
+`LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE`. Its pure
+PowerShell publish/watch/fixed-wake client and separate local Worker/Durable
+Object workspace are only offline, DevelopmentOnly implementation evidence.
+The exact operator client, threat model, credential rotation, rollback,
+cleanup, and troubleshooting contract is in
+`operator/realtime-relay/README.md`. No Cloudflare login,
+resource, secret, endpoint, deployment, watcher startup, or automation change
+has been authorized or performed. The two protected-history Git control
+repositories and minute poll remain the durable audit and fallback path.
+Resuming this runbook later requires an explicit decision and full
+finalization from a new clean exact commit, including a newly generated bundle,
+still-paused automation readback, final remote/PR/CI verification, and a new
+readiness receipt. A relay deployment or smoke-test receipt would not itself
+authorize that resumption.
 
 ## Future user-visible contract — inactive during controlled pause
 
