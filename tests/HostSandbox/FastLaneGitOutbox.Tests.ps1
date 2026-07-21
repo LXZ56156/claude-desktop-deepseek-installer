@@ -1105,6 +1105,36 @@
                 $directory.Delete($false)
             }
         }
+
+        Initialize-OutboxFixtureTemplate
+        $script:PersistentFixtureRootCount = $script:FixtureRoots.Count
+    }
+
+    BeforeEach {
+        if ($script:FixtureRoots.Count -ne $script:PersistentFixtureRootCount) {
+            throw 'GIT_OUTBOX_FIXTURE_RETENTION_NOT_BOUNDED'
+        }
+        $script:FixtureRootCountBeforeTest = $script:FixtureRoots.Count
+    }
+
+    AfterEach {
+        $cleanupFailures = [Collections.Generic.List[string]]::new()
+        for ($index = $script:FixtureRoots.Count - 1;
+            $index -ge $script:FixtureRootCountBeforeTest; $index--) {
+            $root = [string]$script:FixtureRoots[$index]
+            try {
+                Remove-CddsiGitOutboxFixtureRootSafely -Root $root
+                $script:FixtureRoots.RemoveAt($index)
+            } catch {
+                $cleanupFailures.Add([string]$_.Exception.Message)
+            }
+        }
+        if ($cleanupFailures.Count -ne 0) {
+            throw ('GIT_OUTBOX_FIXTURE_CLEANUP_FAILED:' + ($cleanupFailures -join ','))
+        }
+        if ($script:FixtureRoots.Count -ne $script:PersistentFixtureRootCount) {
+            throw 'GIT_OUTBOX_FIXTURE_RETENTION_NOT_BOUNDED'
+        }
     }
 
     AfterAll {
