@@ -102,9 +102,10 @@ harness runtime；trusted harness 仅可从自己的 allow-listed 测试入口�
 synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-21，宿主机侧
 Git transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
 服务端 protected history 已部署；Cloudflare realtime accelerator 的产品侧纯 PowerShell
-合同、独立 infra 实现和离线测试也已完成。Free-only 外部步骤虽已获授权，但尚未完成
-既有 Cloudflare credential 的本任务 adoption/provenance 与 GET-only preflight、资源创建、secret provisioning
-或部署；窄 Git 角色凭据、VM 设备 provisioning 和无人值守双机验证仍未完成：
+合同、独立 infra 实现和离线测试也已完成。Free-only 外部步骤虽已获授权，既有 Cloudflare
+credential 的本任务 adoption/provenance 与 GET-only preflight 也已完成，但独立 Billing
+verification、资源创建、secret provisioning 或部署尚未完成；窄 Git 角色凭据、VM 设备
+provisioning 和无人值守双机验证仍未完成：
 
 ~~~text
 Fast Lane logical control plane:
@@ -156,14 +157,17 @@ Formal Lane: external clean snapshot + exact artifact
 - 当前外部授权限定 Free-only。用户在知悉既有 encrypted keyring `default` profile 有 29 项
   scope、包含四项必需 scope 且另有 25 项后，明确授权直接复用；认证门验证必需项存在而不再
   要求 scope 集合精确相等，额外 scope 也不扩大本任务允许的资源或动作。本地已实现 owner-only
-  crash recovery、过期 receipt 原子续期及 account-bound credential snapshot，但尚未对真实精确
-  infra root 证明 exact/inherited binding absence，也未生成 owner-marked adoption receipt 来绑定
-  `default.enc` hash、permissions 与脱敏 readback；GET-only preflight 同样未执行，因此状态
-  仍为 `NOT_AUTHENTICATED`。复用成功不需要浏览器；只有 credential 失效且必须重新认证时，才在
-  打开浏览器前明确提示用户。
+  crash recovery、过期 receipt 原子续期及 account-bound credential snapshot。真实精确 infra
+  root 的 exact/inherited binding absence 已证明，generation-1 owner-marked receipt 已绑定
+  `default.enc`、account 与 permission hashes；四 GET preflight 已确认单一 account、既有
+  workers.dev subdomain、目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD` 与
+  `BillingPlanVerified=false`。状态为 `AUTHENTICATED_READ_ONLY /
+  BILLING_VERIFICATION_REQUIRED`；usage model 不是 subscription receipt，Dashboard 核验需要浏览器
+  登录时已先提示用户。
 - credential 采用后和部署后读回必须验证单一 account、Workers 使用模型、workers.dev、
   Worker/DO 配置与 active deployment；明文 profile 必须不存在，OAuth/deploy credential 与
-  runtime HMAC credential 必须继续分离。实际 Host/VM runtime secret 尚未 provision；尤其缺少
+  runtime HMAC credential 必须继续分离。Workers 使用模型仅作配置证据，不能替代独立 Free-plan
+  Billing receipt。实际 Host/VM runtime secret 尚未 provision；尤其缺少
   disposable VM 对应 CurrentUser 的 DPAPI provisioning context，因此初始两组 secret 写入与
   placeholder Worker 创建均保持 fail closed。
 - `lib/vm-fast-lane-readiness.ps1` 明确区分 `CanStartVmBootstrap` 与

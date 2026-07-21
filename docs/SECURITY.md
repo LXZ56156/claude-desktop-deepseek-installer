@@ -284,12 +284,12 @@ harness runtime。
   未来写入还必须把私有 token snapshot 的唯一 account hash 与 receipt 绑定，并固定 account target，
   避免 profile 校验/使用竞态。deploy credential 不能复用为 HMAC secret，runtime secret 也不能进入
   Wrangler 配置、Git、prompt、测试 evidence 或 Cloudflare 日志。
-- 用户已授权外部步骤 1–7，但限定 Free-only；目前仅完成固定本地工具链、离线测试和
-  dry-run，既有 credential 尚未被本任务采用或生成真实 adoption receipt，也未创建 Worker/DO、写入 secret 或部署。
-  credential 复用成功不需要浏览器；只有失效且必须重新认证时，才在打开浏览器前明确提示。
-  GET-only preflight/部署后
-  readback 必须确认 workers.dev、bundled/free-compatible account setting、精确 Worker/DO
-  bindings 与唯一 active deployment；这些读回不冒充账单订阅 receipt。缺少 disposable
+- 用户已授权外部步骤 1–7，但限定 Free-only；固定本地工具链、离线测试、dry-run、既有 credential
+  的 generation-1 adoption 与固定四 GET preflight 已完成；尚未创建 Worker/DO、写入 secret 或
+  部署。preflight 确认单账号、既有 workers.dev subdomain、目标 Worker 不存在，并报告
+  `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage model 都不是账单订阅
+  receipt；独立 Billing Dashboard 核验需要浏览器认证时，已先明确提示用户。部署后 readback 还
+  必须确认精确 Worker/DO bindings 与唯一 active deployment。缺少 disposable
   VM 对应 CurrentUser 的 DPAPI provisioning context 时，不允许只写一侧 secret，也不
   允许先创建 placeholder Worker，避免产生半配置外部资源。
 - 独立 infra 的共享 write policy 在代码中把 Free-plan、Host/VM DPAPI、coordinated parent、

@@ -1,7 +1,8 @@
 # Realtime Relay 提案
 
 状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
-NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE**
+AUTHENTICATED_READ_ONLY / BILLING_VERIFICATION_REQUIRED /
+NOT_PROVISIONED / NOT_ACTIVE**
 
 静态产品/Release 分类：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
 （DevelopmentOnly；外部授权与认证进度只由上方动态状态及 `docs/HANDOFF.md` 表达）。
@@ -272,7 +273,8 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
    105/105 离线测试、52-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
    workerd/SQLite/Hibernation forced-eviction integration 均通过；owner-only crash recovery、
    过期 adoption receipt 原子续期、malformed binding fail-close 与 account-bound credential snapshot
-   也已完成离线验证；既有 credential 尚未被本任务采用，也尚未部署。本地 forced eviction 不替代生产 Cloudflare 的 idle scheduling、平台日志
+   也已完成离线验证；既有 credential 已完成 generation-1 adoption 与固定四 GET preflight，但尚未
+   部署。本地 forced eviction 不替代生产 Cloudflare 的 idle scheduling、平台日志
    或公网 Hibernation evidence。
 3. **RT2 — 本地客户端合同（本地实现）**：DevelopmentOnly PowerShell 客户端已实现
    `ClientWebSocket` adapter、独立 writer publisher、fixed Codex resume/wake proof、固定
@@ -283,8 +285,9 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 4. **RT3 — 外部 provisioning（已授权、尚未开始资源写）**：用户已一次性授权 1–7 项并限定
    Free-only；在知悉既有 encrypted keyring `default` profile 的 29 项 scope 中有 25 项额外项后，
    又明确授权直接复用。真实精确 root binding-absence proof、owner-marked adoption receipt、GET-only
-   account/subdomain/collision preflight、两组 relay identity/secret、窄 route 和 runtime assertion
-   仍须依次过门；deploy credential 不得保存为 automation credential 或复用为 runtime secret。
+   account/subdomain/collision preflight 已完成；独立 Billing verification、两组 relay identity/secret、
+   窄 route 和 runtime assertion 仍须依次过门；deploy credential 不得保存为 automation credential
+   或复用为 runtime secret。
 5. **RT4 — disposable 环境校准**：仅在重新 finalization 后，以非产品 synthetic payload
    验证正反权限、重放、掉线、顺序、限流和 fallback；两端 automation 先保持 PAUSED。
 6. **RT5 — canary 激活门**：独立审阅部署 receipt、客户端 hash、runtime assertion 和负向
@@ -344,9 +347,9 @@ Free-only，并要求浏览器登录时明确提示；该授权不改变逐阶�
    必需集合为 `account:read`、`user:read`、`workers_scripts:write` 与 `offline_access`；缺少任一项、
    scope 语义无法识别或返回多个 account 仍必须停止，但额外项不再构成失败。receipt 过期只能在
    owner/root、canonical、无 reparse 且确实过期的状态下原子续期，并链接 previous-receipt hash；
-   有效、伪造或未知状态不得覆盖。既有 profile 尚未被
-   本任务采用或绑定，因此当前仍是 `NOT_AUTHENTICATED`。复用成功时不需要浏览器；若 credential
-   失效且必须重新认证，必须在打开浏览器前明确提示用户。不得把创建全新 `cddsi-relay` 命名
+   有效、伪造或未知状态不得覆盖。既有 profile 已完成 generation-1 adoption 与重验证，当前为
+   `AUTHENTICATED_READ_ONLY`。OAuth 复用未触发新登录；独立 Billing Dashboard 核验需要浏览器认证
+   时，已在打开登录页前明确提示用户。不得把创建全新 `cddsi-relay` 命名
    profile 设为前置条件。该 deploy OAuth grant 是 account 级 Worker 管理权限，并不天然缩窄到
    本 Worker；额外 scope 不扩大本任务允许的资源、写操作或后续激活范围。窄 lane 权限只由两组
    完全分离的 runtime HMAC capability 提供，deploy credential 与 runtime credential 不得复用；
@@ -376,9 +379,11 @@ remote、系统服务、计划任务、
 的 account 级订阅且当前最低为每月 5 美元，不在本授权内。WebSocket Hibernation 用于降低空闲
 duration，但它不是零成本保证。本任务四项必需 scope 不含 Billing Read/Write；即使
 `workers_scripts:write` 允许读取 Workers account settings，也不能读取 Billing subscription。因此
-GET-only preflight 必须要求 `default_usage_model=bundled`，并明确输出
-`BillingPlanVerified=false`，不能把 Free-compatible candidate 当成 billing receipt。任何无法独立
-确认 Free 的情况都在首次 secret bulk/placeholder Worker 写入前停止，不得扩大 scope 或猜测。
+GET-only preflight 只把已知 usage model 作为配置枚举输出，并始终明确
+`BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`；`standard`、`bundled` 与 `unbound`
+都不是 Workers Free subscription receipt。实际 preflight 报告 `STANDARD`、既有 workers.dev
+subdomain 与目标 Worker 不存在。任何无法通过独立 Billing Dashboard 确认 Free 的情况都在首次
+secret bulk/placeholder Worker 写入前停止，不得扩大 scope 或猜测。
 
 初始 provisioning 还要求同一受保护 parent 先保留 HostCoordinator 与 disposable VM 两个正确
 CurrentUser 上的匹配 DPAPI 客户端副本，再一次性向 Cloudflare 写入两项 secret。当前没有可用的
@@ -423,9 +428,10 @@ assertion 发生漂移，默认动作是 fail closed 和回退，而不是自动
   新 bundle、automation binding、remote、PR CI 和 retained receipt 精确一致；
 - 用户对外部 provisioning 和最终激活分别作出所需的明确确认。
 
-当前本地离线实现和质量门已通过，外部授权仅限 Free-only；认证、provisioning 与激活条件仍未
-证明。本文状态保持 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
-NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE**。
+当前本地离线实现和质量门已通过，外部授权仅限 Free-only；OAuth adoption 与只读 preflight 已
+完成，但 Billing、provisioning 与激活条件仍未证明。本文状态保持 **LOCAL_GATES_PASSED /
+EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
+BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE**。
 
 ## 官方技术参考
 
@@ -436,4 +442,7 @@ NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE**。
 - [Cloudflare：安装与固定 Wrangler](https://developers.cloudflare.com/workers/wrangler/install-and-update/)
 - [Cloudflare：Wrangler secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Cloudflare：Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+- [Cloudflare：Workers pricing 与 usage models](https://developers.cloudflare.com/workers/platform/pricing/)
+- [Cloudflare：Worker account settings API](https://developers.cloudflare.com/api/resources/workers/subresources/account_settings/methods/get/)
+- [Cloudflare：Billing dashboard](https://developers.cloudflare.com/billing/understand/how-billing-works/#the-billing-dashboard)
 - [Microsoft：System.Net.WebSockets.ClientWebSocket](https://learn.microsoft.com/dotnet/api/system.net.websockets.clientwebsocket)

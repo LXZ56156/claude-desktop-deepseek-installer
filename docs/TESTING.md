@@ -145,6 +145,10 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   integration 为独立 Cloudflare infra evidence；本地 runtime 证明 eviction 后 SQLite 恢复与原
   WebSocket 继续投递，但不证明生产 idle 调度或公网平台行为。它们不是本产品仓库的 L0-L4、
   Release Simulation 或可发布包证据，也不进入 Release。
+- generation-1 OAuth adoption 与固定四 GET Cloudflare preflight 只证明 encrypted keyring、单一
+  receipt-bound account、既有 workers.dev subdomain、目标 Worker 不存在及已知 usage model；实际
+  返回 `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。它不证明 Free
+  subscription、资源 provisioning、secret binding、部署、平台日志或真实 relay 权限矩阵。
 
 截至 2026-07-21，最近一次完整 clean quality evidence 为 PowerShell 7 与 Windows
 PowerShell 5.1 各 525/525 项通过，且全部 zero metrics 成立；该数量只是当次测试清单

@@ -10,8 +10,8 @@ bootstrap, Fast Lane integration, Formal P10A, product Live, repository
 polling, reset, product testing, Cloudflare provisioning, or watcher startup.
 
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` is currently
-`LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / NOT_AUTHENTICATED /
-NOT_PROVISIONED / NOT_ACTIVE`. Its pure
+`LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
+BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`. Its pure
 PowerShell publish/watch/fixed-wake client and separate local Worker/Durable
 Object workspace are only offline, DevelopmentOnly implementation evidence.
 The exact operator client, threat model, credential rotation, rollback,
@@ -21,14 +21,13 @@ with a Free-only constraint; exact infra toolchain/keyring setup and local
 typecheck/dry-run gates have run. After being informed that the existing encrypted
 keyring `default` OAuth profile has 29 scopes including the four required scopes and
 25 extras, the user explicitly authorized direct reuse without exact-scope equality or
-extra-scope rejection. Local renewal and account-bound snapshot paths are implemented,
-but the real infra root's absence of exact/inherited profile bindings has not yet been
-proven, and no owner-marked local adoption receipt yet
-binds the `default.enc` hash, permissions, and redacted readback. No account GET
-preflight, resource, secret, endpoint,
-deployment, watcher startup, or automation change has been performed. Successful reuse
-needs no browser; if the credential is invalid and browser reauthentication is required,
-the user must be clearly prompted first. Missing VM CurrentUser DPAPI provisioning context
+extra-scope rejection. The real infra root's binding-absence proof, generation-1 owner-marked
+adoption receipt and four-GET account preflight have completed; the latter reports
+`STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`, an existing
+workers.dev subdomain and no target Worker. No resource, secret, endpoint, deployment,
+watcher startup, or automation change has been performed. Independent Dashboard Billing
+verification is still required; the user was clearly prompted before its login page opened.
+Missing VM CurrentUser DPAPI provisioning context
 prevents any partial runtime-secret or placeholder Worker write. The two protected-history Git control
 repositories and minute poll remain the durable audit and fallback path.
 Resuming this runbook later requires an explicit decision and full

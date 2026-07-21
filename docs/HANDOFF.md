@@ -4,14 +4,15 @@
 
 ## 当前动态状态（唯一入口）
 
-**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / NOT_AUTHENTICATED /
+**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
+AUTHENTICATED_READ_ONLY / BILLING_VERIFICATION_REQUIRED /
 NOT_PROVISIONED / NOT_ACTIVE / CONTROLLED_PAUSE。**
 
 2026-07-21 本轮继续前从实际磁盘复核：分支仍为
-`codex/repair/p10a-0a-fast-lane`，HEAD 与 upstream 精确一致于
-`742971e66a3ecde1b9926cb5115808717c27d406`，ahead/behind 为 `0/0`，当时
-worktree/index clean；PR #1 仍是现有唯一 PR。本轮 tracked 文档修改已重新通过完整本地质量门与
-Release Simulation。本段不嵌入会自引用的最终 commit；实际 HEAD/upstream、PR head 和 CI 必须从
+`codex/repair/p10a-0a-fast-lane`；上一轮文档提交已正常推送为
+`f61068c41e2be68d262b385a7e35b1697bfb0e93`，PR #1 仍是现有唯一 PR，其 Release dry-run
+run `29828984442` 与双引擎 CI run `29828984437` 均已成功。本轮 tracked 修改继续按同一 PR
+追加。本段不嵌入会自引用的最终 commit；实际 HEAD/upstream、PR head 和 CI 必须从
 Git/GitHub 回读，且只有绑定同一最终 commit 的新 CI 可证明远端字节。旧 CI、tree 和任何旧
 finalization 不能证明本轮字节。
 
@@ -38,16 +39,17 @@ assertion 与 Live 确认，并在任何 publisher chain/pending state 存在时
 
 独立 infra workspace 已初始化**仅本地** Git `main`，无 remote；基线提交为
 `a74ef5986b801bf5c9c500e473590d5167a062a8`，当前离线提交为
-`612a0340726530e51c8e5f1ad3ee322b641e6554`、tree
-`898a2a2391e244bfe513fe4e7031dc8bb344ef37`。用户已授权外部门 1–7 项并限定
+`e3355ab9fedb56e7291b37df49751d9a26614f84`、tree
+`128d6a5d441a9b3cc076adf357aa156e4b3aa616`。用户已授权外部门 1–7 项并限定
 Free-only。授权后使用 Node `24.16.0` 的 bundled npm `11.13.0` 生成精确
 `package-lock.json`，安装 workspace-local `wrangler@4.112.0`、`typescript@6.0.3`，并在
 Wrangler global native helper 精确前缀安装/回读 `@napi-rs/keyring@1.3.0`；未使用 global
 Wrangler 或 PATH npm。当前 infra 离线测试 105/105、52 文件格式/secret scan、固定
 `wrangler types`/TypeScript 均通过；真实 Wrangler dry-run 的 1 bundle、1 source map、1
 metafile 共 4 文件/151106 bytes 扫描为 secret=0、console=0。GET-only Cloudflare readback
-又固定了单账号、`bundled` Free-compatible candidate、既有 workers.dev subdomain、目标 Worker
-无碰撞，以及部署后 active 100% version/SQLite export/精确 binding/route 回读。固定 Wrangler
+固定了单账号、usage-model 枚举、既有 workers.dev subdomain、目标 Worker无碰撞，以及部署后
+active 100% version/SQLite export/精确 binding/route 回读；usage model 明确不作为 Billing
+subscription 证据。固定 Wrangler
 `createTestHarness` 的实际本地 workerd 测试还通过了 SQLite publish/read/ACK、错身份与伪造 HMAC、
 close eviction 恢复，以及 Hibernation eviction 后原 WebSocket 继续投递；runtime log、Node-side
 harness fetch-spy call 和临时残留均为 0。本地证据不是部署回执，也不表示生产 Cloudflare 的 idle
@@ -69,17 +71,21 @@ DPAPI receipts、bulk semantics 与 two-secret staging receipt 全部固定为 f
 outside-sandbox、forbidden access、unexpected ledger、secret finding 和 mutation spy 指标均为 0；
 Release Simulation DryRun 通过 39 个 package files，source/staging/ZIP/extract secret findings 均为 0，
 精确 inventory/hash 与 deterministic ZIP 校验通过。上述证据只证明本地离线实现，不得把
-`LOCAL_GATES_PASSED` 解释为已部署或可激活。当前没有 Cloudflare account/resource
-receipt、Worker URL、Durable Object namespace、runtime secret、客户端 live credential、部署
-receipt 或真实端到端权限证据。
+`LOCAL_GATES_PASSED` 解释为已部署或可激活。当前只有本地 OAuth adoption 与只读 account
+preflight receipt；没有 Free-plan/Billing receipt、Worker URL、Durable Object namespace、runtime
+secret、客户端 live credential、部署 receipt 或真实端到端权限证据。
 本轮已按授权执行 npm 网络访问、精确 infra toolchain 安装、keyring helper 安装、typecheck 与
-Wrangler dry-run；本任务尚未采用 Cloudflare credential，也未执行 account GET preflight、
+Wrangler dry-run，并已采用既有 Cloudflare OAuth credential、执行固定四 GET preflight；尚未执行
 secret 写入、Worker/DO 创建、workers.dev 部署或 live smoke。只读审计发现一个此前已存在的
 keyring 加密 `default.enc`：单账号、29 项权限，包含本任务四项必需 scope，另有 25 项。用户在
 知悉该差异后已明确授权直接复用，不要求 exact-scope equality，也不因额外 scope fail closed；
-但尚未对真实精确 infra root 执行 binding-absence proof，也未生成绑定 `default.enc` hash、
-permissions 与脱敏 readback 的 owner-marked 本地 adoption receipt，因此状态继续为
-`NOT_AUTHENTICATED`。没有 DNS/域名变更、系统服务/计划任务注册或 infra 远端。
+真实精确 infra root 的 binding-absence proof 已通过，generation-1 owner-marked adoption receipt
+已绑定 `default.enc`、account 和 permission hashes。随后 preflight 确认单账号、既有 account
+workers.dev subdomain、目标 `cddsi-realtime-relay` 不存在，并报告
+`WorkersUsageModel=STANDARD / BillingPlanVerified=false /
+BILLING_VERIFICATION_REQUIRED`。Cloudflare 官方合同表明 usage model 不是订阅 receipt；当前已打开
+隔离 Dashboard 登录页等待用户自行登录后只读核对 Billing → Subscriptions。没有 DNS/域名变更、
+系统服务/计划任务注册或 infra 远端。
 
 永久强制值继续为：
 
@@ -96,22 +102,22 @@ permissions 与脱敏 readback 的 owner-marked 本地 adoption receipt，因此
 
 集中外部授权门已由用户一次性通过，限定 Free-only；用户随后在知悉既有 encrypted keyring
 `default` profile 有 29 项 scope、其中 25 项超出四项必需集合后，明确授权直接复用。Wrangler
-`4.112.0` 的 `default` 是 reserved profile，不能用 `auth activate default`。下一步运行受控
-`auth:adopt-default`：先证明精确 infra root 没有 exact/inherited profile binding；无 binding 时
+`4.112.0` 的 `default` 是 reserved profile，不能用 `auth activate default`。受控
+`auth:adopt-default` 已证明精确 infra root 没有 exact/inherited profile binding；无 binding 时
 `auth keyring`/`whoami` 才从该 root fallback 到 `default`，随后生成 owner-marked 本地 adoption
 receipt，绑定 `default.enc` hash、permissions 与脱敏 readback，并验证明文 profile 不存在、
 `account:read`、`user:read`、`workers_scripts:write`、`offline_access` 四项均存在且只返回单一
-account；不要求 scope 集合精确相等，额外 scope 不再构成失败，也不扩大本任务授权。采用成功时
-不需要浏览器登录；只有 credential 失效且必须重新认证时，才在打开浏览器前明确提示用户。
+account；不要求 scope 集合精确相等，额外 scope 不再构成失败，也不扩大本任务授权。采用未触发
+新 OAuth 登录；独立 Billing Dashboard 核验需要浏览器认证时，已按用户要求先明确提示。
 GET 与未来写入先用 `auth token --profile default` 形成内存 snapshot，再以唯一 account GET 核对
 receipt account hash；deploy/secret/list 使用 snapshot token 和固定 account target，不传 profile
 argv。receipt 到期只允许 `auth:renew-default` 在严格 owner/root、canonical、无 reparse 且确实过期
 时原子续期；有效、伪造或未知状态不得覆盖。
 OAuth/deploy credential 与 Host/VM runtime credential 必须继续完全分离。
-采用后仍须执行固定 GET-only account/subdomain/collision preflight；
-preflight 只能证明 `bundled` 为 Free-compatible candidate，不能把 Workers account settings 冒充
-billing-plan receipt。任何 `standard`/`unbound`、缺少既有 workers.dev subdomain、多账号、目标
-Worker 碰撞、付费/升级提示或无法确认 Free 都在首个资源写之前停止。初始 secret bulk 还要求同一
+固定 GET-only account/subdomain/collision preflight 已完成；它记录 `STANDARD` 但不能把任何
+Workers account usage model 冒充 billing-plan receipt。独立 Billing Dashboard 尚未确认没有有效
+Workers Paid subscription，因此首个资源写继续停止。缺少既有 workers.dev subdomain、多账号、
+目标 Worker 碰撞、付费/升级提示或无法确认 Free 同样必须停止。初始 secret bulk 还要求同一
 受保护 provisioner 先持有 Host 与 disposable VM 两份 DPAPI CurrentUser 客户端副本；当前没有
 VM 侧该上下文，因此 OAuth/read-only preflight 不会自动推进到 placeholder Worker/secret 写入。
 授权不自动激活 watcher、恢复 VM bootstrap 或启用 automation。

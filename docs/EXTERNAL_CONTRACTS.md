@@ -96,10 +96,10 @@ public control repository 的所有历史 envelope、ACK 与脱敏诊断对互�
   当前主动承载流量的最新 deployment。部署后回读必须同时核对最新 version、主动 deployment、
   binding、SQLite `RelayRoom` export 和 script 的 `workers.dev` 状态，不能只信 CLI 成功文本。
 - Worker account settings GET 的返回模型只有 `default_usage_model` 与 `green_compute`；
-  `default_usage_model=bundled` 只构成 Free-compatible preflight 候选，不是 Billing
-  subscription receipt。订阅列表是独立 API，并要求 Billing Read 或 Billing Write；本任务的
-  四项必需 OAuth scope 本身不包含该权限，既有 profile 的额外 scope 也不能把 account settings
-  推断成“已证明 Free 套餐”。
+  该字段是 usage-model 配置，不是 Billing subscription receipt。`standard` 与当前 Workers Paid
+  相关，`bundled`/`unbound` 是 legacy usage models，三者都不能证明 Workers Free。订阅列表是
+  独立 API，并要求 Billing Read 或 Billing Write；本任务的四项必需 OAuth scope 本身不包含该
+  权限，既有 profile 的额外 scope 也不能把 account settings 推断成“已证明 Free 套餐”。
 
 官方来源：
 
@@ -121,11 +121,12 @@ typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wr
 认证、创建、secret、部署与真实正负测试，并在知悉既有 encrypted keyring `default` profile 的
 29 项 scope 包含四项必需项及 25 项额外项后，明确授权直接复用且不要求 exact-scope equality。
 本地采用路径已实现可续期 owner-marked receipt 和 account-bound 私有 credential snapshot；截至
-2026-07-21，真实精确 infra root 的 exact/inherited binding absence 尚未证明，也没有生成绑定
-`default.enc` hash、permissions 与脱敏 readback 的本地 adoption receipt 或
-GET-only preflight；未创建 Worker/DO，未写 runtime secret，也没有 `workers.dev` endpoint。
-preflight 仍须先证明单一账号、必需 scope、既有 account subdomain、目标 script 不存在并取得
-独立 Free 套餐确认；未满足时不得产生部分资源。
+2026-07-21，真实精确 infra root 的 exact/inherited binding absence 已证明，generation-1 receipt
+已绑定 `default.enc`、account 与 permission hashes。固定四 GET preflight 已确认单一账号、必需
+scope、既有 account subdomain 与目标 script 不存在，并报告
+`WorkersUsageModel=STANDARD / BillingPlanVerified=false /
+BILLING_VERIFICATION_REQUIRED`；未创建 Worker/DO，未写 runtime secret，也没有 relay endpoint。
+独立 Dashboard Free 套餐确认仍未完成；未满足时不得产生部分资源。
 
 ## Anthropic Third-Party Desktop
 
@@ -345,8 +346,8 @@ HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并
 WebSocket Hibernation 与本地 readback/dry-run gates；产品仓库的
 `operator/realtime-relay/realtime-relay-client.ps1` 只消费固定通知 schema 并调用固定 wake
 adapter。两者都仍是未激活的 coordination plane：既有 encrypted keyring `default` OAuth
-profile 已获明确复用授权，但真实精确 infra root 的 exact/inherited binding absence、本地 adoption
-receipt 与 GET-only preflight 尚未完成；当前没有 Worker/DO、runtime secret 或 endpoint。现有 control repositories 继续作为
+profile 已完成 generation-1 adoption 与 GET-only preflight，但 Billing verification、Host/VM
+DPAPI provisioning 与资源写入尚未完成；当前没有 Worker/DO、runtime secret 或 endpoint。现有 control repositories 继续作为
 持久审计与断线 fallback，automation 继续保持暂停。
 
 这些文件属于 OperatorCoordination development plane，不进入默认 bootstrap、

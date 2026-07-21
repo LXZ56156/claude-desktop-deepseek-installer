@@ -29,7 +29,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | P10A-0A | 双机 Fast Lane MVP 前置门 | **CONTROLLED_PAUSE**；所有旧 bundle/prompt superseded，不得进入 VM | 只有在 realtime relay 独立工作流完成评审后，另行决定是否从新 clean commit 重新 finalization |
-| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE** | 采用既有 encrypted keyring default、完成 Free-only readback 与真实正负权限/回滚证明；credential 失效需浏览器时先提示；不改变 P10/P11/P12 门 |
+| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY / BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE** | 完成独立 Free-plan Billing 核验、Host/VM DPAPI provisioning 与真实正负权限/回滚证明；不改变 P10/P11/P12 门 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -784,12 +784,12 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
    离线测试、52-file secret scan、实际本地 workerd/SQLite/Hibernation forced-eviction test 和
    Wrangler dry-run 已通过。用户在知悉既有 encrypted keyring `default` profile 有 29 项 scope、
    其中 25 项超出四项必需集合后，明确授权直接复用且不要求 exact-scope equality。本地已实现
-   owner-only crash recovery、过期 receipt 原子续期和 account-bound credential snapshot；下一阶段
-   对真实精确 infra root 证明没有 exact/inherited profile binding，并生成绑定 `default.enc` hash、
-   permissions 与脱敏 readback 的 owner-marked adoption receipt，再执行 GET-only preflight；复用成功
-   不需要浏览器，只有
-   credential 失效且必须重新认证时才在打开浏览器前明确提示。产品仓库和 VM runtime 不安装
-   Node/npm。
+   owner-only crash recovery、过期 receipt 原子续期和 account-bound credential snapshot。真实
+   infra root 的 exact/inherited binding absence、generation-1 adoption receipt 与固定四 GET
+   preflight 已完成；结果为单账号、既有 workers.dev subdomain、目标 Worker 不存在、
+   `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
+   BILLING_VERIFICATION_REQUIRED`。usage model 不证明订阅，独立 Billing Dashboard 登录前已按要求
+   提示用户。产品仓库和 VM runtime 不安装 Node/npm。
 4. Cloudflare account、deployment credential、两个 lane identity 与 HMAC key 均由外部
    provisioner 独立发放；公网 URL 不是 sender authority，secret 不进入仓库、prompt 或对话。
 5. 先完成本地和临时环境攻击矩阵，再由一次独立激活授权决定是否部署客户端；默认 disabled，
@@ -812,19 +812,21 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
 - Realtime relay 已有本地 sibling infra/Worker/DO/Hibernation 源码、协议 kernel、PowerShell
   publish/watch、pending/ACK 恢复、fixed Codex resume/wake proof、受控 cleanup、DPAPI credential
   provider 与 focused fake tests。独立 infra 本地 commit
-  `a74ef5986b801bf5c9c500e473590d5167a062a8` 为安装前基线；当前 105/105 Node 离线测试、52-file
+  `a74ef5986b801bf5c9c500e473590d5167a062a8` 为安装前基线，当前实现提交为
+  `e3355ab9fedb56e7291b37df49751d9a26614f84`；当前 105/105 Node 离线测试、52-file
   secret scan、固定 typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 和 fresh
   Wrangler dry-run artifact scan 已通过且没有 remote；产品 relay focused tests 在 PowerShell 7 与
   Windows PowerShell 5.1 各 67/67、完整双引擎 HostSandbox gate 与 39-file Release Simulation
   DryRun 已通过。本地 forced eviction 不替代生产 idle scheduling、平台日志或公网 Hibernation
-  evidence。既有 Cloudflare encrypted keyring `default` credential 尚未完成真实精确 infra root 的
-  exact/inherited binding-absence proof、本地 adoption receipt 与 account GET preflight；
-  resource receipt、workers.dev endpoint、两个
-  lane runtime secret、真实正负权限 evidence 和启用授权均不存在。credential 的存在不等于本任务
-  已认证，状态必须是 `NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE`。
-- Free-only GET preflight 只能把 `default_usage_model=bundled` 判为 candidate，并明确输出
-  `BillingPlanVerified=false`；缺少既有 workers.dev subdomain、目标 Worker 冲突、多账号、付费模型
-  或无法确认 Free 都必须在首个写操作前停止。初始 bulk 还缺 disposable VM CurrentUser DPAPI
+  evidence。既有 Cloudflare encrypted keyring `default` credential 已完成真实 infra root 的
+  binding-absence proof、generation-1 adoption receipt 与 account GET preflight；但 Free-plan
+  Billing receipt、resource receipt、relay endpoint、两个 lane runtime secret、真实正负权限 evidence
+  和启用授权均不存在。状态必须是 `AUTHENTICATED_READ_ONLY /
+  BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`。
+- Free-only GET preflight 只记录 `default_usage_model=standard` 并明确输出
+  `BillingPlanVerified=false`；任何 usage model 都不能充当 subscription receipt。独立 Dashboard
+  核验、既有 workers.dev subdomain、目标 Worker 无冲突和单账号必须同时成立，否则首个写操作前
+  停止。初始 bulk 还缺 disposable VM CurrentUser DPAPI
   provisioning context，不能先创建 placeholder Worker 或只写宿主机 secret。
 - VM 不负责重查上述宿主机 retained path/task/PR/CI/remote；它只验证最终提示词的外部
   ZIP hash/length、commit/tree 与 tokens。新 key 只是 `KEYPAIR_STAGED`，必须完成注册及真实

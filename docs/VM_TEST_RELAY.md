@@ -29,9 +29,10 @@ tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 re
 `PAUSED`，没有 VM 侧可靠 receipt 时不得推断其实际存在或状态。本轮用户已授权 Cloudflare
 外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、105/105 离线测试、52-file
 secret scan、typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 与 Wrangler
-dry-run 已通过；既有 encrypted keyring `default` credential 已获明确复用授权，本地可续期
-adoption/account-bound snapshot 路径已实现，但尚未完成真实 adoption、GET-only preflight、
-provision 或在线 relay 激活，也不执行
+dry-run 已通过；既有 encrypted keyring `default` credential 已完成 generation-1 adoption 与固定
+四 GET preflight，确认单账号、既有 workers.dev subdomain、目标 Worker 不存在并报告
+`STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。独立 Billing verification、
+provision 与在线 relay 激活尚未完成，也不执行
 产品 Live。缺少 VM CurrentUser DPAPI provisioning context 时不得先写任一 runtime secret 或创建
 placeholder Worker。本地 Worker/DO 与 PowerShell watcher 实现及外部授权本身都不改变暂停。
 暂停后的精确事实和恢复条件只看 `HANDOFF.md` 顶部与实际 Git/remote/PR/CI/automation/evidence。
@@ -148,10 +149,11 @@ Cloudflare realtime notification accelerator 的离线源码：独立 sibling wo
 Cloudflare Worker、SQLite-backed Durable Object 与 WebSocket Hibernation，以及产品仓库
 DevelopmentOnly operator plane 中的纯 PowerShell 客户端。完整协议、威胁模型、授权点和回滚见
 `REALTIME_RELAY_PROPOSAL.md`。当前状态严格为 `LOCAL_GATES_PASSED /
-EXTERNAL_AUTHORIZED_FREE_ONLY / NOT_AUTHENTICATED / NOT_PROVISIONED / NOT_ACTIVE`；用户已授权
+EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
+BILLING_VERIFICATION_REQUIRED / NOT_PROVISIONED / NOT_ACTIVE`；用户已授权
 Free-only 外部门 1–7 项，并在知悉 scope 超集后明确允许直接复用既有 encrypted keyring
-`default` OAuth profile，但真实精确 infra root 的 exact/inherited binding-absence proof、owner-marked
-本地 adoption receipt 与 GET-only preflight 尚未完成，endpoint、runtime secret、部署 receipt
+`default` OAuth profile；真实精确 infra root 的 binding-absence proof、owner-marked adoption receipt
+与 GET-only preflight 已完成，但 Free-plan Billing receipt、endpoint、runtime secret、部署 receipt
 或 live 权限证据仍不存在。该授权也不允许
 越过分阶段 fail-closed 前置条件或自行激活任何 watcher/automation。
 
