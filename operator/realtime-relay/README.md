@@ -1,12 +1,67 @@
 # CDDsi realtime relay operator client
 
-Status: **LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**.
+Status: **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY /
+AUTOMATION_PAUSED**.
 
 This directory is an operator-coordination plane. It is DevelopmentOnly, is not
 loaded by the product bootstrap, and is excluded from every release package.
 The existing protected-history control repositories and their minute polling
 remain the durable audit path and fallback. HostCoordinator and VM automation
 remain `PAUSED`.
+
+## D-022 lean delivery profile
+
+The immediate objective is working Host/VM communication, not completion of
+every possible hardening mechanism. The policy in this section takes
+precedence over stricter early provisioning language later in this document.
+
+- Free-only Worker/DO deployment and a manually invoked relay-only VM smoke do
+  not wait for a machine Billing receipt, two-phase write ticket, coordinated
+  provisioner, Host/VM DPAPI receipts, bulk semantics, or a two-secret staging
+  receipt. Existing implementations of those mechanisms are optional
+  hardening and may remain in place without acting as current gates.
+- The first smoke may supply the Host secret through current process memory or
+  secure input. For the VM, the operator may manually drag in one repository-
+  external, owner-only, one-use `cddsi-relay-vm-handoff-v1` JSON package. The
+  fixed `invoke-vm-smoke.ps1 -PackagePath` entry reads at most 4 KiB, rejects a
+  non-current owner, any ACL wider than one owner FullControl rule, a reparse
+  package, and schema drift, then deletes the package before parsing or any
+  network request, and clears secret bytes in `finally`. The package is never
+  Git, prompt, log, or evidence content and is not long-term plaintext storage.
+  Without explicit `-AcknowledgeRelayOnlyLive`, the entry is Plan-only and does
+  not read, delete, or contact the network; the acknowledgement applies only to
+  this relay smoke and grants no product authority.
+  DPAPI CurrentUser is required only before a persistent, cross-process or
+  cross-reboot unattended watcher is enabled.
+- The minimum live smoke is two successful publish/watch/ACK directions, both
+  reverse-lane denials, one wrong/forged-secret denial, and one disconnect and
+  resume. It also proves no secret output and no payload execution. Additional
+  fault matrices remain useful hardening but are not deployment prerequisites.
+- A real Cloudflare paid-plan or upgrade prompt still stops the Free-only
+  operation. Deploy OAuth and runtime relay secrets stay separate.
+- The user-provided `VM_RELAY_READINESS_V1` reports `Ready=true`: PowerShell 7,
+  Git, `ClientWebSocket`, clock synchronization, outbound GitHub/`workers.dev`
+  443, VMware Tools, and the VM-local relay state directory are ready with no
+  blocker.
+- The Free-only Worker, SQLite-backed Durable Object, and two runtime secret
+  bindings are deployed at
+  `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`. Exact postdeploy
+  readback, the Host dual-role HTTP smoke, and the cross-device Host/VM
+  publish/read/ACK smoke passed without recording either secret. Production
+  WebSocket reconnect and Hibernation have not yet completed public E2E
+  verification, so this relay is `NOT_PRIMARY` and both automations stay
+  `PAUSED`.
+- The one-use VM package, prepared envelope, and VM report copies were deleted.
+  The Host's 64-byte plaintext runtime frame was deleted after a DPAPI
+  CurrentUser round-trip; only an owner-only DPAPI blob remains outside the
+  repository. The VM has no persistent secret or watcher. Unattended watching
+  and primary-path use are therefore `NOT_ENABLED`.
+
+This profile authorizes only manually invoked relay coordination. Old
+onboarding/bootstrap and product integration remain superseded/paused; both
+automations remain `PAUSED`. The host remains the only product writer, relay
+payload/free text is never executed, and Formal Lane/P12/no-auto-promotion
+boundaries remain unchanged.
 
 ## Authority boundary
 
@@ -29,7 +84,8 @@ structured proposal or unified diff, but the host must validate and apply it.
 
 `realtime-relay-client.ps1` provides a PowerShell 7 live transport and a fake
 provider contract used by PowerShell 7 and Windows PowerShell 5.1 tests. The
-watcher requires all of the following before receive:
+following is the persistent unattended watcher contract; it is not a gate for
+the one-time manual smoke:
 
 - an explicit `TestSafe`, `DryRun`, or `Live` execution context;
 - the exact reader identity for the selected lane;
@@ -257,11 +313,13 @@ exception.
 
 Host and CI tests replace only the fixed internal protect/unprotect wrappers
 with a reversible fake and assert zero real credential access. They do not call
-DPAPI. After the single concentrated credential authorization, each relay
-runtime credential is provisioned and round-tripped device-specifically in the
-CurrentUser context of its target HostCoordinator host or VM tester device.
-This does not authorize product Live execution, which remains confined to the
-disposable VM.
+DPAPI. For the one-time manual smoke, the Host credential may enter only its
+target process through secure input; the VM credential may use the one-use,
+owner-only, repository-external handoff package described above. Before a
+persistent unattended watcher is enabled, each relay runtime credential is
+provisioned and round-tripped device-specifically in the CurrentUser context of
+its target HostCoordinator host or VM tester device. Neither path authorizes
+product Live execution.
 
 Rotation is fail-closed and coordinated:
 
@@ -281,15 +339,16 @@ Rotation is fail-closed and coordinated:
 Interactive Wrangler credentials stay in the OS keyring and are never used by
 the watcher.
 
-## Offline and activation gates
+## Offline, smoke, and persistent activation gates
 
-This implementation remains local and offline. `TestSafe` and `DryRun` are the
-default validation paths and do not contact Cloudflare, npm, Credential Manager,
-the registry, or product resources. No Cloudflare login, Worker/Durable Object
-creation, secret write, `workers.dev` deployment, or live end-to-end test is
-authorized by this code or document. Those actions remain behind the single
-explicit Cloudflare authorization gate after offline tests, secret scans,
-Wrangler dry-run, resource/cost/rollback review, and a clear working-tree audit.
+`TestSafe` and `DryRun` remain the default automated validation paths and do not
+contact Cloudflare, npm, Credential Manager, the registry, or product
+resources. The user has separately and explicitly authorized Free-only
+Cloudflare items 1–7, reuse of the existing encrypted-keyring Wrangler default
+profile, Worker/DO creation, two runtime secrets, `workers.dev` deployment, and
+real positive/negative smoke tests. D-022 permits that manual smoke now without
+machine-receipt or DPAPI-receipt gates. It does not convert the ordinary test
+suite into a networked suite.
 The authoritative request is the proposal's
 [external authorization point](../../docs/REALTIME_RELAY_PROPOSAL.md#外部授权点);
 the exact command, resource, credential, verification, and rollback procedure

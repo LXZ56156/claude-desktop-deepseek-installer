@@ -1190,6 +1190,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         'operator/fast-lane/invoke-git-outbox.ps1'
         'operator/fast-lane/invoke-vm-reset-live.ps1'
         'operator/fast-lane/providers/windows-vm-reset.ps1'
+        'operator/realtime-relay/invoke-vm-smoke.ps1'
         'operator/realtime-relay/realtime-relay-client.ps1'
     )
     $expectedOperatorFiles = @($expectedOperatorLibraries + $expectedOperatorRuntimes)
@@ -1501,6 +1502,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             'Invoke-CddsiWindowsVmResetAuthorizedRequest'
             'New-CddsiWindowsVmResetProvider'
         )
+        'operator/realtime-relay/invoke-vm-smoke.ps1' = @('Invoke-CddsiRelayVmSmoke')
         'operator/realtime-relay/realtime-relay-client.ps1' = @(
             'Invoke-CddsiRealtimeRelayWatcher'
             'Invoke-CddsiRealtimeRelayPublish'

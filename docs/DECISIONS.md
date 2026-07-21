@@ -1,6 +1,6 @@
 # 决策记录
 
-更新日期：2026-07-17
+更新日期：2026-07-21
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
 才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。
@@ -36,6 +36,8 @@
 | D-018 | 每个 Release 冻结单一 MSIX 部署范围 | 冻结 |
 | D-019 | 运行、能力、UI 证据使用分层状态 | 冻结 |
 | D-020 | 双机 Codex 使用分权 relay 与分层 clean-start | 冻结 |
+| D-021 | GitHub Free public visibility 迁移 | 冻结 |
+| D-022 | Realtime relay 通信优先与风险成比例 | 冻结 |
 
 ## D-001：首选 managed configuration
 
@@ -329,3 +331,40 @@ public-safe envelope。2026-07-17 三仓均已切换为 public 并启用
 当前仍须从包含最新交接文档的 clean exact commit 重新运行统一门、重建 onboarding
 bundle、重绑仍暂停的 heartbeat 并等待最终 CI。角色限制继续由尚未发放的窄凭据和
 真实负向权限测试完成；宿主机 Live、VM 只读产品代码和 Formal Lane 边界不变。
+
+## D-022：Realtime relay 通信优先与风险成比例
+
+**状态：冻结（2026-07-21）**
+
+用户明确要求结束 realtime relay 的过度工程化，以最短路径实现宿主机与
+disposable VM 的双向秒级通知。实现和评审从此以“通信功能优先、控制与
+现实风险成比例”为默认；无具体威胁、无明确消费者或只服务未来理论场景的
+复杂控制，不得阻断本轮 Free-only 部署和 relay-only VM smoke。
+
+当前最小交付合同是：
+
+- 复用用户已明确授权的 encrypted-keyring Wrangler `default` profile；已知
+  scope 超集不构成失败。已有 Billing Dashboard 人工核对未列出
+  Workers/Workers Paid，足以作为本次 Free-only 实施依据；若 Cloudflare 真实显示
+  付费、升级或购买要求，立即停止。
+- machine Billing receipt、two-phase write ticket、coordinated provisioner、Host/VM
+  DPAPI receipts、bulk semantics 与 two-secret staging receipt 均降为可选 hardening/
+  审计实现，不再是 Worker/DO 创建、secret 写入、`workers.dev` 部署或一次性
+  relay-only smoke 的前置条件。
+- 一次性手工 smoke 可使用当前进程内存/安全输入中的 relay secret。
+  VM 侧允许一份 repo 外、owner-only、一次性固定-schema handoff JSON：人工拖入
+  后，只由固定 smoke 脚本读取，在首次网络前删除，并在结束时清零内存 secret。
+  该 JSON 不得进入 Git、prompt、日志或 evidence，不得作为长期明文存储。
+  DPAPI CurrentUser 仅在后续要启用跨进程/跨重启的持久 unattended watcher 前
+  成为必选门。
+- 本轮允许人工启动的 relay-only Host/VM publish/watch/ACK/reconnect 正负向 smoke；
+  它不启动旧 onboarding/bootstrap、产品 integration、产品 Live 或任何 automation。
+- 仍不可突破的边界只保留与实际损害直接相关的项：secret 不进入日志、
+  Git、prompt、报告或 evidence；relay payload/free text 不执行；宿主机是产品代码
+  唯一写入者，VM 只读产品仓库；无自动 merge/release/promotion，不越过
+  P12；Formal Lane 的外部 snapshot receipt、CAS 与签名合同不变。
+
+D-022 只放宽 realtime relay operator coordination 的交付路径，不放宽产品安装器的
+Live 边界、P10/P11/P12 发布门或 D-003/D-010 的产品 API Key 合同。早期 relay
+文档中与本决定冲突的“未有 machine receipt/DPAPI 所以不得部署”表述，均视为
+已被本决定取代的历史硬化方案。

@@ -2,8 +2,8 @@
 
 状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
-WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
-NOT_PROVISIONED / NOT_ACTIVE**
+WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
+CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED**
 
 静态产品/Release 分类：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
 （DevelopmentOnly；外部授权与认证进度只由上方动态状态及 `docs/HANDOFF.md` 表达）。
@@ -13,6 +13,35 @@ NOT_PROVISIONED / NOT_ACTIVE**
 产品仓库客户端与独立 sibling infra workspace 已进入本地实现；在隔离测试、集中外部授权、
 provisioning、真实权限矩阵和激活门完成前，任何 Cloudflare endpoint、身份、密钥、runtime
 assertion 或在线 relay 都不得被推断为存在。
+
+## D-022 交付决定（2026-07-21）
+
+用户已明确要求停止 realtime relay 的过度工程化。本提案现在以最短路径
+打通 Host/VM 双向 publish/watch/ACK/reconnect 为首要目标，控制只保留到与现实
+风险成比例的程度。本节优先于本文后续早期记录的更严格 provisioning 方案。
+
+当前 lean path 只要求：
+
+- 用户已授权的 Free-only Worker/SQLite-backed Durable Object/`workers.dev`
+  资源边界；如 Cloudflare 真实要求付费或升级则停止。
+- 部署凭据与 runtime relay secret 分离；secret 不进入日志、Git、prompt、报告或
+  evidence。
+- 两个固定 lane、固定小型 pointer schema 和最小 Host/VM 读写区分；payload/
+  free text 永不执行。
+- 一次性手工 smoke 可用当前进程内存/安全输入 secret。VM 侧还可人工拖入
+  一份 repo 外、owner-only、一次性固定-schema handoff JSON；固定 smoke 脚本必须
+  在首次网络前删除该文件。JSON 不进入 Git/prompt/日志/evidence，不是长期
+  明文存储。DPAPI CurrentUser 只在后续启用持久 unattended watcher 前必须完成。
+- Git control repos 继续是持久审计和断线 fallback；Formal Lane、P12 与
+  宿主机唯一产品写权不变。
+
+machine Billing receipt、two-phase account/write ticket、coordinated provisioner、Host/VM
+DPAPI receipts、bulk semantics 和 two-secret staging receipt 都可保留为 optional
+hardening/审计代码，但不再阻断 Worker/DO 创建、secret 写入、部署或一次性
+relay-only smoke。用户回传的 `VM_RELAY_READINESS_V1` 为 `Ready=true`；VM 的
+PowerShell 7、Git、`ClientWebSocket`、时钟、GitHub/`workers.dev` 443 连通和本地
+relay state 目录均已就绪。该准备状态不恢复旧 bootstrap/产品 integration，也不启用
+HostCoordinator/VM automation。
 
 ## 问题陈述
 
@@ -271,11 +300,11 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 2. **RT1 — sibling infra repo（本地实现）**：独立 workspace 已建立 Worker/SQLite Durable
    Object/WebSocket Hibernation、声明式 `exports` lifecycle 合同、协议 kernel 和离线测试；没有
    remote 或生产 identity。授权后已安装精确 lock-bound Node/Wrangler/TypeScript 与 keyring helper，
-   119/119 离线测试、58-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
+   135/135 离线测试、67-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
    workerd/SQLite/Hibernation forced-eviction integration 均通过；owner-only crash recovery、
    过期 adoption receipt 原子续期、malformed binding fail-close 与 account-bound credential snapshot
-   也已完成离线验证；既有 credential 已完成 generation-1 adoption 与固定四 GET preflight，但尚未
-   部署。本地 forced eviction 不替代生产 Cloudflare 的 idle scheduling、平台日志
+   也已完成离线验证；既有 credential 已完成 generation-1 adoption 与固定四 GET preflight，并已
+   完成 Free-only 部署。本地 forced eviction 不替代生产 Cloudflare 的 idle scheduling、平台日志
    或公网 Hibernation evidence。
 3. **RT2 — 本地客户端合同（本地实现）**：DevelopmentOnly PowerShell 客户端已实现
    `ClientWebSocket` adapter、独立 writer publisher、fixed Codex resume/wake proof、固定
@@ -283,22 +312,25 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
    写保护的 DPAPI CurrentUser credential 创建/轮换入口；
    TestSafe/DryRun 的宿主真实网络、registry、credential、process 及产品 Live 必须继续为 0，
    真实 DPAPI/网络不属于离线测试证据。
-4. **RT3 — 外部 provisioning（已授权、尚未开始资源写）**：用户已一次性授权 1–7 项并限定
+4. **RT3 — lean 外部 provisioning（已完成）**：用户已一次性授权 1–7 项并限定
    Free-only；在知悉既有 encrypted keyring `default` profile 的 29 项 scope 中有 25 项额外项后，
    又明确授权直接复用。真实精确 root binding-absence proof、owner-marked adoption receipt、GET-only
    account/subdomain/collision preflight 已完成；经用户授权复用个人 Edge 既有登录态的只读 Billing
-   → Subscriptions 核对也已完成，列表未出现 Workers/Workers Paid。用于固化该脱敏观察的 machine
-   receipt validator/recorder 已本地实现并测试但未签发真实 receipt，条件写门仍不满足；两组 relay
-   identity/secret、窄 route 和 runtime assertion
-   仍须依次过门。deploy credential 不得保存为 automation credential 或复用为 runtime secret。
-5. **RT4 — disposable 环境校准**：仅在重新 finalization 后，以非产品 synthetic payload
-   验证正反权限、重放、掉线、顺序、限流和 fallback；两端 automation 先保持 PAUSED。
+   → Subscriptions 核对也已完成，列表未出现 Workers/Workers Paid。按 D-022，该
+   人工核对足以继续 Free-only 写入，不等待 machine receipt、ticket 或 DPAPI receipt。
+   deploy credential 不得保存为 automation credential 或复用为 runtime secret。Worker、SQLite
+   Durable Object、两项 secret binding 与 postdeploy 精确回读已完成。
+5. **RT4 — relay-only VM smoke（HTTP/跨设备 read/ACK 已通过）**：已在 `Ready=true` 的 VM 上以
+   非产品 synthetic pointer 完成 Host/VM 跨设备双向 read/ACK，Host 复核 ACK 幂等并 ACK VM reply。
+   生产 WebSocket reconnect/Hibernation 仍待真实公网 E2E；两端 automation 继续 PAUSED，不运行
+   产品 integration。
 6. **RT5 — canary 激活门**：独立审阅部署 receipt、客户端 hash、runtime assertion 和负向
    权限证据后，才可另行决定启用 accelerator；启用 realtime 不取消一分钟轮询。
 7. **RT6 — 运行与撤回**：监控 public-safe SLO/错误码，定期轮换密钥，演练单开关禁用和
    control-repo-only 回退。
 
-每个阶段都必须有独立退出条件和机器回执。前一阶段通过不自动授权后一阶段。
+每个阶段都必须有清晰的成功/失败结果。一次性 manual smoke 不要求额外的
+machine receipt 体系；持久 watcher 和 Formal Lane 仍分别走自己的后续门。
 
 ## 测试矩阵
 
@@ -319,7 +351,10 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 | 隔离/secret | fake 网络账本、脱敏日志、owner-marked spool | secret/log 泄漏、宿主保护区访问、outside-sandbox 写、未知进程/网络 |
 | Formal/P12 | 保持原有证据和人工确认门 | Fast Lane PASS 提权、自动 merge/release/promotion |
 
-测试必须覆盖 PowerShell 7 的确定性 fake transport 和 disposable 环境真实网络；可共享的
+上表是持续 hardening 的完整矩阵，不是手工首次联通的逐项部署门。首次
+relay-only smoke 的最小通过集是：两个正向 publish/watch/ACK、反向越权拒绝、
+一次伪造/错 secret 拒绝、一次断线重连，以及无 secret 泄漏/无 payload 执行。
+测试仍覆盖 PowerShell 7 的确定性 fake transport 和 disposable 环境真实网络；可共享的
 parser/schema/security helper 同时在 Windows PowerShell 5.1 运行。不得在开发
 宿主机通过产品代码探测公网、Credential Manager、真实 automation 或保护资源。负向测试不能
 通过放宽 timeout、接受不同错误或跳过断言来“稳定”。外部 Cloudflare 测试之前必须先通过
@@ -330,7 +365,8 @@ integration 或真实 Cloudflare evidence。
 ## 外部授权点
 
 以下动作均不由本地实现自行授权。用户已于 2026-07-21 一次性授权下列 1–7 项，限定
-Free-only，并要求浏览器登录时明确提示；该授权不改变逐阶段 fail-closed 前置条件：
+Free-only，并要求浏览器登录时明确提示。用户随后又以 D-022 明确取消
+machine receipt/ticket/coordinated DPAPI 对本次部署和 manual smoke 的额外前置：
 
 1. 允许在独立 infra workspace 使用已核验的固定 Node LTS，并仅在该 workspace 安装固定版本
    Wrangler、TypeScript 与测试依赖；安装必须产生并核验 lock/integrity，不得消费 PATH 上的
@@ -360,9 +396,14 @@ Free-only，并要求浏览器登录时明确提示；该授权不改变逐阶�
 4. 创建一个 Worker 和一个 SQLite-backed Durable Object，初始只使用 `workers.dev`，不购买
    套餐、不绑定自有域名、不修改 DNS；
 5. 生成 HostCoordinator/VmTester 两组独立 256-bit runtime secret，经 Wrangler secret 写入
-   Cloudflare；同一受保护 provisioner 必须把对应值分别写入实际 HostCoordinator 与 disposable
-   VM 的 DPAPI CurrentUser 存储，全程只用内存/stdin 且立即清零。若不能同时进入两个正确的
-   CurrentUser 设备上下文，必须停止，不能把两份客户端 credential 暂存在同一宿主账户或磁盘；
+   Cloudflare。首次人工 smoke 中，Host 值可从当前进程内存/安全输入提供；
+   VM 值可放入一份最大 4 KiB、repo 外、owner-only、非 reparse、一次性
+   `cddsi-relay-vm-handoff-v1` JSON，由人工拖入 VM。固定
+   `operator/realtime-relay/invoke-vm-smoke.ps1 -PackagePath` 在有界读取后、解析或首次
+   网络前删除它，结束时清零 secret bytes。该 JSON 不进入 Git/prompt/日志/evidence，
+   也不能作长期明文存储。缺少显式 `-AcknowledgeRelayOnlyLive` 时入口只返回
+   Plan，不读取/删除 package 也不访网；该确认只授权 relay smoke。DPAPI CurrentUser
+   是持久 unattended watcher 的后续前置；
 6. 部署到精确 `workers.dev` endpoint；
 7. 执行正确方向、反向越权、错 token、伪造 HMAC、nonce
    重放、过期、跳号、断线恢复和 fallback 的真实正负 smoke。
@@ -390,15 +431,17 @@ duration，但它不是零成本保证。本任务四项必需 scope 不含 Bill
 GET-only preflight 只把已知 usage model 作为配置枚举输出，并始终明确
 `BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`；`standard`、`bundled` 与 `unbound`
 都不是 Workers Free subscription receipt。实际 preflight 报告 `STANDARD`、既有 workers.dev
-subdomain 与目标 Worker 不存在。Dashboard 人工观察仍不是 machine receipt；其 validator/recorder、
-protected ACL、fresh observation 与两阶段账号绑定已在 infra 本地实现并测试，但没有签发真实 receipt，
-因此条件写门仍不满足。任何无法证明 Free-only 条件的情况都在首次 secret bulk/
-placeholder Worker 写入前停止，不得扩大 scope 或猜测。
+subdomain 与目标 Worker 不存在。Dashboard 人工观察不是 machine receipt，但 D-022
+已明确接受它作为本次 Free-only 部署的充分操作依据。已实现的 validator/recorder、
+protected ACL、fresh observation 和两阶段账号绑定仅作 optional hardening，不等待签发
+receipt。如真实 Cloudflare 流程出现付费/升级提示、多账号歧义或目标 Worker 碰撞，
+则在写入前停止。
 
-初始 provisioning 还要求同一受保护 parent 先保留 HostCoordinator 与 disposable VM 两个正确
-CurrentUser 上的匹配 DPAPI 客户端副本，再一次性向 Cloudflare 写入两项 secret。当前没有可用的
-VM CurrentUser DPAPI provisioning context，因此即使 credential 采用和只读 preflight 通过，也必须保持
-secret、Worker、DO、route 全部 `NOT_PROVISIONED`，不能先写宿主机一份或创建半成品资源。
+初始 provisioning 可先完成 Cloudflare Worker/DO 与两项 secret 写入，再由人工 smoke
+以 Host 进程内存/安全输入和 VM 读后即删的一次性 handoff JSON 分别使用
+对应值。不要求 coordinated parent、
+DPAPI receipt 或 staging receipt。任何持久 watcher 仍须在启用前把对应 secret 放入该设备
+CurrentUser 的 DPAPI 存储。
 
 创建公开 infra remote、CI identity、系统服务/计划任务或激活任一 watcher/automation 不包含在
 上述 provisioning 授权内，仍需另行明确决定。
@@ -423,26 +466,26 @@ secret、Worker、DO、route 全部 `NOT_PROVISIONED`，不能先写宿主机一
 回滚不改变 Formal Lane、P12 人工确认或产品权限。若 schema、identity、sequence 链或 runtime
 assertion 发生漂移，默认动作是 fail closed 和回退，而不是自动修复服务器权限。
 
-## 激活前退出条件
+## 持久 watcher 激活前退出条件
 
-只有以下条件同时成立，后续任务才可以把状态从 NOT_ACTIVE 改为候选激活：
+一次性 relay-only smoke 不需等待本节。只有以下条件同时成立，后续任务才可以把
+持久 unattended watcher 状态从 NOT_ACTIVE 改为候选激活：
 
-- sibling infra repo、Worker version、SQLite `exports` lifecycle 和 schema hash 已冻结并通过独立 CI；
-- 两条 lane 的 HMAC identity、control repo deploy key 和 runtime assertion 已 provision，正反
-  权限矩阵全通过；
-- PowerShell 7 客户端、validator、watcher fixed-entry、ACK/重连/fallback 的双引擎 host gate
-  与 disposable VM evidence 均通过；
-- secret、forbidden/outside/network/process/registry/unexpected-ledger 指标满足现有隔离合同；
-- kill switch 与 control-repo-only 回退演练通过；
-- 旧 bootstrap 暂停之后的全部 tracked 修改已在新的 clean exact commit 上重新 finalization，
-  新 bundle、automation binding、remote、PR CI 和 retained receipt 精确一致；
-- 用户对外部 provisioning 和最终激活分别作出所需的明确确认。
+- 已部署的 Worker/DO/endpoint 与当前客户端协议兼容；
+- Host 与 VM 对应 runtime secret 已各自存入该设备 CurrentUser 的 DPAPI 存储，
+  不是本地明文文件；
+- manual smoke 已证明两个正向 publish/watch/ACK、反向越权拒绝、错 secret 拒绝
+  和断线重连；
+- secret 扫描为 0，payload 不执行，Git control-repo fallback 仍可用；
+- 用户另行确认启用持久 watcher。这不恢复旧 bootstrap/产品 integration，
+  HostCoordinator/VM automation 仍保持 `PAUSED`。
 
-当前本地离线实现和质量门已通过，外部授权仅限 Free-only；OAuth adoption、只读 preflight 与
-脱敏 Dashboard 人工核对已完成，但 machine receipt 仅完成实现而未签发，条件写门、provisioning 与激活条件仍未
-证明。本文状态保持 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
-AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
-WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED / NOT_PROVISIONED / NOT_ACTIVE**。
+本地离线实现和质量门、OAuth adoption、只读 preflight、脱敏 Dashboard 人工核对和 VM relay
+readiness 均已完成。Free-only endpoint
+`https://cddsi-realtime-relay.lizixuan6383828.workers.dev`、Worker、SQLite-backed Durable Object、
+两项 secret binding、postdeploy 精确回读、Host dual-role HTTP smoke 和跨设备双向 read/ACK
+均已完成，未记录 secret。生产 WebSocket reconnect/Hibernation 尚未真实公网 E2E，因此本文
+状态为 **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED**。
 
 ## 官方技术参考
 

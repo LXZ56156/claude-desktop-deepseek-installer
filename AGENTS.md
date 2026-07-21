@@ -50,6 +50,33 @@
 - 可恢复备份与可分享脱敏快照是两个不同合同。脱敏快照永远不得作为恢复源；
   未来跨重启恢复材料必须使用 DPAPI CurrentUser 或经评审的等效保护。
 
+## Realtime relay 交付优先级
+
+`docs/DECISIONS.md` 的 D-022 是 realtime relay 的当前冻结原则，并优先于
+早期 relay 文档中更严格的预防性门槛：
+
+- 当前首要目标是尽快打通宿主机与 disposable VM 的双向通知和
+  断线重连；工程只保留与实际风险成比例的控制，不得因“未来可能需要”
+  继续增加本轮部署或手工 smoke 的阻断项。
+- Free-only Cloudflare 部署和一次性 relay-only VM smoke 不要求 machine
+  Billing receipt、two-phase write ticket、coordinated provisioner、Host/VM DPAPI
+  receipt、bulk semantics 或 two-secret staging receipt。这些实现可作为未来
+  hardening，不产生当前 authority，也不得再作为当前阻断。
+- 一次性手工 smoke 的 Host relay secret 可只存在当前进程内存/
+  安全输入边界；VM 交接还可使用一份 repo 外、owner-only、一次性固定
+  schema JSON，由人工拖入 VM，且只能由固定 smoke 脚本读入后在首次网络前
+  立即删除。它不得进入 Git、prompt、日志或 evidence，也不是长期明文
+  存储。DPAPI CurrentUser 只在启用跨进程/跨重启的持久 unattended watcher 前
+  必须完成，不阻断手工 smoke。
+- 出现 Cloudflare 付费/升级提示或任何 secret 可能进入日志、Git、prompt、
+  报告或测试 evidence 时仍必须停止。relay payload/free text 仍永不执行。
+- 一次性 relay-only smoke 是 operator coordination，不是旧 VM bootstrap、
+  产品 integration 或产品 Live。旧 onboarding ZIP/prompt 继续 superseded，
+  HostCoordinator/VM automation 继续 `PAUSED`。
+- 宿主机仍是产品代码唯一写入者；VM 只读产品仓库并回传不可信建议。
+  不自动 merge、release、promotion，不越过 P12；Formal Lane 的 snapshot
+  receipt、CAS 与签名要求不变。
+
 ## 双机 VM 测试闭环
 
 - 宿主机 Codex 是唯一代码写入者：只允许它修改源码、runbook 和候选构建定义，

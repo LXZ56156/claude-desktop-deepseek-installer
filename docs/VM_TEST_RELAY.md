@@ -12,9 +12,11 @@
 Release ZIP、默认 bootstrap 或 trusted test harness。relay 是独立的 operator
 coordination plane；产品平面、测试执行平面、证据平面和协调平面必须分离记账。
 
-## 2026-07-20 controlled pause
+## 2026-07-21 controlled pause 与 relay-only 放行
 
-当前不得继续 onboarding ZIP、VM bootstrap、integration、测试循环或 Formal Lane。
+当前不得继续 onboarding ZIP、旧 VM bootstrap、产品 integration、产品测试循环或 Formal
+Lane。D-022 作出了精确例外：可进入已准备的 VM 执行人工 relay-only 通信
+smoke，它不读取/运行旧 ZIP，不执行产品 Live，不触发 automation。
 暂停前最后一个 retained ZIP/prompt 以及所有更早版本均标记为
 `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`，只保留审计字节，不再交付或执行。任何本次
 tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 readiness receipt 失去
@@ -26,19 +28,25 @@ tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 re
 - `CanStartFormalP10A=false`。
 
 现有 HostCoordinator automation 必须继续 `PAUSED`；VM automation 若存在也必须继续
-`PAUSED`，没有 VM 侧可靠 receipt 时不得推断其实际存在或状态。本轮用户已授权 Cloudflare
-外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、119/119 离线测试、58-file
+`PAUSED`。本轮用户已授权 Cloudflare
+外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、135/135 离线测试、67-file
 secret scan、typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 与 Wrangler
 dry-run 已通过；既有 encrypted keyring `default` credential 已完成 generation-1 adoption 与固定
 四 GET preflight，确认单账号、既有 workers.dev subdomain、目标 Worker 不存在并报告
 `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。随后经用户授权，只读复用
 其个人 Edge 既有登录态查看 Billing → Subscriptions：未列出 Workers/Workers Paid，active 的
 Teams Free Base 与无关 R2 Paid 不改变 Workers 的独立订阅边界，也不授权 relay 使用 R2。SQLite
-DO 支持 Workers Free，Free 超限后操作失败而非计费；该观察不把整个账号称为 Free。machine
-receipt validator/recorder 与两阶段账号绑定已在 infra 本地实现并测试，但未签发真实 receipt，
-条件写门仍不满足；provision 与在线 relay 激活尚未完成，也不执行
-产品 Live。缺少 VM CurrentUser DPAPI provisioning context 时不得先写任一 runtime secret 或创建
-placeholder Worker。本地 Worker/DO 与 PowerShell watcher 实现及外部授权本身都不改变暂停。
+DO 支持 Workers Free，Free 超限后操作失败而非计费；该观察不把整个账号称为 Free。
+D-022 已将 machine receipt/ticket、coordinated DPAPI/staging receipt 降为 optional hardening，
+不再阻断 Free-only provision 和一次性 smoke。用户回传的 `VM_RELAY_READINESS_V1`
+为 `Ready=true`：VM 上 PowerShell 7、Git、`ClientWebSocket`、时钟、GitHub/`workers.dev`
+443 出站与 `%LOCALAPPDATA%\CDDsiRelayVm\state` 目录均就绪，无 blocker。首次 smoke
+的 VM secret 可由人工拖入一份 repo 外 owner-only fixed-schema handoff JSON；固定
+`invoke-vm-smoke.ps1 -PackagePath` 有界读取后必须在首次网络前删除该文件。
+缺少显式 `-AcknowledgeRelayOnlyLive` 时脚本只做 Plan，不读取/删除 package 或访网。
+该交接不进入 Git/prompt/日志/evidence；DPAPI 只在持久 watcher 前必须。Free-only provision
+与跨设备 HTTP relay smoke 已完成；生产 WebSocket reconnect/Hibernation 仍待真实 E2E。该结果
+不改变产品 Live 和 automation 暂停。
 暂停后的精确事实和恢复条件只看 `HANDOFF.md` 顶部与实际 Git/remote/PR/CI/automation/evidence。
 
 ## 暂停前实现快照（历史；不可执行）
@@ -155,12 +163,14 @@ DevelopmentOnly operator plane 中的纯 PowerShell 客户端。完整协议、�
 `REALTIME_RELAY_PROPOSAL.md`。当前状态严格为 `LOCAL_GATES_PASSED /
 EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED /
-MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED / NOT_PROVISIONED / NOT_ACTIVE`；用户已授权
+VM_RELAY_READY / PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`；用户已授权
 Free-only 外部门 1–7 项，并在知悉 scope 超集后明确允许直接复用既有 encrypted keyring
 `default` OAuth profile；真实精确 infra root 的 binding-absence proof、owner-marked adoption receipt
-与 GET-only preflight 已完成，脱敏 Dashboard 人工核对也已完成，但已签发并通过验证的 machine
-Billing receipt、endpoint、runtime secret、部署 receipt 或 live 权限证据仍不存在。该授权也不允许
-越过分阶段 fail-closed 前置条件或自行激活任何 watcher/automation。
+与 GET-only preflight 已完成，脱敏 Dashboard 人工核对也已完成。Free-only endpoint
+`https://cddsi-realtime-relay.lizixuan6383828.workers.dev`、Worker、SQLite-backed Durable Object、
+两项 secret binding 与 postdeploy 精确回读已经存在；Host HTTP 与跨设备双向 relay-only smoke
+均通过且未记录 secret。生产 WebSocket reconnect/Hibernation 仍缺真实公网 E2E，所以 relay
+不是主路径，也不允许自行激活持久 watcher/automation。
 
 该 accelerator 只传两条方向隔离 lane 的 12-field 固定 schema 通知及 immutable payload
 pointer：`host-to-vm` 与 `vm-to-host` 使用两个独立身份和相反读写权限。请求用

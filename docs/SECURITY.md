@@ -1,6 +1,6 @@
 # 安全设计
 
-更新日期：2026-07-18
+更新日期：2026-07-21
 
 ## 安全目标
 
@@ -11,6 +11,19 @@
 - 项目拥有的 policy、credential、state 和备份在任何写入失败点可精确恢复；
   共享系统资源使用显式补偿矩阵，不承诺整机事务式回滚。
 - 未测试能力不能被报告为成功。
+
+## 风险成比例原则（D-022）
+
+Realtime relay 是独立 operator notification plane，不是产品安装器 Live。对它的
+控制必须围绕可能导致实际损害的路径，不得将所有理论 hardening 都变成
+当前交付门。Free-only 部署和一次性 relay-only VM smoke 不要求 machine
+Billing receipt、two-phase ticket、coordinated provisioner/DPAPI receipts、bulk semantics 或
+two-secret staging receipt。现有相关代码可保留作 optional defense-in-depth。
+
+当前不可放宽的直接风险只包括：Cloudflare 出现付费/升级提示；secret
+泄漏到日志、Git、prompt、报告或 evidence；payload/free text 被执行；VM 获得
+产品写权；或 relay 越权发起 merge/release/promotion/P12 动作。Formal Lane 的
+snapshot/CAS/签名仍是正式证据门，不因 lean relay 改变。
 
 ## 执行许可
 
@@ -268,10 +281,13 @@ harness runtime。
 - Watcher 从最后确认 sequence 恢复并幂等处理重复投递；只有全部验证通过的数据才能
   形成 fixed wake event。wake adapter、Git outbox runner 和 Codex resume binding 必须
   预先固定并校验，payload、错误文本和远端响应均不得拼接到命令、参数、脚本或 prompt。
-- 本地 runtime credential 仅允许 DPAPI CurrentUser 与本用户 ACL、owner marker、
-  no-reparse state root；原子 state 只保存脱敏状态，不保存 secret、Authorization、原始
-  响应或可逆密钥材料。日志/异常必须完整脱敏，health endpoint 只返回最小可用性信息，
-  不泄露身份、secret、消息正文或稳定的敏感指纹。
+- 一次性 manual smoke 的本地 runtime credential 可存于当前进程内存/安全输入
+  边界。VM 侧可有一份人工拖入的 repo 外 owner-only fixed-schema JSON，但必须由
+  固定 smoke 脚本有界读取后在首次网络前删除，不得进入 Git/prompt/日志/evidence
+  或作长期明文存储。DPAPI CurrentUser 与本用户 ACL/owner marker/no-reparse
+  在启用持久 unattended watcher 前必须完成。原子 state 只保存脱敏状态，不保存
+  secret、Authorization、原始响应或可逆密钥材料。日志/异常必须完整脱敏，
+  health endpoint 只返回最小可用性信息。
 - Wrangler OAuth/API deploy credential 与 Host/VM runtime relay credential 完全分离；OAuth
   凭据只允许进入 Wrangler 的 AES-256-GCM encrypted profile，其加密密钥只允许进入 Windows
   Credential Manager/keyring，明文 profile 必须不存在。用户已在知悉既有 keyring `default`
@@ -285,19 +301,21 @@ harness runtime。
   避免 profile 校验/使用竞态。deploy credential 不能复用为 HMAC secret，runtime secret 也不能进入
   Wrangler 配置、Git、prompt、测试 evidence 或 Cloudflare 日志。
 - 用户已授权外部步骤 1–7，但限定 Free-only；固定本地工具链、离线测试、dry-run、既有 credential
-  的 generation-1 adoption 与固定四 GET preflight 已完成；尚未创建 Worker/DO、写入 secret 或
-  部署。preflight 确认单账号、既有 workers.dev subdomain、目标 Worker 不存在，并报告
+  的 generation-1 adoption 与固定四 GET preflight 已完成；preflight 确认单账号、既有
+  workers.dev subdomain、目标 Worker 不存在，并报告
   `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage model 都不是账单订阅
   receipt；随后经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions 核对未列出
   Workers/Workers Paid。active Teams Free Base 与无关 R2 Paid 不把整个账号称为 Free、不升级
-  Workers，也不授权 relay 使用 R2；脱敏 machine receipt validator/recorder 与两阶段账号绑定已在
-  infra 本地实现并测试，但未签发真实 receipt，条件写门仍不满足。部署后
-  readback 还必须确认精确 Worker/DO bindings 与唯一 active deployment。缺少 disposable
-  VM 对应 CurrentUser 的 DPAPI provisioning context 时，不允许只写一侧 secret，也不
-  允许先创建 placeholder Worker，避免产生半配置外部资源。
-- 独立 infra 的共享 write policy 已接入 Workers-only receipt validator，但没有真实 receipt；
-  Host/VM DPAPI、coordinated parent、bulk semantics 与 two-secret staging receipt 仍固定为未满足；因此 direct deploy 与两种
-  secret staging 在读取 profile/credential、网络、stdin 或启动 Wrangler 之前统一 fail closed。
+  Workers，也不授权 relay 使用 R2。D-022 已接受该 Dashboard 观察作为本次
+  Free-only 部署依据。脱敏 machine receipt validator/recorder 与两阶段账号绑定仅作
+  optional hardening；不等待真实 receipt。此后 Free-only Worker/SQLite Durable Object 与两项
+  secret binding 已部署，postdeploy 精确 Worker/DO bindings 与唯一 active deployment 回读通过，
+  Host HTTP 与跨设备 relay-only smoke 通过。生产 WebSocket reconnect/Hibernation 尚未公网 E2E；
+  因而保持 `NOT_PRIMARY / AUTOMATION_PAUSED`。
+- 早期 infra write policy 对 Host/VM DPAPI、coordinated parent、bulk semantics 与
+  two-secret staging receipt 的硬阻断已由 D-022 取代。direct deploy 与一次性 secret
+  staging 应走 lean path；仅在付费/升级、账号歧义、资源碰撞或 secret 泄漏风险时
+  fail closed。持久 watcher 仍等待各设备 DPAPI。
 
 必须防御以下威胁：
 
@@ -368,8 +386,9 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
   reset、Fast Lane PASS 或 control-repo commit 均不能替代。
 - `disableDeploymentModeChooser`、Standard/Offline MSIX 的 VM 行为未验证。
 - Realtime relay 的 DPAPI CurrentUser credential provider、ACL/no-reparse 与原子状态合同
-  已实现并通过 fake/local 测试；但实际 Host/VM runtime credential 尚未 provision，VM
-  CurrentUser provisioning context 仍缺失。产品其余可恢复敏感材料的完整生命周期、
+  已实现并通过 fake/local 测试；一次性 smoke 的 Cloudflare runtime secret bindings 已 provision。
+  Host 明文 frame 已在 DPAPI CurrentUser round-trip 后删除，只保留仓库外 owner-only blob；VM 未安装
+  持久 secret/watcher，unattended watcher 仍未启用。产品其余可恢复敏感材料的完整生命周期、
   实际 ACL/provider receipt 仍未完成，不能用 realtime 合同替代。
 - LICENSE copyright holder 尚未确定。
 

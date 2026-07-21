@@ -29,25 +29,31 @@
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
 
-截至 2026-07-21，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前动态状态”。
-项目已经进入受控暂停：不得继续交付或执行任何既有 onboarding ZIP/prompt，不进入 VM，
-不启动 bootstrap、integration、测试循环或 Formal Lane。暂停前 finalization 及其 bundle、
+截至 2026-07-22，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前动态状态”。
+项目的旧 VM bootstrap/产品 integration 继续受控暂停：不得继续交付或执行任何
+既有 onboarding ZIP/prompt，不启动旧 bootstrap、产品测试循环或 Formal Lane。这不禁止
+按 D-022 进入已准备好的 VM 执行一次性 relay-only 通信 smoke。暂停前 finalization 及其 bundle、
 automation prompt 和 readiness receipt 只绑定暂停前的精确 commit；本次 tracked 文档修改
 立即使这些绑定失效。当前四个 readiness/complete 标志全部为 false。独立 Cloudflare
 realtime relay 工作流已完成本地离线实现与质量门，而不是继续旧 VM bootstrap。
 
 `REALTIME_RELAY_PROPOSAL.md` 的事实级别为
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
-NOT_PROVISIONED / NOT_ACTIVE`。外部步骤 1–7 虽已获 Free-only
+BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
+CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`。外部步骤 1–7 已获 Free-only
 授权，且用户已明确允许直接复用既有 encrypted keyring `default` OAuth profile；generation-1
 adoption receipt 与 Cloudflare 四 GET preflight 已完成，确认单账号、既有 workers.dev subdomain、
 目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage
 model 都不是 subscription receipt。经用户授权复用个人 Edge 既有登录态的只读 Dashboard 核对已
 确认 Billing → Subscriptions 未列出 Workers/Workers Paid；active 的 Teams Free Base 与无关 R2
-Paid 不把整个账号变成 Free，也不授权 relay 使用 R2。machine receipt validator/recorder 已本地
-实现并测试但未签发真实 receipt，条件写门仍不满足，
-resource/secret write 和部署仍未完成。该授权也不能启用 watcher、改变 automation
+Paid 不把整个账号变成 Free，也不授权 relay 使用 R2。D-022 接受该人工观察作为
+当前 Free-only 部署依据；machine receipt/ticket、coordinated DPAPI 与 staging receipt
+只是 optional hardening，不再阻断 resource/secret write 和一次性 relay-only smoke。
+用户回传的 `VM_RELAY_READINESS_V1` 为 `Ready=true`，VM 上的 PowerShell 7、Git、
+`ClientWebSocket`、时钟、出站网络和本地 relay 工作目录已就绪。Free-only Worker、SQLite-backed
+Durable Object、两项 secret binding、精确 postdeploy readback、Host HTTP smoke 和跨设备双向
+relay-only smoke 已完成。生产 WebSocket reconnect/Hibernation 尚未真实 E2E，因此 relay 不是主路径。
+该部署也不能启用持久 watcher、改变 automation
 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
 本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，
 以后两者为准。
@@ -99,7 +105,8 @@ phase2-only builder/loader、execution boundary、HostSandbox path binding、sem
 captured-byte load、atomic/idempotent state、no-reparse 非递归 cleanup 与完整正负测试已经
 通过其绑定提交的机器门，但这不构成暂停后的执行许可。HostCoordinator automation 必须保持
 暂停；VM automation 的实际存在/状态没有来自最新 bundle 的可靠 receipt，因而不得推断，
-也不得进入 VM 核验或启用。
+也不得进入 VM 核验或启用旧 automation。D-022 的一次性 relay-only smoke
+是与该历史 automation 分离的人工 operator 动作。
 
 `docs/HANDOFF.md` 只保存当前逻辑状态、下一工作包与停止线，不在 tracked 文档中复制
 最终 commit/tree、bundle digest、测试 RunId 等 post-commit 精确锚点，避免文档提交改变

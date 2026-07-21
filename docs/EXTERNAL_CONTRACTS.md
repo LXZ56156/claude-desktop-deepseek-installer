@@ -1,9 +1,9 @@
 # 外部合同与调研基线
 
-最后核验：2026-07-21
+最后核验：2026-07-22
 
-项目影响更新：2026-07-21（同步 Cloudflare realtime relay 的 Free-only 外部合同、
-本地离线实现与未认证/未部署边界）
+项目影响更新：2026-07-22（同步 Cloudflare realtime relay 的 Free-only 外部合同、
+D-022 lean provisioning 决定、VM readiness 与已部署但未激活边界）
 
 本文件是 Anthropic、DeepSeek、Windows、Git、Cloudflare 和 OpenAI Codex 外部事实的
 唯一项目内来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和
@@ -115,7 +115,7 @@ public control repository 的所有历史 envelope、ACK 与脱敏诊断对互�
 
 项目影响是把秒级通知实现限制在独立 sibling `cddsi-relay-infra` workspace：Worker、
 SQLite-backed `RelayRoom`、Wrangler/Node/TypeScript 和所有 Cloudflare 配置均不得进入产品
-安装器或 Release。当前精确本地 toolchain、119/119 离线测试、58-file secret scan、guarded
+安装器或 Release。当前精确本地 toolchain、135/135 离线测试、67-file secret scan、guarded
 typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wrangler dry-run 已
 通过；本地 forced eviction 不替代生产 idle scheduling 或公网平台证据。用户已授权 Free-only
 认证、创建、secret、部署与真实正负测试，并在知悉既有 encrypted keyring `default` profile 的
@@ -125,12 +125,18 @@ typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wr
 已绑定 `default.enc`、account 与 permission hashes。固定四 GET preflight 已确认单一账号、必需
 scope、既有 account subdomain 与目标 script 不存在，并报告
 `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
-BILLING_VERIFICATION_REQUIRED`；未创建 Worker/DO，未写 runtime secret，也没有 relay endpoint。
+BILLING_VERIFICATION_REQUIRED`；该段是写入前事实。随后已创建 Free-only Worker/SQLite Durable
+Object 与两项 runtime secret binding，endpoint 为
+`https://cddsi-realtime-relay.lizixuan6383828.workers.dev`，postdeploy 精确回读、Host HTTP smoke
+和跨设备 relay-only smoke 均通过。生产 WebSocket reconnect/Hibernation 尚无公网 E2E 证据。
 经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions 核对未列出 Workers/Workers
 Paid；active Teams Free Base 与无关 R2 Paid 不把整个账号分类为 Free，不升级 Workers，也不授权
 relay 使用 R2。Workers-only machine receipt validator/recorder 已在 infra 本地实现并通过测试，
-但没有签发真实 receipt；既有人工观察不会自动升级为机器证据，未满足写门时
-不得产生部分资源。SQLite-backed Durable Objects 支持 Workers Free，Free 超限后操作失败而非计费。
+但没有签发真实 receipt；这只说明人工观察不是 Cloudflare 官方机器回执。项目的
+D-022 已决定接受该观察作为本次 Free-only 部署依据，machine receipt/ticket
+仅作 optional hardening，不再是写门。如真实 Cloudflare 界面/API/CLI 显示付费或升级
+要求，仍必须停止。SQLite-backed Durable Objects 支持 Workers Free，Free 超限后操作
+失败而非计费。
 
 ## Anthropic Third-Party Desktop
 
@@ -331,7 +337,7 @@ Key 格式函数已经移除固定前缀假设，只拒绝空值、空白/控制
 HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并冻结事实、P10B 双
 候选冻结后，真实配置写入、DPAPI、API 与完整功能流程才在 P11 disposable VM 验收。
 
-本地 operator coordination 合同现已存在，但不等于外部部署完成：
+本地 operator coordination 合同与 Free-only relay 部署现已存在，但不等于产品激活：
 
 - `config/fast-lane-policy.psd1` 冻结产品 remote、两个物理单向 control repository、
   两端角色、分钟级轮询、guest reset 和禁止 promotion 的策略；
@@ -351,9 +357,15 @@ WebSocket Hibernation 与本地 readback/dry-run gates；产品仓库的
 `operator/realtime-relay/realtime-relay-client.ps1` 只消费固定通知 schema 并调用固定 wake
 adapter。两者都仍是未激活的 coordination plane：既有 encrypted keyring `default` OAuth
 profile 已完成 generation-1 adoption、GET-only preflight 与 Edge Billing dashboard 人工核对；
-Workers Paid 未列出，但 fresh machine-verifiable Billing receipt、Host/VM DPAPI provisioning
-与资源写入尚未完成；当前没有 Worker/DO、runtime secret 或 endpoint。现有 control repositories 继续作为
-持久审计与断线 fallback，automation 继续保持暂停。
+Workers Paid 未列出，D-022 已授权在没有 machine Billing receipt/Host/VM DPAPI receipt
+的情况下走 lean provisioning 和一次性临时-secret smoke。Host 可用进程内存/
+安全输入；VM 可人工拖入 repo 外 owner-only fixed-schema JSON，并由固定 smoke 脚本在
+首次网络前删除。该文件不进入 Git/prompt/日志/evidence，不是长期明文存储。用户回传的
+`VM_RELAY_READINESS_V1` 为 `Ready=true`。Free-only Worker/SQLite Durable Object、两项 secret
+binding、endpoint、postdeploy 精确回读、Host HTTP 与跨设备 relay-only smoke 已完成；生产
+WebSocket reconnect/Hibernation 尚未公网 E2E。现有 control repositories 继续作为持久审计与
+断线 fallback，automation 继续保持暂停；
+DPAPI 在启用持久 watcher 前才是必选。
 
 这些文件属于 OperatorCoordination development plane，不进入默认 bootstrap、
 ProductCore 或 Release 包。三个 public protected repositories 已部署，产品旧 `main` 已推送，

@@ -13,6 +13,7 @@
         'operator/fast-lane/invoke-git-outbox.ps1'
         'operator/fast-lane/invoke-vm-reset-live.ps1'
         'operator/fast-lane/providers/windows-vm-reset.ps1'
+        'operator/realtime-relay/invoke-vm-smoke.ps1'
         'operator/realtime-relay/realtime-relay-client.ps1'
     )
     $script:RehearsalRelative = 'operator/fast-lane/invoke-synthetic-rehearsal.ps1'
@@ -49,7 +50,10 @@ Describe 'operator coordination static isolation boundary' {
             [Text.UTF8Encoding]::new($false, $true)
         )
         foreach ($requiredText in @(
-            'LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE'
+            'LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /'
+            'WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /'
+            'CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED'
+            'invoke-vm-smoke.ps1 -PackagePath'
             'Cloudflare Worker + SQLite-backed Durable Object + WebSocket Hibernation'
             '`host-to-vm`'
             '`vm-to-host`'
@@ -81,7 +85,9 @@ Describe 'operator coordination static isolation boundary' {
             [Text.UTF8Encoding]::new($false, $true)
         )
         foreach ($requiredText in @(
-            'LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE'
+            'PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY /'
+            'AUTOMATION_PAUSED'
+            '`invoke-vm-smoke.ps1 -PackagePath`'
             'New-CddsiRealtimeRelayLivePublisher'
             'Invoke-CddsiRealtimeRelayPublish'
             '`PendingPublish`'
@@ -151,9 +157,12 @@ Describe 'operator coordination static isolation boundary' {
                 'New-CddsiRealtimeRelayLiveProvider'
                 'New-CddsiRealtimeRelayLivePublisher'
             )
+        @($script:Boundary.Rules.OperatorRuntimeEntryPoints['operator/realtime-relay/invoke-vm-smoke.ps1']) |
+            Should -BeExactly @('Invoke-CddsiRelayVmSmoke')
         @($script:Boundary.Rules.OperatorRuntimeNetworkFiles) |
             Should -BeExactly @(
                 'operator/fast-lane/invoke-git-outbox.ps1'
+                'operator/realtime-relay/invoke-vm-smoke.ps1'
                 'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeCredentialFiles) |
@@ -163,6 +172,7 @@ Describe 'operator coordination static isolation boundary' {
                 'operator/fast-lane/build-vm-onboarding.ps1'
                 'operator/fast-lane/invoke-git-outbox.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
+                'operator/realtime-relay/invoke-vm-smoke.ps1'
                 'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeProcessFiles) |
@@ -183,6 +193,7 @@ Describe 'operator coordination static isolation boundary' {
                 'operator/fast-lane/invoke-git-outbox.ps1'
                 'operator/fast-lane/invoke-vm-reset-live.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
+                'operator/realtime-relay/invoke-vm-smoke.ps1'
                 'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeVmInspectionFiles) |

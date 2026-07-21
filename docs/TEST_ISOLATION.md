@@ -49,12 +49,20 @@ fixed wake spy；缺 provider、错误 mode 或 runtime assertion 时必须在�
 mutation 和 wake 前 fail closed。PowerShell 7 覆盖完整 watcher 状态机，可共享的
 parser/schema/security helper 同时在 Windows PowerShell 5.1 运行。
 
-源码中面向未来 Live 的 `ClientWebSocket` 与 DPAPI CurrentUser credential provider 只在显式
-Live context、未过期 runtime assertion、精确 client/environment/key-id/state binding 和固定
-wake provider 全部成立后才可使用。本地/CI/Release Simulation 不得构造或加载其真实 provider，
-不得读取 Credential Manager/registry、解密真实 DPAPI blob、发起真实网络、启动进程或访问
-sandbox 外 state。DPAPI runtime secret 不能离开 credential provider；HMAC 计算后所有 plaintext
-byte buffer 必须清零，日志/异常/状态/测试 evidence 均不得包含 secret。
+本地/CI/Release Simulation 的受控测试不得构造或加载 realtime relay 的真实
+provider，不得读取 Credential Manager/registry、解密真实 DPAPI blob、发起真实网络或访问
+sandbox 外 state。这个测试禁止不包含 D-022 授权的人工 operator-plane relay-only
+smoke：该 smoke 不是 HostSandbox/CI/产品 Live，Host 可以当前进程内存/安全输入
+secret 连接精确 `workers.dev` endpoint。VM 可使用人工拖入的 repo 外 owner-only
+fixed-schema handoff JSON，前提是固定 smoke 脚本在首次网络前删除文件，且不把
+其复制到 Git/prompt/日志/evidence。DPAPI CurrentUser provider 只在后续
+持久 unattended watcher 启用前必须。HMAC 计算后 plaintext byte buffer 必须尽快
+清零，日志/异常/状态/测试 evidence 均不得包含 secret。
+
+machine Billing receipt、two-phase ticket、coordinated DPAPI/staging receipt 不是测试隔离
+能力，也不再是一次性 relay smoke 的前置。这些可选 hardening 的缺失不得被记为
+forbidden access 或用来阻断真实联通。用户回传的 `VM_RELAY_READINESS_V1 Ready=true`
+已证明 VM 的 PowerShell 7、`ClientWebSocket`、时钟、出站 443 与 relay state 目录就绪。
 
 P10A-0A 现在包含 DevelopmentOnly 的 operator coordination 合同、固定 Git outbox
 runtime、readiness resolver、确定性 VM onboarding builder、VM-only reset
@@ -64,7 +72,8 @@ OperatorCoordination plane，不由默认 bootstrap 加载且不进入 Release�
 builder/loader、execution boundary、HostSandbox path binding、automation TOML readback
 正负测试与 loader semantic ACL/captured-byte load/atomic state/no-reparse 非递归 cleanup
 均已落盘并通过 dirty WIP 标准双引擎全树门；但包含文档同步的 clean exact commit 尚未完成
-统一门与 finalization，因此当前仍不得进入 VM。宿主机侧最终实现将从
+统一门与 finalization，因此当前仍不得进入旧 bootstrap/产品 integration。该结论不阻断
+D-022 的独立 relay-only VM smoke。宿主机侧最终实现将从
 clean exact commit 生成绑定 commit/tree、
 文件/blob/tool hash、repository 数字/node identity 与 pinned genesis 的诊断 onboarding ZIP。
 包含文档闭环的最终 clean HEAD 只有在统一门、

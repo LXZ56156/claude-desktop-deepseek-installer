@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-18
+更新日期：2026-07-21
 
 ## 定位
 
@@ -99,14 +99,16 @@ Feature、Service、Credential、Clock。
 双机测试闭环属于独立 OperatorCoordination development plane，权威合同见
 `VM_TEST_RELAY.md`。它不进入产品 bootstrap、ProductCore、Release 或 trusted
 harness runtime；trusted harness 仅可从自己的 allow-listed 测试入口调用其
-synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-21，宿主机侧
+synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-22，宿主机侧
 Git transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
 服务端 protected history 已部署；Cloudflare realtime accelerator 的产品侧纯 PowerShell
 合同、独立 infra 实现和离线测试也已完成。Free-only 外部步骤虽已获授权，既有 Cloudflare
 credential 的本任务 adoption/provenance、GET-only preflight 与 Edge Billing dashboard
-人工核对也已完成；Workers Paid 未列出，但 fresh machine-verifiable Billing receipt 尚未
-签发，资源创建、secret provisioning 或部署也尚未完成；窄 Git 角色凭据、VM 设备
-provisioning 和无人值守双机验证仍未完成：
+人工核对也已完成；Workers Paid 未列出。D-022 已决定不等待 machine Billing
+receipt/ticket/coordinated DPAPI receipt，直接完成 lean provisioning 与一次性
+relay-only VM smoke。用户回传的 `VM_RELAY_READINESS_V1` 已表明 VM `Ready=true`；Free-only
+Worker/SQLite Durable Object、两项 secret binding、postdeploy 精确回读、Host HTTP 与跨设备
+relay-only smoke 已完成。生产 WebSocket reconnect/Hibernation 尚未真实 E2E：
 
 ~~~text
 Fast Lane logical control plane:
@@ -151,10 +153,13 @@ Formal Lane: external clean snapshot + exact artifact
   path/lane、timestamp、nonce 和 body SHA-256；消费端还逐项验证 sequence、previous
   hash、TTL、MessageId 和 payload hash，任何缺口、重放、错 lane 或 schema 漂移均
   fail closed。
-- 客户端 runtime secret 只允许经 DPAPI CurrentUser provider 取得且不得进入日志、异常、
-  state 或 health output；wake 仅调用预绑定的 fixed adapter，绝不把 payload 拼接成命令、
-  参数或 prompt。Cloudflare OAuth/deploy credential 与两端 runtime HMAC credential 是
-  两套完全分离的身份生命周期。
+- 客户端 runtime secret 不得进入日志、异常、state 或 health output。一次性
+  manual smoke 可从当前进程内存/安全输入取得；VM 还可由固定 smoke 脚本
+  读取人工拖入的 repo 外 owner-only fixed-schema JSON，并在首次网络前立即删除。
+  该 JSON 不进入 Git/prompt/日志/evidence，不是长期存储。持久 unattended watcher 才必须
+  经 DPAPI CurrentUser provider 取得。wake 仅调用预绑定的 fixed adapter，绝不把 payload
+  拼接成命令、参数或 prompt。Cloudflare OAuth/deploy credential 与两端 runtime HMAC
+  credential 仍分离。
 - 当前外部授权限定 Free-only。用户在知悉既有 encrypted keyring `default` profile 有 29 项
   scope、包含四项必需 scope 且另有 25 项后，明确授权直接复用；认证门验证必需项存在而不再
   要求 scope 集合精确相等，额外 scope 也不扩大本任务允许的资源或动作。本地已实现 owner-only
@@ -162,20 +167,19 @@ Formal Lane: external clean snapshot + exact artifact
   root 的 exact/inherited binding absence 已证明，generation-1 owner-marked receipt 已绑定
   `default.enc`、account 与 permission hashes；四 GET preflight 已确认单一 account、既有
   workers.dev subdomain、目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD` 与
-  `BillingPlanVerified=false`。状态为 `AUTHENTICATED_READ_ONLY /
-  BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED`；usage model
+  `BillingPlanVerified=false`。当前状态为 `PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /
+  NOT_PRIMARY / AUTOMATION_PAUSED`；usage model
   不是 subscription receipt。经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions
   核对未列出 Workers/Workers Paid；active Teams Free Base 与无关 R2 Paid 不改变 Workers 的独立
   计划边界、不授权 relay 使用 R2，也不把整个账号称为 Free。
-- credential 采用后和部署后读回必须验证单一 account、Workers 使用模型、workers.dev、
-  Worker/DO 配置与 active deployment；明文 profile 必须不存在，OAuth/deploy credential 与
-  runtime HMAC credential 必须继续分离。Workers 使用模型仅作配置证据，不能替代独立 Workers-only
-  machine Billing receipt。其 validator/recorder、owner/SYSTEM-only ACL、fresh observation 绑定与
-  两阶段 account/adoption/profile ticket 已在 infra 本地实现并接入条件写门，但没有签发真实 receipt，
-  因而当前门仍不满足。SQLite-backed Durable Objects
-  支持 Workers Free，Free 超限后操作失败而非计费。实际 Host/VM runtime secret 尚未 provision；尤其缺少
-  disposable VM 对应 CurrentUser 的 DPAPI provisioning context，因此初始两组 secret 写入与
-  placeholder Worker 创建均保持 fail closed。
+- credential 采用后和部署后读回必须验证单一 account、workers.dev、Worker/DO 配置
+  与 active deployment；明文 profile 必须不存在，OAuth/deploy credential 与 runtime HMAC
+  credential 必须继续分离。machine Billing receipt validator/recorder、owner/SYSTEM-only ACL、
+  fresh observation 绑定与两阶段 ticket 仅是 optional hardening，不再是写门。
+  SQLite-backed Durable Objects 支持 Workers Free，Free 超限后操作失败而非计费。Cloudflare
+  runtime secret bindings 与 Worker 已 provision；Host 明文 frame 在 DPAPI CurrentUser round-trip
+  后已删除，只保留仓库外 owner-only blob。VM 未安装持久 secret/watcher，任一 unattended watcher
+  均未启用；这不影响已完成的一次性内存-secret smoke。
 - `lib/vm-fast-lane-readiness.ps1` 明确区分 `CanStartVmBootstrap` 与
   `CanStartVmIntegration`。前者只授权离线 bundle/key/task staging；后者还要求 protected
   history、窄 HostCoordinator credential 和保持暂停的 host task。policy 与 onboarding

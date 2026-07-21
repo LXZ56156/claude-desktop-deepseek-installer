@@ -59,7 +59,9 @@ HostSandbox、双 PowerShell 引擎、精确工具授权和机器可读证据；
 - 受信 harness 前置只解析 runner 已知的 pwsh、Windows PowerShell 和 Git
   可执行文件，计算 SHA-256 后把精确授权传给 HostSandbox。
 - 不单独绕过 HostSandbox 运行 Pester、Git 或第二套测试命令。
-- DPAPI 仍使用 fake；真实 DPAPI 首次执行留到 disposable VM。
+- 产品 API Key 和持久 relay watcher 的 DPAPI 仍使用 fake；真实 DPAPI 留到
+  disposable VM/目标设备。一次性 relay-only smoke 使用进程内存/安全输入
+  或 VM 读后即删的 repo 外 owner-only handoff JSON，不需 DPAPI 测试作为前置。
 - 绝不运行 Live。
 
 ### L5：Disposable VM 校准与 Live 验收
@@ -107,6 +109,30 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
 - P11 失败后宿主机必须修复并回到 P10B 重建、签名新候选，不能让 VM 拉源码直接
   重测；任何 PASS 都不触发自动 merge 或 P12。
 
+#### D-022 lean relay smoke
+
+本地 135/135 infra tests、双引擎 PowerShell focused tests、secret scan、typecheck 和
+Wrangler dry-run 已提供足够的部署前证据。不得因添加 machine Billing receipt、
+two-phase ticket、coordinated DPAPI/staging receipt 或新的全矩阵而延迟首次真实联通。
+
+首次人工 relay-only VM smoke 的最小必测集为：
+
+- Host 发 `host-to-vm`，VM publish/read/ACK 成功；
+- VM 发 `vm-to-host`，Host publish/read/ACK 成功；
+- 两个反向越权和一个错/forged secret 被拒绝；
+- 一次主动断线后按 last sequence 重连成功；
+- 消息仅是 synthetic pointer，不执行 payload；客户端/Worker 输出的 secret 扫描为 0；
+- Git control-repo fallback 仍可用，HostCoordinator/VM automation 仍为 `PAUSED`。
+
+首次 smoke 的 Host secret 只存在当前进程内存/安全输入。VM secret 可通过
+人工拖入的 repo 外 owner-only fixed-schema JSON 交接，但必须断言固定 smoke 脚本
+在首次网络前已删除 package、最终清零 secret bytes，且无 Git/prompt/日志/evidence 副本。
+DPAPI、轮换演练、长时运行 SLO 和完整攻击矩阵是持久 watcher 前或后续 hardening，
+不是本次 smoke 的逐项前置。用户回传的 `VM_RELAY_READINESS_V1 Ready=true`
+已证明 PowerShell 7、`ClientWebSocket`、时钟、出站 443 与 VM 本地工作目录就绪。
+实际 Free-only postdeploy readback、Host dual-role HTTP 和跨设备双向 read/ACK 已通过；
+生产 WebSocket reconnect/Hibernation 尚未真实 E2E，不能计入已通过项或把 relay 设为主路径。
+
 当前本地实现与测试映射：
 
 - `lib/vm-test-relay.ps1` 是纯函数合同；`tests/Unit/VmTestRelay.Tests.ps1` 覆盖
@@ -140,7 +166,7 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   `operator/fast-lane/invoke-synthetic-rehearsal.ps1` 演练本地双 outbox。该演练必须为
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
-- sibling `cddsi-relay-infra` workspace 的 119/119 本地测试、58-file secret scan、guarded
+- sibling `cddsi-relay-infra` workspace 的 135/135 本地测试、67-file secret scan、guarded
   TypeScript typecheck、Wrangler dry-run，以及实际 workerd/SQLite/Hibernation forced-eviction
   integration 为独立 Cloudflare infra evidence；本地 runtime 证明 eviction 后 SQLite 恢复与原
   WebSocket 继续投递，但不证明生产 idle 调度或公网平台行为。它们不是本产品仓库的 L0-L4、
@@ -148,7 +174,8 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
 - generation-1 OAuth adoption 与固定四 GET Cloudflare preflight 只证明 encrypted keyring、单一
   receipt-bound account、既有 workers.dev subdomain、目标 Worker 不存在及已知 usage model；实际
   返回 `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。它不证明 Free
-  subscription、资源 provisioning、secret binding、部署、平台日志或真实 relay 权限矩阵。
+  subscription 或平台日志；资源 provisioning、secret binding、部署、Host HTTP 与跨设备 relay
+  smoke 现在由各自真实回读证明，但不外推为生产 WebSocket reconnect/Hibernation 通过。
 
 截至 2026-07-21，最近一次完整 clean quality evidence 为 PowerShell 7 与 Windows
 PowerShell 5.1 各 525/525 项通过，且全部 zero metrics 成立；该数量只是当次测试清单

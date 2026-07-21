@@ -4,26 +4,31 @@ This directory is development-only operator coordination material. It is not
 loaded by `lib/bootstrap.ps1`, is not part of the product execution plane, and
 must never enter a Release ZIP.
 
-## Controlled pause and local realtime implementation (2026-07-21)
+## Controlled product pause and lean realtime implementation (2026-07-21)
 
-VM onboarding, bootstrap, integration, reset/test loops, and Formal Lane are
-paused. Every previously generated onboarding ZIP and prompt is retained for
+Old VM onboarding, bootstrap, product integration, reset/test loops, and Formal
+Lane are paused. Every previously generated onboarding ZIP and prompt is retained for
 audit but has status `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`; none may be
 delivered or executed. The host automation must remain `PAUSED`. A VM
 automation, if one exists, must also remain `PAUSED`; without a current VM
 receipt its existence or state is not inferred.
 
+D-022 explicitly allows a separate, manually invoked relay-only smoke in the
+prepared VM. Communication delivery now takes priority and controls must be
+proportional to the real risk. This exception does not run an onboarding ZIP,
+product integration, reset/test loop, product Live, or either automation.
+
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` now has status
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
-BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / MACHINE_RECEIPT_IMPLEMENTED_NOT_ISSUED /
-NOT_PROVISIONED / NOT_ACTIVE`. A pure
+BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
+CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`. A pure
 PowerShell DevelopmentOnly publish/watch/fixed-wake client exists under
 `operator/realtime-relay/`; its exact client, threat, credential rotation,
 rollback, cleanup, and troubleshooting contract is in
 `operator/realtime-relay/README.md`. The separate local sibling workspace
 `D:\projects(WIN)\cddsi-relay-infra`
 contains Worker/Durable Object source, an exact lock-bound Node/Wrangler toolchain,
-keyring helper, 119 passing offline tests, a real local workerd SQLite/Hibernation
+keyring helper, 135 passing offline tests, a real local workerd SQLite/Hibernation
 forced-eviction test, and a passing typecheck/dry-run artifact scan. The local
 runtime result does not prove production idle scheduling or public-platform
 Hibernation. The sibling has no remote. The user explicitly authorized reuse of the
@@ -33,18 +38,30 @@ and extra-scope rejection are no longer adoption requirements. The exact infra r
 binding-absence proof, generation-1 owner-marked adoption receipt and account-bound four-GET
 preflight have completed. They confirm an existing workers.dev subdomain, absent target
 Worker and `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED` without
-printing identity or token. Cloudflare resource, runtime credential, endpoint, and deployment
-have not occurred. With explicit user authorization, the existing signed-in personal Edge profile
+printing identity or token. The Free-only Worker/SQLite Durable Object and two secret bindings were
+then deployed at `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`; exact postdeploy
+readback, Host dual-role HTTP smoke, and cross-device relay-only smoke passed. Production WebSocket
+reconnect/Hibernation remains unverified, so the relay is not primary and automation stays paused.
+With explicit user authorization, the existing signed-in personal Edge profile
 was used only to read Billing → Subscriptions. Workers/Workers Paid was not listed; active Teams
 Free Base and unrelated R2 Paid entries were listed. No account ID, email, address, payment method,
 cookie, screenshot, or other identity text was committed or retained as project evidence. Workers Paid is separate from other
 Cloudflare product plans, so R2 Paid neither upgrades Workers nor authorizes this relay to use R2;
 the account as a whole is not described as Free. SQLite-backed Durable Objects are available on
-Workers Free, whose exceeded limits fail instead of generating usage charges. The scoped receipt
-validator/recorder and two-phase account-binding ticket are implemented and tested locally, but no
-real receipt has been issued, so that write gate is not satisfied. It and
-the missing disposable-VM DPAPI context both block any partial secret/placeholder
-Worker write. The existing two protected Git control repositories remain the
+Workers Free, whose exceeded limits fail instead of generating usage charges.
+The scoped receipt validator/recorder and two-phase account-binding ticket are
+implemented and tested locally, but D-022 classifies them as optional hardening:
+no machine receipt, coordinated DPAPI provisioner/receipts, bulk semantics, or
+two-secret staging receipt blocks the Free-only deploy or first manual smoke.
+The Host secret may remain in current process memory/secure input. The VM
+secret may be carried in one repository-external, owner-only, one-use fixed-
+schema JSON manually dragged into the VM; the fixed smoke script deletes it
+before the first network request. It is not Git/prompt/log/evidence content or
+long-term plaintext storage. DPAPI CurrentUser becomes mandatory before a
+persistent unattended watcher. The user-provided `VM_RELAY_READINESS_V1`
+reports `Ready=true` with PowerShell 7, Git, `ClientWebSocket`, synchronized
+clock, outbound GitHub/`workers.dev` 443, VMware Tools, and the VM-local relay
+workspace ready and no blocker. The existing two protected Git control repositories remain the
 durable source and minute-poll fallback. The realtime accelerator cannot
 execute payload text, expand either machine's product authority, weaken Formal
 Lane, or automate merge, release, promotion, or P12 approval.
