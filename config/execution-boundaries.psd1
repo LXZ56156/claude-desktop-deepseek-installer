@@ -58,6 +58,8 @@
             'tests/Contract/FastLaneReadiness.Tests.ps1'
             'tests/Contract/OperatorCoordinationBoundary.Tests.ps1'
             'tests/Contract/RealtimeRelay.Tests.ps1'
+            'tests/Contract/RealtimeRelayForegroundControl.Tests.ps1'
+            'tests/Contract/RealtimeRelayForegroundCycle.Tests.ps1'
             'tests/Contract/RealtimeRelayVmSmoke.Tests.ps1'
             'tests/Contract/VmReset.Tests.ps1'
             'tests/Contract/VmResetLiveAdapter.Tests.ps1'
@@ -91,6 +93,8 @@
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
             'operator/realtime-relay/invoke-vm-smoke.ps1'
+            'operator/realtime-relay/foreground-control.ps1'
+            'operator/realtime-relay/invoke-foreground-cycle.ps1'
             'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
@@ -423,6 +427,8 @@
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
             'operator/realtime-relay/invoke-vm-smoke.ps1'
+            'operator/realtime-relay/foreground-control.ps1'
+            'operator/realtime-relay/invoke-foreground-cycle.ps1'
             'operator/realtime-relay/realtime-relay-client.ps1'
         )
 
@@ -451,6 +457,12 @@
             'operator/realtime-relay/invoke-vm-smoke.ps1' = @(
                 'Invoke-CddsiRelayVmSmoke'
             )
+            'operator/realtime-relay/foreground-control.ps1' = @(
+                'ConvertFrom-CddsiRealtimeRelayForegroundControlBody'
+            )
+            'operator/realtime-relay/invoke-foreground-cycle.ps1' = @(
+                'Invoke-CddsiRealtimeRelayForegroundCycle'
+            )
             'operator/realtime-relay/realtime-relay-client.ps1' = @(
                 'Invoke-CddsiRealtimeRelayWatcher'
                 'Invoke-CddsiRealtimeRelayPublish'
@@ -469,6 +481,7 @@
             'operator/fast-lane/invoke-vm-reset-live.ps1'
             'operator/fast-lane/providers/windows-vm-reset.ps1'
             'operator/realtime-relay/invoke-vm-smoke.ps1'
+            'operator/realtime-relay/invoke-foreground-cycle.ps1'
             'operator/realtime-relay/realtime-relay-client.ps1'
         )
 

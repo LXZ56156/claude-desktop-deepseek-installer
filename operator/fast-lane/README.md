@@ -21,7 +21,9 @@ product integration, reset/test loop, product Live, or either automation.
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` now has status
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY /
+CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING /
 NOT_PRIMARY / AUTOMATION_PAUSED`. A pure
 PowerShell DevelopmentOnly publish/watch/fixed-wake client exists under
 `operator/realtime-relay/`; its exact client, threat, credential rotation,
@@ -29,7 +31,7 @@ rollback, cleanup, and troubleshooting contract is in
 `operator/realtime-relay/README.md`. The separate local sibling workspace
 `D:\projects(WIN)\cddsi-relay-infra`
 contains Worker/Durable Object source, an exact lock-bound Node/Wrangler toolchain,
-keyring helper, 135 passing offline tests, a real local workerd SQLite/Hibernation
+keyring helper, 139 passing offline tests, a real local workerd SQLite/Hibernation
 forced-eviction test, and a passing typecheck/dry-run artifact scan. The local
 runtime result does not prove production idle scheduling or public-platform
 Hibernation. The sibling has no remote. The user explicitly authorized reuse of the
@@ -41,12 +43,13 @@ preflight have completed. They confirm an existing workers.dev subdomain, absent
 Worker and `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED` without
 printing identity or token. The Free-only Worker/SQLite Durable Object and two secret bindings were
 then deployed at `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`; exact postdeploy
-readback, Host dual-role HTTP smoke, and cross-device relay-only smoke passed. Production WebSocket
-reconnect/Hibernation remains unverified, so the relay is not primary and automation stays paused.
-D-023 authorizes one bounded diagnostic cycle, but no existing task is activation-ready:
-the Host task is stale and fail-closed, and the VM has no persistent relay credential,
-watcher, or task readback. A thin launcher, VM DPAPI provisioning, and public canary must
-complete before the Host and then VM task may run for that single cycle and return to paused.
+readback, Host dual-role HTTP smoke, and cross-device relay-only smoke passed. The foreground
+runner, both CurrentUser DPAPI credentials, and VM-to-host deploy key are ready. A clean
+`RELAY_ROOM_EPOCH=2` was deployed without changing endpoint, auth environment, or runtime
+secrets; its exact active-version readback passed and both lanes start from sequence zero.
+Production WebSocket reconnect/Hibernation remains unverified, so the relay is not primary and
+automation stays paused. D-024 runs the bounded diagnostic directly in two foreground Host/VM
+Codex dialogs; no Automation create/readback/start step is required.
 With explicit user authorization, the existing signed-in personal Edge profile
 was used only to read Billing → Subscriptions. Workers/Workers Paid was not listed; active Teams
 Free Base and unrelated R2 Paid entries were listed. No account ID, email, address, payment method,
@@ -67,7 +70,8 @@ persistent unattended watcher. The user-provided `VM_RELAY_READINESS_V1`
 reports `Ready=true` with PowerShell 7, Git, `ClientWebSocket`, synchronized
 clock, outbound GitHub/`workers.dev` 443, VMware Tools, and the VM-local relay
 workspace ready and no blocker. The existing two protected Git control repositories remain the
-durable source and minute-poll fallback. The realtime accelerator cannot
+durable source and manual fallback. The minute-poll contract remains available but is currently
+inactive because Host automation is `PAUSED` and VM automation may be `ABSENT`. The realtime accelerator cannot
 execute payload text, expand either machine's product authority, weaken Formal
 Lane, or automate merge, release, promotion, or P12 approval.
 

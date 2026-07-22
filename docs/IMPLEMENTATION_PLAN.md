@@ -29,7 +29,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | P10A-0A | 双机 Fast Lane MVP 前置门 | **CONTROLLED_PAUSE**；所有旧 bundle/prompt superseded，不得恢复旧 bootstrap/产品 integration | relay-only VM smoke 可独立进行；日后是否从新 clean commit 重新 finalization 另行决定 |
-| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED** | D-023 只授权一个有界 diagnostic cycle；先补 activation launcher、VM DPAPI/task 与公网 canary，再按 Host→VM 启用并在终态自动暂停，不改变 P10/P11/P12 门 |
+| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED / HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY / VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING / NOT_PRIMARY / AUTOMATION_PAUSED** | D-024 由 Host/VM 两个新对话前台运行有界 relay cycle；干净 room epoch 已部署，下一步执行 canary；Automation 不是门，不改变 P10/P11/P12 门 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -57,8 +57,9 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 ## 2026-07-21 controlled pause 与 lean realtime relay 工作流
 
 旧 VM bootstrap 路径已受控暂停。不得继续交付或执行任何 onboarding ZIP/prompt，不运行
-旧 integration、reset、产品测试循环或 Formal Lane。这不禁止进入已准备的 VM 执行独立
-relay-only smoke。暂停前最后一个 finalization、CI、
+旧 integration、reset、旧产品测试循环或 Formal Lane。这不禁止进入已准备的 VM 执行独立
+relay-only smoke；D-024 canary 通过后还允许两个新前台对话串行执行固定 profile 的只读
+offline diagnostic tests，但不执行产品 Live。暂停前最后一个 finalization、CI、
 automation prompt、bundle 和 readiness receipt 只绑定暂停前 commit；本次 tracked 文档修改
 使其对新 HEAD 失效。所有旧 bundle/prompt 统一标记为
 `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`，字节保留但禁止使用。
@@ -70,13 +71,18 @@ VM task 若存在也必须保持 `PAUSED`。没有可靠 VM receipt 时不得推
 现已允许创建已授权的 Free-only Cloudflare 资源并访问 VM 做 relay-only smoke，但不触发
 automation、不执行产品 Live。
 
-2026-07-22 的 D-023 取代“automation 永久不恢复”的当前意图，但没有把现有
-`PAUSED` 任务变成可执行入口。宿主任务仍绑定旧 commit 且只会返回
-`FAST_LANE_HOST_PREREQUISITES_UNPROVISIONED`；VM 也没有持久 credential、watcher
-或任务 readback。最短实现顺序固定为：薄 activation/canary launcher、两端 DPAPI
-credential 与 VM task（仍暂停）、公网双向/错误身份/重连/payload-not-executed
-canary、原位重绑当前最终提交，然后只启用一个 CycleId 的单轮诊断。任何终态后
-两端自动回到 `PAUSED`。这条恢复不进入产品 Live、Formal P10A/P10B/P11 或 P12。
+2026-07-22 的 D-024 取代 D-023 中依赖 Codex Automation 创建、task readback、重绑和
+启停的当前执行路径。Host/VM 两个新 Codex 对话直接运行 DevelopmentOnly
+`invoke-foreground-cycle.ps1` 的 `Status`、无预知 MessageId 的 `WaitPointer` 和固定
+write-lane `PublishPointer`。本地 fake transport、双角色方向、重连、ACK、publisher
+复用和 non-execution 测试已通过。Host/VM foreground DPAPI credentials 已准备，VM
+deploy key `158030457` 只注册到 VM-to-host control repo。旧 lane 为 4/2；不改变 auth
+environment/secret 的 `RELAY_ROOM_EPOCH=2` 已部署并精确回读，新 room 从 sequence 0
+开始。下一步先由当前旧对话完成公网 foreground canary，再由两个新对话接管。Automation
+继续 `PAUSED`/`ABSENT`，不是门。control repos 保存正文/审计，relay 只传 pointer；Host
+唯一写产品，VM 只读测试。新前台会话允许一次一个 active CycleId、终态后换新 CycleId 的
+串行多轮 offline diagnostic，直到 `STOP`、用户停止或 blocker；本路径不进入产品 Live、
+Formal P10A/P10B/P11 或 P12。
 
 2026-07-21 经用户授权，只读复用其个人 Edge 既有登录态查看 Cloudflare Billing →
 Subscriptions：未列出 Workers/Workers Paid，另列出 active 的 Teams Free Base 与无关 R2 Paid。
@@ -109,8 +115,8 @@ R0 是与既有 P10A-0A/P10A/P10B/P11/P12 编号正交的 operator workflow，�
    machine Billing receipt、ticket、coordinated provisioner 或 DPAPI receipt。
 5. **R0-VERIFY（部分真实完成）**：Host dual-role HTTP 与跨设备 Host/VM read/ACK 已通过，
    package 读后即删且未记录 secret。生产 WebSocket reconnect/Hibernation 仍待真实公网 E2E；
-   完成前保持 `NOT_PRIMARY / AUTOMATION_PAUSED`。持久 watcher 启用前再完成 DPAPI；仍不进入
-   Formal Lane 或自动 merge/release/promotion。
+   完成前保持 `NOT_PRIMARY / AUTOMATION_PAUSED`。两端 foreground DPAPI credentials 已提前
+   完成；持久 watcher 仍未启用。仍不进入 Formal Lane 或自动 merge/release/promotion。
 
 R0 完成也不自动恢复 VM bootstrap。若未来决定恢复，必须基于当时新的 clean exact commit：
 重跑标准双引擎 HostSandbox、Release Simulation DryRun、diff/编码门和最终 HEAD CI；重新生成、
@@ -802,8 +808,8 @@ ruleset `19068339`、host-to-VM `19068292`、VM-to-host `19068313` 均 active、
 2. 先评审 R0-DESIGN 的 schema、HMAC/key separation、replay/order/ACK、payload pointer、
    本地 validator、watcher 固定唤醒、Git fallback、速率限制和禁用/回滚。
 3. 本地 Worker/DO 源码与测试只存在于独立 sibling workspace；用户已集中授权 1–7 项并限定
-   Free-only。精确 Node LTS、lock-bound Wrangler/TypeScript、keyring helper、typecheck、135/135
-   离线测试、67-file secret scan、实际本地 workerd/SQLite/Hibernation forced-eviction test 和
+   Free-only。精确 Node LTS、lock-bound Wrangler/TypeScript、keyring helper、typecheck、139/139
+   离线测试、69-file secret scan、实际本地 workerd/SQLite/Hibernation forced-eviction test 和
    Wrangler dry-run 已通过。用户在知悉既有 encrypted keyring `default` profile 有 29 项 scope、
    其中 25 项超出四项必需集合后，明确授权直接复用且不要求 exact-scope equality。本地已实现
    owner-only crash recovery、过期 receipt 原子续期和 account-bound credential snapshot。真实
@@ -838,32 +844,37 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
   `CanStartVmBootstrap=false`。即使未来 clean HEAD、bundle、暂停 task、remote/PR/CI 再次
   匹配，也必须先有新的显式恢复决定和 readiness receipt，不能自动沿用暂停前结论。
 - Realtime relay 已有本地 sibling infra/Worker/DO/Hibernation 源码、协议 kernel、PowerShell
-  publish/watch、pending/ACK 恢复、fixed Codex resume/wake proof、受控 cleanup、DPAPI credential
+  publish/watch、pending/ACK 恢复、历史 unattended fixed Codex resume/wake proof、受控 cleanup、
+  DPAPI credential；当前 foreground 路径不调用该 wake/resume
    provider 与 focused fake tests。独立 infra 最终本地 commit 为
-   `d8d0811709eb76ad6bc5504f2b8473a8f44a2888`、tree
-   `bb4da21e6fe2fb735fab346f738bbc8822ad6647`，包含 live readback compatibility 收口，
-   worktree clean 且无 remote。当前 135/135 Node 离线测试、67-file
+   `42424472a5b7d685486db0ae3cab0b6817333dcb`、tree
+   `b0df22cf01fd09a27a32a876cfb740a63662395e`，包含 room epoch 与 existing-Worker
+   update/readback 收口，worktree clean 且无 remote。当前 139/139 Node 离线测试、69-file
   secret scan、固定 typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 和 fresh
-  Wrangler dry-run artifact scan 已通过且没有 remote；产品 relay focused tests 在 PowerShell 7 与
-  Windows PowerShell 5.1 各 67/67、完整双引擎 HostSandbox gate 与 39-file Release Simulation
-  DryRun 已通过。本地 forced eviction 不替代生产 idle scheduling、平台日志或公网 Hibernation
+  Wrangler dry-run artifact scan 已通过且没有 remote；既有 relay client focused tests 在
+  PowerShell 7 与 Windows PowerShell 5.1 各 67/67，新增 foreground cycle 与 control validator
+  分别在两引擎各 12/12、60/60；本轮最终字节的完整双引擎 HostSandbox gate 各
+  605/605，39-file Release Simulation DryRun 亦通过。本地 forced eviction 不替代生产 idle scheduling、平台日志或公网 Hibernation
   evidence。既有 Cloudflare encrypted keyring `default` credential 已完成真实 infra root 的
   binding-absence proof、generation-1 adoption receipt 与 account GET preflight；只读 Dashboard
   人工核对已观察到订阅列表未出现 Workers/Workers Paid，同时存在 active Teams Free Base 与无关
    R2 Paid。D-022 已取消 machine Billing receipt 的阻断权；Free-only Worker/DO、两项 secret
    binding、endpoint、postdeploy readback、Host HTTP 与跨设备最小 smoke evidence 已完成。
    生产 WebSocket reconnect/Hibernation 尚未真实 E2E，状态是
-   `PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
-   ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED`。
+   `PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+   HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+   VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING /
+   NOT_PRIMARY / AUTOMATION_PAUSED`。
 - Free-only GET preflight 只记录 `default_usage_model=standard` 并明确输出
   `BillingPlanVerified=false`；任何 usage model 都不能充当 subscription receipt。Dashboard 人工
   观察不把整个账号称为 Free；R2 Paid 不授权 relay 使用 R2。既有 workers.dev
   subdomain、目标 Worker 无冲突和单账号必须继续同时成立；若真实出现付费/
   升级提示则停止。VM 已回报 `VM_RELAY_READINESS_V1 Ready=true`，所以不再有 VM
   环境前置 blocker。一次性 smoke 不需 DPAPI provisioning context。
-- VM 不负责重查上述宿主机 retained path/task/PR/CI/remote；它只验证最终提示词的外部
-  ZIP hash/length、commit/tree 与 tokens。新 key 只是 `KEYPAIR_STAGED`，必须完成注册及真实
-  正/负向权限测试后才可能 credential ready。
+- D-024 的 VM-to-host deploy key `158030457` 已注册到唯一 control repo；不得把它误判为
+  `KEYPAIR_STAGED`，也不得用于产品或 host-to-VM repo。若未来另行恢复 superseded 的旧
+  onboarding/bootstrap，必须为当时的新 bundle 重新生成、注册和验证其三把独立 key；当前
+  D-024 key 或 readiness 不能替代该未来工作。
 - 宿主机限 repair-ref/host-to-VM、VM 产品 read-only/VM-to-host 的窄 credentials，以及
   产品写、错向写、force/delete/rewrite 和 broad-admin 负向证据。
 - VM provider/device trust、真实 deterministic reset smoke、从 VM device 创建并保持

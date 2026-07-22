@@ -39,6 +39,7 @@
 | D-021 | GitHub Free public visibility 迁移 | 冻结 |
 | D-022 | Realtime relay 通信优先与风险成比例 | 冻结 |
 | D-023 | 一次性 Fast Lane 自动诊断恢复 | 冻结 |
+| D-024 | 前台双对话 relay 诊断取代 Automation 激活 | 冻结 |
 
 ## D-001：首选 managed configuration
 
@@ -396,3 +397,31 @@ Live。结果只属于 diagnostic evidence，不能作为 P10A 事实、P10B 候
 本决定不要求为该 diagnostic cycle 补建 Formal Lane 的 snapshot receipt、CAS 或签名，
 但也不授予 Formal P10A、P10B 构建、P11、自动 merge、release、promotion 或越过 P12
 的任何权限。上述正式阶段继续按 D-020 及对应计划 fail closed。
+
+## D-024：前台双对话 relay 诊断取代 Automation 激活
+
+**状态：冻结（2026-07-22）**
+
+为尽快开始 VM 测试，D-023 中先创建、回读并启动两端 Codex Automation 的当前
+执行路径被本决定取代。当前旧 Host/VM 对话只完成公网 canary；通过后，宿主机和 VM
+各自在一个新 Codex 对话中前台运行有界 relay cycle。不使用 Codex Automation、
+scheduler 或 `codex exec resume`。现有 automation 保持 `PAUSED`，VM automation 可保持
+`ABSENT`，task readback 不再是 foreground canary 的门。
+
+DevelopmentOnly `operator/realtime-relay/invoke-foreground-cycle.ps1` 只提供 `Status`、
+`WaitPointer` 和 `PublishPointer`。角色固定相反的 read/write lane；Wait 可在不预知
+MessageId 时接收并返回下一条合法 pointer，也可用 expected pointer 做 canary 过滤，
+并支持从 `AfterSequence` 恢复。它只验证、保存和 ACK pointer，不调用 wake 或执行
+payload/free text。
+
+两个 protected-history control repos 继续保存正文、不可变 envelope 和审计历史；relay
+只传小型 pointer。宿主机仍是产品代码唯一写入者，VM 只读产品仓库并测试、分析、
+回传不可信建议。用户随后明确要求两边新开对话进入测试调试，因此 D-024 的前台会话可
+串行处理多轮 `TEST_REQUEST`/`TEST_RESULT`，直到经验证的 `STOP`、用户停止或真正 blocker；
+一次只允许一个 active CycleId，终态后下一轮必须使用新的 CycleId，不允许并行或自动派生
+未请求的测试。该扩展只取代 D-023 的 Automation 与单轮限制，不授予产品 Live、Formal
+P10A/P10B/P11、merge、release、promotion 或 P12 权限。
+
+前台循环的 control body 采用精简的固定 `CDDsi_FOREGROUND_CONTROL_V1`，只允许会话、
+测试请求/结果、修复就绪、ACK 和 STOP 的枚举字段及 evidence hash/path；不携带自由文本、
+命令、脚本或 prompt。详细精确字段以 `operator/realtime-relay/README.md` 为准。

@@ -1,31 +1,105 @@
 # CDDsi realtime relay operator client
 
 Status: **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /
-AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY /
+FOREGROUND_RUNNER_LOCAL_TESTED / HOST_FOREGROUND_CREDENTIAL_READY /
+VM_FOREGROUND_CREDENTIAL_READY / VM_DEPLOY_KEY_REGISTERED /
+CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING / NOT_PRIMARY /
 AUTOMATION_PAUSED**.
 
 This directory is an operator-coordination plane. It is DevelopmentOnly, is not
 loaded by the product bootstrap, and is excluded from every release package.
-The existing protected-history control repositories and their minute polling
-remain the durable audit path and fallback. HostCoordinator and VM automation
-remain `PAUSED`.
+The existing protected-history control repositories remain the durable audit
+path and fallback. Their minute-poll contract is retained but inactive; the
+foreground path does not require Automation or a scheduler. HostCoordinator
+and VM automation remain `PAUSED`.
 
-## D-023 bounded automation recovery
+## D-024 foreground two-dialog diagnostic
 
-The user has authorized one bounded Fast Lane diagnostic cycle. This does not
-make the existing task runnable: the Host task is bound to an old commit and a
-static `UNPROVISIONED` precheck, while the VM has no persistent relay secret,
-watcher, or automation readback. This directory also exposes library entry
-points rather than a production activation launcher.
+The current path is a bounded foreground cycle in two new Host/VM Codex
+dialogs. `invoke-foreground-cycle.ps1` exposes `Status`, `WaitPointer`, and
+`PublishPointer`. Role fixes opposite read/write lanes. Wait may receive the
+next valid pointer without knowing its MessageId, or use an optional expected
+pointer; `AfterSequence` skips retained older messages. It validates, persists,
+ACKs, and returns only pointer fields. It never calls fixed Git wake, Codex
+resume, an Automation API, or a payload.
 
-The next implementation is therefore a thin activation/canary launcher plus a
-one-use VM DPAPI provisioning handoff. Both tasks remain `PAUSED` while public
-WebSocket reconnect/resume, both allowed directions, wrong identity/lane,
-payload non-execution, and secret scanning are verified. Only then may the
-Host task and VM task start, in that order, for one fixed CycleId. Either a
-terminal acknowledgement, stop, failure, block, or timeout returns both tasks
-to `PAUSED`. The result remains diagnostic and grants no product Live, Formal
-P10A/P10B/P11, merge, release, promotion, or P12 authority.
+D-024 supersedes D-023's Automation create/readback/start path. Existing
+Automation stays `PAUSED`, and VM Automation may stay `ABSENT`; neither is a
+foreground canary gate. Control repos hold bodies and audit history, while the
+relay carries only pointers. The Host remains the only product writer and the
+VM remains read-only for product testing. Host/VM foreground DPAPI credentials
+are ready, and VM deploy key `158030457` is registered only to the VM-to-host
+control repo. The old room lanes were at 4/2; a clean
+`RELAY_ROOM_EPOCH=2` is now deployed without changing the auth environment or
+runtime secrets, and both new lanes start from sequence zero. The public
+WebSocket canary is next. This grants no
+product Live, Formal P10A/P10B/P11, merge, release, promotion, or P12 authority.
+
+### Current foreground execution order
+
+The bootstrap dialogs are used only for the public canary. After it passes,
+the user starts a fresh VM Codex dialog and the Host creates a fresh project
+dialog. The VM dialog waits first; the Host then publishes `SESSION_START`,
+waits on `vm-to-host`, and accepts `SESSION_READY`. Only those fresh dialogs
+run the Host-fix/VM-test loop. The old dialogs are not wake targets.
+
+Each dialog reads its repository-external `%LOCALAPPDATA%` `active-session.json`
+and maps only `Endpoint`, `StateRoot`, `RunId`, `OwnerSid`,
+`OwnershipTokenSha256`, `Environment`, and `KeyId` to the runner. It must not
+splat the receipt object or copy credential bytes into a prompt. The runner
+strictly derives the same-host WSS root from the HTTPS endpoint. A blocked
+result is JSON plus exit code 1.
+
+For epoch 2, the first `WaitPointer` on each machine uses `AfterSequence=0`.
+Do not copy the superseded room's 4/2 cursors into a canary or fresh-dialog
+prompt. After the first ACK, local state is authoritative and reconnect resumes
+from its saved sequence. Use bounded 60-second waits and repeat them in the
+foreground so the dialog can report progress between waits.
+
+Before `PublishPointer`, the sender appends one fixed-schema body to its own
+protected control repository and computes the exact body SHA-256. The relay
+pointer uses that body MessageId, payload hash, and control-repository commit.
+The receiver treats the pointer as a notification only, fetches that exact
+commit, verifies the one added outbox file and its hash/schema, and only then
+acts on a fixed message kind. No body or free text is executed.
+
+The lean foreground body is canonical UTF-8 JSON with exactly these fields:
+
+```json
+{"Schema":"CDDsi_FOREGROUND_CONTROL_V1","Lane":"host-to-vm","MessageId":"00000000-0000-4000-8000-000000000000","CycleId":"00000000-0000-4000-8000-000000000000","Kind":"SESSION_START","SenderRole":"HostCoordinator","ProductCommit":"0000000000000000000000000000000000000000","TestProfile":"FOREGROUND_CANARY","ResultStatus":"NONE","ResultCode":"NONE","EvidencePath":null,"EvidenceSha256":null,"CreatedAtUtc":"2026-07-22T00:00:00Z","ExpiresAtUtc":"2026-07-22T00:05:00Z"}
+```
+
+The exact `Kind` set is `SESSION_START`, `SESSION_READY`, `TEST_REQUEST`,
+`TEST_RESULT`, `FIX_READY`, `HOST_ACK`, and `STOP`. `TestProfile` is one of
+`FOREGROUND_CANARY`, `FOCUSED_REGRESSION`, `QUALITY`, or `RELEASE_DRYRUN`.
+`ResultStatus` is `NONE`, `READY`, `PASSED`, `FAILED`, or `BLOCKED`;
+`ResultCode` is `NONE` or an uppercase underscore-delimited stable code.
+Evidence fields are both null or a repository-relative safe path plus a
+lowercase SHA-256. They never contain prose, commands, logs, or prompts. The
+sender role/lane pair is fixed, both UUIDs are lowercase UUIDv4, the product
+commit is lowercase 40-hex, and expiry is no more than five minutes after
+creation. A control commit adds exactly one `outbox/<12 digits>-<MessageId>.json`
+body plus any separately hashed evidence files referenced by it.
+
+The semantic pairs are also fixed. `host-to-vm` accepts only `SESSION_START`,
+`TEST_REQUEST`, `FIX_READY`, `HOST_ACK`, or `STOP`, all with
+`ResultStatus=NONE` and `ResultCode=NONE`. `vm-to-host` accepts
+`SESSION_READY` with `READY/NONE`, or `TEST_RESULT` with `PASSED`, `FAILED`, or
+`BLOCKED`; a passed result uses `NONE`, while failed or blocked results require
+a non-`NONE` stable code.
+
+`foreground-control.ps1` exposes the pure
+`ConvertFrom-CddsiRealtimeRelayForegroundControlBody` validator. Each Host/VM
+dialog obtains the exact Git blob as raw bytes from its fixed control-repository
+read path and calls the validator with `-BodyBytes`, its fixed `-ExpectedLane`,
+and an explicit `-NowUtc`. Do not round-trip the blob through console text or
+PowerShell redirection. The validator rejects a body over 4 KiB, a UTF-8 BOM,
+NUL, invalid UTF-8, or any literal ASCII control character before canonical
+parsing; its `BodySha256` binds the original raw bytes. It accepts only the
+canonical 14-field bytes above, returns parsed data, and never reads Git, files,
+or the network or executes body content. The
+receiver compares that hash to the relay pointer before dispatching only the
+fixed `Kind` state transition.
 
 ## D-022 lean delivery profile
 
@@ -72,8 +146,9 @@ precedence over stricter early provisioning language later in this document.
 - The one-use VM package, prepared envelope, and VM report copies were deleted.
   The Host's 64-byte plaintext runtime frame was deleted after a DPAPI
   CurrentUser round-trip; only an owner-only DPAPI blob remains outside the
-  repository. The VM has no persistent secret or watcher. Unattended watching
-  and primary-path use are therefore `NOT_ENABLED`.
+  repository. Host and VM CurrentUser DPAPI credentials are now provisioned
+  for the bounded foreground cycle; no persistent watcher or Automation was
+  enabled. Primary-path use remains `NOT_ENABLED`.
 
 This profile authorizes only manually invoked relay coordination. Old
 onboarding/bootstrap and product integration remain superseded/paused; both

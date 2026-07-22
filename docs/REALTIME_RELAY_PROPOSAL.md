@@ -3,17 +3,18 @@
 状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
 WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
-ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED**
+CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED /
+FOREGROUND_CANARY_PENDING / NOT_PRIMARY / AUTOMATION_PAUSED**
 
-静态产品/Release 分类：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
-（DevelopmentOnly；外部授权与认证进度只由上方动态状态及 `docs/HANDOFF.md` 表达）。
+静态产品/Release 分类：**DEVELOPMENT_ONLY / EXTERNAL_INFRA_SEPARATE / NOT_PRIMARY**
+（Worker 已外部 provision，但始终不进入产品或 Release；动态状态以 `docs/HANDOFF.md` 为准）。
 
-本文记录 Fast Lane 加速器的本地离线架构与实现合同，不是部署回执、运行授权或当前状态入口。
+本文记录 Fast Lane 加速器的架构、实现与部署状态，但不代替机器部署回读或运行授权。
 当前状态、暂停边界和下一工作包始终以 `docs/HANDOFF.md` 顶部及实际机器证据为准。
-产品仓库客户端与独立 sibling infra workspace 已进入本地实现；在隔离测试、集中外部授权、
-provisioning、真实权限矩阵和激活门完成前，任何 Cloudflare endpoint、身份、密钥、runtime
-assertion 或在线 relay 都不得被推断为存在。
+产品仓库客户端与独立 sibling infra workspace 已实现，Free-only Worker/DO 和 runtime bindings
+已 provision；foreground canary 与真实权限矩阵尚未完成，所以不能把 relay 推断为主路径。
 
 ## D-022 交付决定（2026-07-21）
 
@@ -44,17 +45,20 @@ PowerShell 7、Git、`ClientWebSocket`、时钟、GitHub/`workers.dev` 443 连�
 relay state 目录均已就绪。该准备状态不恢复旧 bootstrap/产品 integration，也不启用
 HostCoordinator/VM automation。
 
-## D-023 单轮自动诊断决定（2026-07-22）
+## D-024 前台双对话诊断决定（2026-07-22）
 
-用户已明确要求开始自动化测试。当前授权只恢复一个固定 CycleId 的 Fast Lane
-diagnostic cycle；它不把旧 automation prompt、旧 onboarding 或产品 Live 恢复为
-可执行状态。现有宿主任务仍绑定旧 commit 并带 `UNPROVISIONED` 静态门，VM 也没有
-持久 secret/watcher/task readback，因此状态是 `ACTIVATION_NOT_READY`，不能直接取消暂停。
+当前旧 Host/VM 对话先完成公网 canary；通过后由两个新 Codex 对话各自前台运行有界
+relay cycle。不创建或启动 Codex Automation，不使用 scheduler 或 `codex exec resume`。
+Automation 保持 `PAUSED`/`ABSENT`，task readback 不是 foreground canary 的门。
 
-下一实现只补薄 activation/canary launcher、VM 一次性 DPAPI provisioning、两端 task
-readback 与公网双向/错误身份/断线 resume/payload-not-executed canary。通过后按 Host、VM
-顺序启动一轮，任一终态后自动回到 `PAUSED`。Formal P10A/P10B/P11、merge、release、
-promotion 与 P12 仍不在本授权内。
+`invoke-foreground-cycle.ps1` 提供 `Status`、`WaitPointer`、`PublishPointer`；角色固定
+相反方向，Wait 可不预知 MessageId 并只返回下一条合法 pointer。control repos 保存
+正文与审计，relay 只传 pointer；宿主机唯一写产品代码，VM 只读测试。两端 foreground
+DPAPI credentials 已准备，VM deploy key `158030457` 仅绑定 VM-to-host control repo。
+旧 room lane 为 4/2；不改变 auth environment/secret 的干净 `RELAY_ROOM_EPOCH=2`
+现已部署并精确回读，新 room 从 sequence 0 开始。下一步由当前旧对话完成公网双向、错误方向、断线 resume 与
+payload-not-executed canary。Formal P10A/P10B/P11、merge、release、promotion 与 P12
+仍不在本授权内。
 
 ## 问题陈述
 
@@ -295,7 +299,7 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 ## 与既有两条证据 lane 的关系
 
 - **Fast Lane**：realtime relay 只加速“有新 durable pointer”的发现；GitHub control repo
-  仍是 durable source 和断线 fallback，一分钟轮询仍是恢复路径。
+  仍是 durable source 和手工 fallback。一分钟轮询合同保留，但在 D-024 前台路径中未启用。
 - **Formal Lane**：首次 P10A、正式 P11 和里程碑证据仍要求外部 clean snapshot receipt、
   独立 CAS、签名、精确 candidate id/hash 与既有消费门。realtime 通知没有证据权威。
 - **P12**：一次人工发布确认保持不变。禁止自动 merge、release、promotion。
@@ -309,11 +313,11 @@ project、route、secret、身份、远端或发布仍属于后续外部 provisi
 使用独立的 `RT` 前缀，避免改变既有产品阶段编号：
 
 1. **RT0 — 设计冻结（本地完成）**：评审威胁模型、schema、canonicalization、lane ACL、
-   TTL、rate limit、fallback 和成本上限；状态保持 NOT_PROVISIONED。
+   TTL、rate limit、fallback 和成本上限；该阶段当时保持 `NOT_PROVISIONED`，现已由 RT3 部署事实取代。
 2. **RT1 — sibling infra repo（本地实现）**：独立 workspace 已建立 Worker/SQLite Durable
    Object/WebSocket Hibernation、声明式 `exports` lifecycle 合同、协议 kernel 和离线测试；没有
    remote 或生产 identity。授权后已安装精确 lock-bound Node/Wrangler/TypeScript 与 keyring helper，
-   135/135 离线测试、67-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
+   139/139 离线测试、69-file secret scan、typecheck、Wrangler dry-run/生成物扫描，以及实际本地
    workerd/SQLite/Hibernation forced-eviction integration 均通过；owner-only crash recovery、
    过期 adoption receipt 原子续期、malformed binding fail-close 与 account-bound credential snapshot
    也已完成离线验证；既有 credential 已完成 generation-1 adoption 与固定四 GET preflight，并已
@@ -399,9 +403,10 @@ machine receipt/ticket/coordinated DPAPI 对本次部署和 manual smoke 的额�
    必需集合为 `account:read`、`user:read`、`workers_scripts:write` 与 `offline_access`；缺少任一项、
    scope 语义无法识别或返回多个 account 仍必须停止，但额外项不再构成失败。receipt 过期只能在
    owner/root、canonical、无 reparse 且确实过期的状态下原子续期，并链接 previous-receipt hash；
-   有效、伪造或未知状态不得覆盖。既有 profile 已完成 generation-1 adoption 与重验证，当前为
-   `AUTHENTICATED_READ_ONLY`。OAuth 复用未触发新登录；随后经用户明确授权，只读复用其个人 Edge
-   既有登录态完成 Billing Dashboard 核对，没有执行新的登录或订阅变更。不得把创建全新
+   有效、伪造或未知状态不得覆盖。既有 profile 先完成 generation-1 adoption；epoch update 时
+   旧 token 无法 refresh，用户在个人 Edge 明确确认一次固定 Wrangler OAuth，随后 generation-3
+   renewal 与 account-bound readback 成功。此前的 Billing Dashboard 核对只读复用个人 Edge
+   登录态且未变更订阅。不得把创建全新
    `cddsi-relay` 命名
    profile 设为前置条件。该 deploy OAuth grant 是 account 级 Worker 管理权限，并不天然缩窄到
    本 Worker；额外 scope 不扩大本任务允许的资源、写操作或后续激活范围。窄 lane 权限只由两组
@@ -444,7 +449,7 @@ duration，但它不是零成本保证。本任务四项必需 scope 不含 Bill
 GET-only preflight 只把已知 usage model 作为配置枚举输出，并始终明确
 `BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`；`standard`、`bundled` 与 `unbound`
 都不是 Workers Free subscription receipt。实际 preflight 报告 `STANDARD`、既有 workers.dev
-subdomain 与目标 Worker 不存在。Dashboard 人工观察不是 machine receipt，但 D-022
+subdomain 与目标 Worker在初始 preflight 时不存在。Dashboard 人工观察不是 machine receipt，但 D-022
 已明确接受它作为本次 Free-only 部署的充分操作依据。已实现的 validator/recorder、
 protected ACL、fresh observation 和两阶段账号绑定仅作 optional hardening，不等待签发
 receipt。如真实 Cloudflare 流程出现付费/升级提示、多账号歧义或目标 Worker 碰撞，
@@ -498,8 +503,10 @@ readiness 均已完成。Free-only endpoint
 `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`、Worker、SQLite-backed Durable Object、
 两项 secret binding、postdeploy 精确回读、Host dual-role HTTP smoke 和跨设备双向 read/ACK
 均已完成，未记录 secret。生产 WebSocket reconnect/Hibernation 尚未真实公网 E2E，因此本文
-状态为 **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
-ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED**。
+状态为 **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING /
+NOT_PRIMARY / AUTOMATION_PAUSED**。
 
 ## 官方技术参考
 

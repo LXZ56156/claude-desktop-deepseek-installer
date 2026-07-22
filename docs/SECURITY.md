@@ -301,8 +301,8 @@ harness runtime。
   避免 profile 校验/使用竞态。deploy credential 不能复用为 HMAC secret，runtime secret 也不能进入
   Wrangler 配置、Git、prompt、测试 evidence 或 Cloudflare 日志。
 - 用户已授权外部步骤 1–7，但限定 Free-only；固定本地工具链、离线测试、dry-run、既有 credential
-  的 generation-1 adoption 与固定四 GET preflight 已完成；preflight 确认单账号、既有
-  workers.dev subdomain、目标 Worker 不存在，并报告
+  的 generation-1 adoption 与固定四 GET preflight 已完成；初始 preflight 确认单账号、既有
+  workers.dev subdomain、目标 Worker当时不存在，并报告
   `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage model 都不是账单订阅
   receipt；随后经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions 核对未列出
   Workers/Workers Paid。active Teams Free Base 与无关 R2 Paid 不把整个账号称为 Free、不升级

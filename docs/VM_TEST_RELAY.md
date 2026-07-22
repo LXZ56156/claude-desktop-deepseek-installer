@@ -14,9 +14,10 @@ coordination plane；产品平面、测试执行平面、证据平面和协调�
 
 ## 2026-07-21 controlled pause 与 relay-only 放行
 
-当前不得继续 onboarding ZIP、旧 VM bootstrap、产品 integration、产品测试循环或 Formal
+当前不得继续 onboarding ZIP、旧 VM bootstrap、产品 integration、旧产品测试循环或 Formal
 Lane。D-022 作出了精确例外：可进入已准备的 VM 执行人工 relay-only 通信
-smoke，它不读取/运行旧 ZIP，不执行产品 Live，不触发 automation。
+smoke；D-024 又允许 canary 通过后，由用户启动的两个新前台对话串行执行固定 profile 的
+只读离线诊断测试。两者都不读取/运行旧 ZIP、不执行产品 Live、不触发 automation。
 暂停前最后一个 retained ZIP/prompt 以及所有更早版本均标记为
 `SUPERSEDED_DO_NOT_USE_REALTIME_RELAY_REPLAN`，只保留审计字节，不再交付或执行。任何本次
 tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 readiness receipt 失去
@@ -29,10 +30,11 @@ tracked 文档修改也使暂停前 finalization、CI、automation prompt 和 re
 
 现有 HostCoordinator automation 必须继续 `PAUSED`；VM automation 若存在也必须继续
 `PAUSED`。本轮用户已授权 Cloudflare
-外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、135/135 离线测试、67-file
+外部门 1–7 项并限定 Free-only；精确 infra toolchain/keyring helper、139/139 离线测试、69-file
 secret scan、typecheck、实际本地 workerd/SQLite/Hibernation forced-eviction test 与 Wrangler
 dry-run 已通过；既有 encrypted keyring `default` credential 已完成 generation-1 adoption 与固定
-四 GET preflight，确认单账号、既有 workers.dev subdomain、目标 Worker 不存在并报告
+四 GET preflight；初始 preflight 确认单账号、既有 workers.dev subdomain、目标 Worker当时
+不存在，并报告
 `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。随后经用户授权，只读复用
 其个人 Edge 既有登录态查看 Billing → Subscriptions：未列出 Workers/Workers Paid，active 的
 Teams Free Base 与无关 R2 Paid 不改变 Workers 的独立订阅边界，也不授权 relay 使用 R2。SQLite
@@ -49,18 +51,28 @@ D-022 已将 machine receipt/ticket、coordinated DPAPI/staging receipt 降为 o
 不改变产品 Live 和 automation 暂停。
 暂停后的精确事实和恢复条件只看 `HANDOFF.md` 顶部与实际 Git/remote/PR/CI/automation/evidence。
 
-## 2026-07-22 D-023 单轮自动诊断恢复
+## 2026-07-22 D-024 前台双对话诊断
 
-用户已授权开始自动化测试，但范围只是一轮有界 Fast Lane diagnostic cycle。
-现有宿主 automation 仍是旧 commit 绑定的 fail-closed prompt；VM 没有持久
-VmTester secret、watcher 或 task readback，所以不得把旧任务直接取消暂停。
+当前测试路径是宿主机与 VM 两个新 Codex 对话分别前台运行
+`invoke-foreground-cycle.ps1`，不创建或启动 Codex Automation，不使用 scheduler 或
+`codex exec resume`。Automation 保持 `PAUSED`/`ABSENT`，task readback 不再是门。
 
-下一执行顺序是：实现薄 activation/canary launcher；将新 VmTester capability 通过
-仓库外、owner-only、一次性文件导入 VM 的 DPAPI CurrentUser；创建唯一且仍为
-`PAUSED` 的 VM task；原位重绑宿主任务；完成公网双向、错身份/错方向、断线 resume、
-payload 不执行与 secret scan canary。全部通过后按 HostCoordinator、VmTester 顺序
-启用，只消费一个 CycleId；`HOST_ACK`、`STOP`、失败、阻断或超时后两端自动回到
-`PAUSED`。本轮结果只能是 diagnostic evidence，不是 P10A/P10B/P11 或发布依据。
+当前旧 Host/VM 对话只负责公网 canary。canary 通过后才由两个新对话接管；新会话一次
+只处理一个 active CycleId，但可在前一轮终态后用新 CycleId 串行处理下一轮，直到经验证的
+`STOP`、用户停止或真正 blocker。允许的测试只限固定的 offline focused regression、
+`scripts/check.ps1` 和 Release Simulation DryRun；产品 Live、旧 bootstrap/integration、
+Formal Lane 与发布门仍保持暂停。
+
+`Status` 回报固定方向；`WaitPointer` 可不预知 MessageId，从 `AfterSequence` 等待、
+验证、保存、ACK 并返回下一条合法 pointer；`PublishPointer` 只写角色固定 lane。
+前台 Wait 不调用 Git wake，也不执行 payload。control repos 保存正文/envelope/审计，
+relay 只传 pointer。宿主机唯一写产品代码；VM 只读产品仓库、执行测试和回传不可信
+建议。Host/VM foreground DPAPI credentials 已准备，VM deploy key `158030457` 仅注册到
+VM-to-host control repo。旧 room lane 为 4/2；不改变 auth environment/secret 的干净
+`RELAY_ROOM_EPOCH=2` 已部署并精确回读，新 room 从 sequence 0 开始。下一步由两对话完成公网双向、错方向、
+断线 resume、payload 不执行和 secret scan canary。本轮结果不是 P10A/P10B/P11 或发布依据。
+前台 control repo body 使用固定 `CDDsi_FOREGROUND_CONTROL_V1`；它只含枚举状态、精确
+product commit 和可选 evidence path/hash，不含自由文本、命令、脚本或 prompt。
 
 ## 暂停前实现快照（历史；不可执行）
 
@@ -177,7 +189,10 @@ DevelopmentOnly operator plane 中的纯 PowerShell 客户端。完整协议、�
 EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED /
 VM_RELAY_READY / PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /
-AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED`；用户已授权
+FOREGROUND_RUNNER_LOCAL_TESTED / HOST_FOREGROUND_CREDENTIAL_READY /
+VM_FOREGROUND_CREDENTIAL_READY / VM_DEPLOY_KEY_REGISTERED /
+CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING / NOT_PRIMARY /
+AUTOMATION_PAUSED`；用户已授权
 Free-only 外部门 1–7 项，并在知悉 scope 超集后明确允许直接复用既有 encrypted keyring
 `default` OAuth profile；真实精确 infra root 的 binding-absence proof、owner-marked adoption receipt
 与 GET-only preflight 已完成，脱敏 Dashboard 人工核对也已完成。Free-only endpoint

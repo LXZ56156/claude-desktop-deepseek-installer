@@ -85,12 +85,12 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
   repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，`vm-to-host` 仅 VM 写/
   HostCoordinator 读。envelope 绑定 repository identity、CycleId、单调 sequence、
   previous hash 和内容 hash。
-- 分钟级 Codex automation 是外部 operator coordination，不是产品创建或管理的
-  Windows Scheduled Task，也不授予产品 Live。public protected repository pair 已创建，宿主机
-  heartbeat 已按分钟创建但保持暂停；VM task 必须由 VM Codex 设备创建并同样先暂停。
-  protected history 已通过真实 ruleset/effective-rules receipt；最小 credentials、runtime
-  assertion、VM 负向权限验证、安全启用与 unattended
-  acceptance 尚未完成。
+- 分钟级 Codex automation 是可选的外部 operator coordination，不是产品创建或管理的
+  Windows Scheduled Task，也不授予产品 Live。D-024 当前前台路径不依赖 Automation：宿主机
+  heartbeat 保持 `PAUSED`，VM task 可保持 `ABSENT`；minute-poll 合同只保留为当前未启用的
+  fallback。public protected repository pair 与 protected history 已通过真实
+  ruleset/effective-rules receipt；两端 foreground DPAPI credentials 和仅限 VM-to-host repo 的
+  VM deploy key 已准备。公网 WebSocket 权限负测与 unattended acceptance 仍未完成。
 - Formal Lane 的 append-only/WORM CAS、独立签名、外部 snapshot supervisor 和正式
   acceptance validator 尚未实现；Fast Lane synthetic PASS 不能替代这些门。
 - 宿主机 Codex 是唯一产品代码写入者，负责修复、L0-L4、本地提交/推送和候选重建；
@@ -111,7 +111,7 @@ owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测�
 
 #### D-022 lean relay smoke
 
-本地 135/135 infra tests、双引擎 PowerShell focused tests、secret scan、typecheck 和
+本地 139/139 infra tests、双引擎 PowerShell focused tests、secret scan、typecheck 和
 Wrangler dry-run 已提供足够的部署前证据。不得因添加 machine Billing receipt、
 two-phase ticket、coordinated DPAPI/staging receipt 或新的全矩阵而延迟首次真实联通。
 
@@ -158,6 +158,15 @@ DPAPI、轮换演练、长时运行 SLO 和完整攻击矩阵是持久 watcher �
   断线重连与 resume、原子 state、ACL/no-reparse、DPAPI provider、固定 wake adapter
   和不执行 payload。所有产品 Live、真实 network/registry/process、outside-sandbox、
   unexpected-ledger 与 mutation spy 指标必须为 0。
+- `operator/realtime-relay/invoke-foreground-cycle.ps1` 是 D-024 的前台
+  Status/Wait/Publish 入口；`RealtimeRelayForegroundCycle.Tests.ps1` 在两引擎均以
+  12/12 覆盖双向权限、未知 MessageId wait、重连、ACK 丢失后的过期重放、跨 sequence
+  MessageId 拒绝、固定 CLI 失败输出和 non-execution。纯
+  `foreground-control.ps1`/`RealtimeRelayForegroundControl.Tests.ps1` 在两引擎均以
+  60/60 覆盖原始 strict UTF-8/no-BOM bytes、未转义 control characters、canonical bytes、
+  lane/kind/result 语义、
+  TTL、evidence path/hash、schema
+  drift 与 parser 不执行正文；这些入口仍只属于 DevelopmentOnly operator plane。
 - `tests/Contract/FastLanePolicy.Tests.ps1` 冻结两 repository 拓扑、角色权限和
   diagnostic-only 边界；`tests/Contract/OperatorCoordinationBoundary.Tests.ps1` 证明
   realtime relay 在内的 operator modules 和入口具有固定 execution capability 边界，
@@ -166,28 +175,29 @@ DPAPI、轮换演练、长时运行 SLO 和完整攻击矩阵是持久 watcher �
   `operator/fast-lane/invoke-synthetic-rehearsal.ps1` 演练本地双 outbox。该演练必须为
   零产品 Live、零网络、零真实 Git、零 registry/AppX/VMP/credential/process 探测和
   零 secret；结果只作诊断，不能证明 P10A-0A 已完成。
-- sibling `cddsi-relay-infra` workspace 的 135/135 本地测试、67-file secret scan、guarded
+- sibling `cddsi-relay-infra` workspace 的 139/139 本地测试、69-file secret scan、guarded
   TypeScript typecheck、Wrangler dry-run，以及实际 workerd/SQLite/Hibernation forced-eviction
   integration 为独立 Cloudflare infra evidence；本地 runtime 证明 eviction 后 SQLite 恢复与原
   WebSocket 继续投递，但不证明生产 idle 调度或公网平台行为。它们不是本产品仓库的 L0-L4、
   Release Simulation 或可发布包证据，也不进入 Release。
 - generation-1 OAuth adoption 与固定四 GET Cloudflare preflight 只证明 encrypted keyring、单一
-  receipt-bound account、既有 workers.dev subdomain、目标 Worker 不存在及已知 usage model；实际
+  receipt-bound account、既有 workers.dev subdomain、目标 Worker在初始 preflight 时不存在及已知 usage model；实际
   返回 `STANDARD / BillingPlanVerified=false / BILLING_VERIFICATION_REQUIRED`。它不证明 Free
   subscription 或平台日志；资源 provisioning、secret binding、部署、Host HTTP 与跨设备 relay
   smoke 现在由各自真实回读证明，但不外推为生产 WebSocket reconnect/Hibernation 通过。
 
-截至 2026-07-21，最近一次完整 clean quality evidence 为 PowerShell 7 与 Windows
-PowerShell 5.1 各 525/525 项通过，且全部 zero metrics 成立；该数量只是当次测试清单
-快照，不是永久 API、schema 或发布合同。上述映射已证明 clean exact commit 可制作 VM
+截至 2026-07-22，本轮 foreground 最终字节的完整 HostSandbox quality gate 在 PowerShell 7
+与 Windows PowerShell 5.1 均发现并通过 605/605，全部 zero metrics 成立；39-file Release
+Simulation DryRun 同样通过且 `Changed=false`。该数量只是当次测试清单快照，不是永久 API、
+schema 或发布合同。上述映射已证明 clean exact commit 可制作 VM
 onboarding 并验证 PUBLIC 合同。tracked 文档不嵌入会自引用的最终 commit/tree/hash；只有同一
 暂停 automation、PR CI、实际 Git/remote 与 immutable bundle 的外部机器事实全部匹配，
 才派生 bootstrap-only 的 `CanStartVmBootstrap=true`。真实 ruleset/effective-rules receipt
 已证明 protected history 生效；本地测试覆盖 public-protected 正向、visibility
-mismatch、缺保护、public-outbox secret 与错误角色写入负向合同，但仍不证明窄角色
-credential、VM reset 或 unattended loop 已通过。两端 minute tasks
-在这些 integration gates 完成前都必须保持暂停。首次 P10A 另需外部 snapshot receipt、
-独立 CAS 与签名，Fast Lane 测试绝不能替代。
+mismatch、缺保护、public-outbox secret 与错误角色写入负向合同，但仍不证明 VM reset、
+公网 WebSocket 权限负测或 unattended loop 已通过。D-024 的前台 canary 与后续只读 offline
+diagnostic 不以创建 minute task 为门；Host task 继续 `PAUSED`，VM task 可为 `ABSENT`。首次
+P10A 另需外部 snapshot receipt、独立 CAS 与签名，Fast Lane 测试绝不能替代。
 
 Release secret scanner 只证明当前 PackageFiles 的 source/staging/ZIP/extracted bytes；它不
 覆盖 Git history/metadata、DevelopmentOnly 文档、PR、Actions logs/artifacts 或 control-repo

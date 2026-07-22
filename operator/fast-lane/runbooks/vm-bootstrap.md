@@ -24,7 +24,9 @@ persistent unattended watcher, not before this one-time smoke.
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` is currently
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY /
+CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING /
 NOT_PRIMARY / AUTOMATION_PAUSED`. Its pure
 PowerShell publish/watch/fixed-wake client and separate local Worker/Durable
 Object workspace are only offline, DevelopmentOnly implementation evidence.
@@ -41,11 +43,12 @@ adoption receipt and four-GET account preflight have completed; the latter repor
 workers.dev subdomain and no target Worker at preflight time. The Free-only Worker/SQLite Durable
 Object and two secret bindings were subsequently deployed at
 `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`; exact postdeploy readback, Host HTTP
-smoke, and cross-device relay-only smoke passed. Production WebSocket reconnect/Hibernation is
-not yet public-E2E verified; no watcher startup or automation change has been performed.
-D-023 separately authorizes one bounded diagnostic cycle after a new activation launcher,
-VM DPAPI/task provisioning, and public canary pass. It does not make this superseded bootstrap
-runbook executable and does not permit directly unpausing the stale Host task.
+smoke, and cross-device relay-only smoke passed. Both foreground DPAPI credentials, the VM-to-host
+deploy key, the no-Automation foreground runner, and clean `RELAY_ROOM_EPOCH=2` are now ready.
+Production WebSocket reconnect/Hibernation is not yet public-E2E verified; no watcher startup or
+automation change has been performed. D-024 runs one bounded diagnostic in two foreground Codex
+dialogs after the public canary. It does not make this superseded bootstrap runbook executable and
+does not permit directly unpausing the stale Host task.
 With explicit user authorization,
 Billing → Subscriptions was read through the existing signed-in personal Edge profile: no
 Workers/Workers Paid entry was listed, while active Teams Free Base and unrelated R2 Paid entries

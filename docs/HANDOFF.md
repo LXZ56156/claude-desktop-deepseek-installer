@@ -7,18 +7,40 @@
 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
 WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
-ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED。**
+CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED /
+FOREGROUND_CANARY_PENDING / NOT_PRIMARY / AUTOMATION_PAUSED。**
 
-2026-07-22 用户已冻结 D-023，明确要求开始一次有界的 Fast Lane 自动诊断。
-这不是 P10A/P11，也不授权产品 Live、自动 merge、release 或 promotion。当前仍不能
-直接启用既有宿主任务：其 prompt 绑定旧 commit 且静态预检仍为
-`UNPROVISIONED`；VM 侧也没有持久 relay secret、watcher 或可信 automation
-readback。仓库目前只有底层 watcher/publisher/DPAPI 函数，没有可直接运行的生产
-activation launcher。因此下一执行项是补一个薄的 activation/canary 入口、轮换并
-一次性下发 VmTester secret、在 VM 创建仍为 `PAUSED` 的唯一任务，再完成公网
-WebSocket reconnect、双向权限和 payload-not-executed canary。通过后只启用一个
-CycleId 的单轮诊断，并在终态自动回到 `PAUSED`；不得把旧任务直接改为运行。
+2026-07-22 用户已冻结 D-024：当前旧 Host/VM 对话只做公网 canary；通过后由宿主机与
+VM 两个新 Codex 对话接管有界前台 relay cycle，不使用 Codex Automation、scheduler 或
+`codex exec resume`。
+DevelopmentOnly `invoke-foreground-cycle.ps1` 已实现 `Status`、`WaitPointer` 和
+`PublishPointer`；本地 fake transport/方向/重连/ACK-loss replay/CLI fail-closed/
+non-execution 测试在 PowerShell 7 与 Windows PowerShell 5.1 均为 12/12。纯
+`CDDsi_FOREGROUND_CONTROL_V1` validator 测试在两引擎均为 60/60；PowerShell 7 连同
+operator boundary 的 focused tests 为 85/85。
+本轮最终字节的完整 HostSandbox gate 在 PowerShell 7 与 Windows PowerShell 5.1 均发现并
+通过 605/605；Release Simulation DryRun 通过 39 个 package files，四层 secret findings
+均为 0、inventory/hash 精确且 `Changed=false`。
+Wait 可在不知道下一条 MessageId 时返回角色固定 read lane 的下一条合法 pointer，
+不会调用 wake 或执行 payload。Host/VM 当前用户的 foreground DPAPI credentials 均已
+准备；VM deploy key `158030457` 只注册到 `cddsi-vm-to-host`，产品仓库和
+`cddsi-host-to-vm` 均无匹配。旧 Durable Object lane 已在手工 smoke 推进到 4/2；
+`RELAY_ROOM_EPOCH=2` 的干净逻辑 room 现已部署，且未改变 auth environment/runtime
+secrets。Cloudflare active-version 精确回读通过，新 room 两条 lane 均从 sequence 0
+基线开始。下一步由两个前台对话完成
+WebSocket 正负向测试。现有 automation 继续 `PAUSED`，VM automation 可保持 `ABSENT`，
+task readback 不是门。这不是 P10A/P11，也不授权产品 Live、自动 merge、release 或 promotion。
+
+独立 infra 精确本地提交为 `42424472a5b7d685486db0ae3cab0b6817333dcb`、tree
+`b0df22cf01fd09a27a32a876cfb740a63662395e`。固定版本 Wrangler 复用 encrypted-keyring
+`default` profile；因旧 OAuth token 无法 refresh，用户在个人 Edge 完成一次明确授权，随后
+generation-3 adoption renewal、epoch update 和 postdeploy readback 均成功。endpoint 仍为
+`https://cddsi-realtime-relay.lizixuan6383828.workers.dev`，两项 runtime secret binding 未变。
+
+control repos 继续保存正文、不可变 envelope 和审计历史；relay 只传 pointer。宿主机
+仍是产品代码唯一写入者，VM 只读产品仓库并负责测试、分析和回传不可信建议。
 
 2026-07-21 用户已冻结 D-022：realtime relay 以尽快打通 Host/VM 通信为
 首要目标，控制与现实风险成比例。machine Billing receipt/ticket、coordinated
@@ -49,9 +71,10 @@ Hibernation 尚未完成真实公网 E2E，因此 relay 仍是 `NOT_PRIMARY`，�
 
 一次性 VM handoff package、Host prepared envelope 与 VM report 的本地副本均已删除。宿主机
 64-byte 明文 runtime frame 已完成 DPAPI CurrentUser round-trip 后删除；仓库外只保留 owner-only
-DPAPI blob，不记录其路径或内容。VM 没有安装持久 secret 或 watcher。因此这些事实只证明
-manual cross-device smoke：unattended watcher/primary path 仍为 `NOT_ENABLED`，automation 继续
-`PAUSED`。
+DPAPI blob，不记录其路径或内容。在该次 manual smoke 完成时，VM 尚未安装持久 secret 或
+watcher；此后 VM 已另行完成 D-024 的 owner-only DPAPI foreground credential provisioning，但仍未
+启用 unattended watcher/primary path。两项事实分别证明 manual smoke 与前台凭据 readiness，
+automation 继续 `PAUSED`。
 
 2026-07-21 本轮继续前从实际磁盘复核：分支仍为
 `codex/repair/p10a-0a-fast-lane`；上一轮已推送 HEAD 为
@@ -84,14 +107,14 @@ assertion 与 Live 确认，并在任何 publisher chain/pending state 存在时
 
 独立 infra workspace 已初始化**仅本地** Git `main`，无 remote；基线提交为
 `a74ef5986b801bf5c9c500e473590d5167a062a8`，当前离线提交为
-`d8d0811709eb76ad6bc5504f2b8473a8f44a2888`、tree
-`bb4da21e6fe2fb735fab346f738bbc8822ad6647`；该最终本地提交包含 live readback
-compatibility 收口，worktree clean 且无 remote。用户已授权外部门 1–7 项并限定
+`42424472a5b7d685486db0ae3cab0b6817333dcb`、tree
+`b0df22cf01fd09a27a32a876cfb740a63662395e`；该最终本地提交包含 room epoch 与
+existing-Worker update/readback 收口，worktree clean 且无 remote。用户已授权外部门 1–7 项并限定
 Free-only。授权后使用 Node `24.16.0` 的 bundled npm `11.13.0` 生成精确
 `package-lock.json`，安装 workspace-local `wrangler@4.112.0`、`typescript@6.0.3`，并在
 Wrangler global native helper 精确前缀安装/回读 `@napi-rs/keyring@1.3.0`；未使用 global
-Wrangler 或 PATH npm。当前 infra 离线测试 135/135、67 files/0 secret findings、固定
-`wrangler types`/TypeScript 均通过；真实 Wrangler dry-run 共 4 artifacts/151106 bytes，
+Wrangler 或 PATH npm。当前 infra 离线测试 139/139、69 files/0 secret findings、固定
+`wrangler types`/TypeScript 均通过；真实 Wrangler dry-run 共 4 artifacts/151250 bytes，
 扫描为 secret=0、console=0。GET-only Cloudflare readback
 固定了单账号、usage-model 枚举、既有 workers.dev subdomain、目标 Worker无碰撞，以及部署后
 active 100% version/SQLite export/精确 binding/route 回读；usage model 明确不作为 Billing
@@ -834,7 +857,7 @@ runtime protection receipt，执行 reset smoke、task 安全启用与 unattende
 finalization；需要这些外部权限时再以清晰的一次确认暂停。默认的最后一个人工动作是 P12
 发布确认；不得自动 merge、promotion 或 release。
 
-### P10A-0A 稳定能力、当前 WIP 与剩余 integration 工作
+### 暂停前 P10A-0A 稳定能力与 integration 计划（历史；D-024 不执行）
 
 1. public protected 产品 remote `LXZ56156/claude-desktop-deepseek-installer` 已创建，
    旧 `main` 基线已推送，ruleset `19068339` 已覆盖 `main` 与 `codex/repair/*`；本轮改动
@@ -890,9 +913,10 @@ finalization；需要这些外部权限时再以清晰的一次确认暂停。�
    candidate ID/hash。P11 失败后，宿主机修复、过门、提交和推送，再回到 P10B
    重建/签名新候选；VM 不得直接拉源码把旧候选标成已重测。
 
-首选实现是两端 Codex automation 持续轮询各自可写的单向 control repository；若计划任务粒度不足，
-由低延迟 deterministic watcher 只负责验签、去重并调用固定的 `codex exec resume`
-恢复对应任务。正常闭环不需要用户搬运文件；人工签名 bundle 只作断网/故障降级。
+本历史方案的首选实现曾是两端 Codex automation 持续轮询各自可写的单向 control repository；
+D-024 当前已由两个新对话的前台 cycle 取代，不创建或启动 Automation，不调用
+`codex exec resume`。control repos 仍让正常闭环无需用户搬运消息文件；人工签名 bundle
+只作断网/故障降级。
 普通 Git push 不作为“另一个 Codex 已被唤醒”的证据，必须有 relay acknowledgement。
 不得自动合并、自动晋升 P12 或自动发布。
 

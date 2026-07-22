@@ -14,6 +14,8 @@
         'operator/fast-lane/invoke-vm-reset-live.ps1'
         'operator/fast-lane/providers/windows-vm-reset.ps1'
         'operator/realtime-relay/invoke-vm-smoke.ps1'
+        'operator/realtime-relay/foreground-control.ps1'
+        'operator/realtime-relay/invoke-foreground-cycle.ps1'
         'operator/realtime-relay/realtime-relay-client.ps1'
     )
     $script:RehearsalRelative = 'operator/fast-lane/invoke-synthetic-rehearsal.ps1'
@@ -52,8 +54,10 @@ Describe 'operator coordination static isolation boundary' {
         foreach ($requiredText in @(
             'LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /'
             'WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /'
-            'CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /'
-            'ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED'
+            'CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /'
+            'HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /'
+            'VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED /'
+            'FOREGROUND_CANARY_PENDING / NOT_PRIMARY / AUTOMATION_PAUSED'
             'invoke-vm-smoke.ps1 -PackagePath'
             'Cloudflare Worker + SQLite-backed Durable Object + WebSocket Hibernation'
             '`host-to-vm`'
@@ -65,7 +69,7 @@ Describe 'operator coordination static isolation boundary' {
             'immutable payload pointer'
             'Cloudflare 的公网 URL 不是 sender authority'
             'GitHub control repo'
-            '一分钟轮询继续保留为 fallback'
+            '一分钟轮询合同保留，但在 D-024 前台路径中未启用'
             '**Formal Lane**'
             '禁止自动 merge、release、promotion'
         )) {
@@ -87,8 +91,14 @@ Describe 'operator coordination static isolation boundary' {
         )
         foreach ($requiredText in @(
             'PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /'
-            'AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY /'
+            'FOREGROUND_RUNNER_LOCAL_TESTED / HOST_FOREGROUND_CREDENTIAL_READY /'
+            'VM_FOREGROUND_CREDENTIAL_READY / VM_DEPLOY_KEY_REGISTERED /'
+            'CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING / NOT_PRIMARY /'
             'AUTOMATION_PAUSED'
+            '`invoke-foreground-cycle.ps1`'
+            '`foreground-control.ps1`'
+            'CDDsi_FOREGROUND_CONTROL_V1'
+            '`ConvertFrom-CddsiRealtimeRelayForegroundControlBody`'
             '`invoke-vm-smoke.ps1 -PackagePath`'
             'New-CddsiRealtimeRelayLivePublisher'
             'Invoke-CddsiRealtimeRelayPublish'
@@ -161,6 +171,10 @@ Describe 'operator coordination static isolation boundary' {
             )
         @($script:Boundary.Rules.OperatorRuntimeEntryPoints['operator/realtime-relay/invoke-vm-smoke.ps1']) |
             Should -BeExactly @('Invoke-CddsiRelayVmSmoke')
+        @($script:Boundary.Rules.OperatorRuntimeEntryPoints['operator/realtime-relay/foreground-control.ps1']) |
+            Should -BeExactly @('ConvertFrom-CddsiRealtimeRelayForegroundControlBody')
+        @($script:Boundary.Rules.OperatorRuntimeEntryPoints['operator/realtime-relay/invoke-foreground-cycle.ps1']) |
+            Should -BeExactly @('Invoke-CddsiRealtimeRelayForegroundCycle')
         @($script:Boundary.Rules.OperatorRuntimeNetworkFiles) |
             Should -BeExactly @(
                 'operator/fast-lane/invoke-git-outbox.ps1'
@@ -196,6 +210,7 @@ Describe 'operator coordination static isolation boundary' {
                 'operator/fast-lane/invoke-vm-reset-live.ps1'
                 'operator/fast-lane/providers/windows-vm-reset.ps1'
                 'operator/realtime-relay/invoke-vm-smoke.ps1'
+                'operator/realtime-relay/invoke-foreground-cycle.ps1'
                 'operator/realtime-relay/realtime-relay-client.ps1'
             )
         @($script:Boundary.Rules.OperatorRuntimeVmInspectionFiles) |

@@ -115,14 +115,15 @@ public control repository 的所有历史 envelope、ACK 与脱敏诊断对互�
 
 项目影响是把秒级通知实现限制在独立 sibling `cddsi-relay-infra` workspace：Worker、
 SQLite-backed `RelayRoom`、Wrangler/Node/TypeScript 和所有 Cloudflare 配置均不得进入产品
-安装器或 Release。当前精确本地 toolchain、135/135 离线测试、67-file secret scan、guarded
+安装器或 Release。当前精确本地 toolchain、139/139 离线测试、69-file secret scan、guarded
 typecheck、实际 workerd/SQLite/Hibernation forced-eviction integration 与 Wrangler dry-run 已
 通过；本地 forced eviction 不替代生产 idle scheduling 或公网平台证据。用户已授权 Free-only
 认证、创建、secret、部署与真实正负测试，并在知悉既有 encrypted keyring `default` profile 的
 29 项 scope 包含四项必需项及 25 项额外项后，明确授权直接复用且不要求 exact-scope equality。
 本地采用路径已实现可续期 owner-marked receipt 和 account-bound 私有 credential snapshot；截至
-2026-07-21，真实精确 infra root 的 exact/inherited binding absence 已证明，generation-1 receipt
-已绑定 `default.enc`、account 与 permission hashes。固定四 GET preflight 已确认单一账号、必需
+2026-07-21，真实精确 infra root 的 exact/inherited binding absence 已证明，初始 generation-1 receipt
+已绑定 `default.enc`、account 与 permission hashes。2026-07-22 epoch update 时旧 token 无法
+refresh，用户在个人 Edge 明确确认一次 OAuth，generation-3 renewal 随后通过。固定四 GET preflight 已确认单一账号、必需
 scope、既有 account subdomain 与目标 script 不存在，并报告
 `WorkersUsageModel=STANDARD / BillingPlanVerified=false /
 BILLING_VERIFICATION_REQUIRED`；该段是写入前事实。随后已创建 Free-only Worker/SQLite Durable

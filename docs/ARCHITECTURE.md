@@ -165,8 +165,8 @@ Formal Lane: external clean snapshot + exact artifact
   要求 scope 集合精确相等，额外 scope 也不扩大本任务允许的资源或动作。本地已实现 owner-only
   crash recovery、过期 receipt 原子续期及 account-bound credential snapshot。真实精确 infra
   root 的 exact/inherited binding absence 已证明，generation-1 owner-marked receipt 已绑定
-  `default.enc`、account 与 permission hashes；四 GET preflight 已确认单一 account、既有
-  workers.dev subdomain、目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD` 与
+  `default.enc`、account 与 permission hashes；初始四 GET preflight 已确认单一 account、既有
+  workers.dev subdomain、目标 Worker当时不存在，并报告 `WorkersUsageModel=STANDARD` 与
   `BillingPlanVerified=false`。当前状态为 `PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /
   NOT_PRIMARY / AUTOMATION_PAUSED`；usage model
   不是 subscription receipt。经用户授权复用个人 Edge 既有登录态的只读 Billing → Subscriptions

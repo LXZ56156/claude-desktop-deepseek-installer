@@ -21,8 +21,8 @@
 9. `docs/IMPLEMENTATION_PLAN.md`：从已完成 P1 的当前基线到 VM-ready 的阶段门。
 10. `docs/VM_TEST_RELAY.md`：宿主机修复端、VM 只读测试端，以及 Fast Lane 日常
     自动修复与 Formal Lane 正式证据回传的 operator coordination 权威协议。
-11. `docs/REALTIME_RELAY_PROPOSAL.md`：Cloudflare realtime accelerator 的本地离线实现合同；
-    描述架构、协议、授权点和回滚，不表示资源已经 provision 或启用。
+11. `docs/REALTIME_RELAY_PROPOSAL.md`：Cloudflare realtime accelerator 的架构、协议、授权、
+    部署状态和回滚合同；动态事实仍以 `HANDOFF.md` 顶部、Git 与机器回读为准。
 12. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
     `docs/VM_ACCEPTANCE_PLAN.md`：发布候选、窄范围虚拟机校准与后续全面验收。
 
@@ -40,12 +40,17 @@ realtime relay 工作流已完成本地离线实现与质量门，而不是继�
 `REALTIME_RELAY_PROPOSAL.md` 的事实级别为
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY /
+CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /
+HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY /
+VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING /
 NOT_PRIMARY / AUTOMATION_PAUSED`。外部步骤 1–7 已获 Free-only
-授权，且用户已明确允许直接复用既有 encrypted keyring `default` OAuth profile；generation-1
-adoption receipt 与 Cloudflare 四 GET preflight 已完成，确认单账号、既有 workers.dev subdomain、
-目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage
-model 都不是 subscription receipt。经用户授权复用个人 Edge 既有登录态的只读 Dashboard 核对已
+授权，且用户已明确允许直接复用 encrypted keyring `default` OAuth profile；初始 generation-1
+adoption receipt 与 Cloudflare 四 GET preflight 已完成，当时确认目标 Worker 尚不存在。epoch
+update 时旧 token 无法 refresh，用户在个人 Edge 明确确认一次 OAuth，随后 generation-3 renewal
+与 postdeploy readback 成功，确认单账号、既有 workers.dev subdomain，以及同一既有 Worker 的
+active version、SQLite-backed Durable Object、14 项 bindings 和 workers.dev route；回读同时报告
+`WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage model 都不是 subscription
+receipt。经用户授权复用个人 Edge 既有登录态的只读 Dashboard 核对已
 确认 Billing → Subscriptions 未列出 Workers/Workers Paid；active 的 Teams Free Base 与无关 R2
 Paid 不把整个账号变成 Free，也不授权 relay 使用 R2。D-022 接受该人工观察作为
 当前 Free-only 部署依据；machine receipt/ticket、coordinated DPAPI 与 staging receipt
@@ -54,9 +59,11 @@ Paid 不把整个账号变成 Free，也不授权 relay 使用 R2。D-022 接受
 `ClientWebSocket`、时钟、出站网络和本地 relay 工作目录已就绪。Free-only Worker、SQLite-backed
 Durable Object、两项 secret binding、精确 postdeploy readback、Host HTTP smoke 和跨设备双向
 relay-only smoke 已完成。生产 WebSocket reconnect/Hibernation 尚未真实 E2E，因此 relay 不是主路径。
-2026-07-22 的 D-023 只授权一个有界 Fast Lane diagnostic cycle；activation launcher、
-VM DPAPI/task 和公网 canary 未完成前，两端仍保持 `PAUSED`，不能直接启用旧任务。
-该部署也不能启用持久 watcher、改变 automation
+2026-07-22 的 D-024 已用有界前台 cycle 取代 Automation create/readback/start 路径。
+两端 DPAPI credentials、VM-to-host deploy key、前台 runner 与干净
+`RELAY_ROOM_EPOCH=2` 已就绪；当前旧 Host/VM 对话先做公网 WebSocket canary，通过后
+才由两个新对话接管串行的 Host-fix/VM-read-only-offline-test 调试循环。
+现有 Automation 继续 `PAUSED`/`ABSENT` 且不是 canary 门。该部署也不能启用持久 watcher、改变 automation
 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
 本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，
 以后两者为准。
