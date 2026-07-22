@@ -5084,7 +5084,10 @@ function Invoke-CddsiRealtimeRelayWebSocketReceiveInternal {
                 try {
                     $Session.OperatorRelayNetworkRequestCount =
                     [long]$Session.OperatorRelayNetworkRequestCount + 1
-                    $socket.ConnectAsync($builder.Uri, $connectTimeout.Token).GetAwaiter().GetResult()
+                    [void]$socket.ConnectAsync(
+                        $builder.Uri,
+                        $connectTimeout.Token
+                    ).GetAwaiter().GetResult()
                 }
                 finally {
                     $connectTimeout.Dispose()

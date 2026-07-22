@@ -153,7 +153,7 @@ DPAPI、轮换演练、长时运行 SLO 和完整攻击矩阵是持久 watcher �
   边界。宿主机/CI/伪造上下文必须在任何真实 provider dispatch 前失败；设备 trust、
   real system evidence 与 development-retest Live smoke 仍由 disposable VM 验证。
 - `operator/realtime-relay/realtime-relay-client.ps1` 是独立 operator coordination
-  PowerShell 客户端入口；`tests/Contract/RealtimeRelay.Tests.ps1` 当前 67 个用例在
+  PowerShell 客户端入口；`tests/Contract/RealtimeRelay.Tests.ps1` 当前 68 个用例在
   PowerShell 7 与 Windows PowerShell 5.1 下覆盖 fake transport、publisher/watcher、
   断线重连与 resume、原子 state、ACL/no-reparse、DPAPI provider、固定 wake adapter
   和不执行 payload。所有产品 Live、真实 network/registry/process、outside-sandbox、

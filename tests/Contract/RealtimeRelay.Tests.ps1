@@ -2347,6 +2347,15 @@ Describe 'realtime relay DPAPI credential provisioning' {
 }
 
 Describe 'realtime relay live static dispatch security' {
+    It 'suppresses WebSocket connect task completion output before returning a transport descriptor' {
+        $receiveSource =
+        ${function:Invoke-CddsiRealtimeRelayWebSocketReceiveInternal}.ToString()
+        [regex]::Matches(
+            $receiveSource,
+            '(?ms)\[void\]\s*\$socket\.ConnectAsync\(.*?\)\.GetAwaiter\(\)\.GetResult\(\)'
+        ).Count | Should -Be 1
+    }
+
     BeforeEach {
         $script:LiveClockNow = $script:RealtimeNow
         $script:LiveCredentialValidateCount = 0
