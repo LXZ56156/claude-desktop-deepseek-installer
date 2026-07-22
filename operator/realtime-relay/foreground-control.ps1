@@ -275,7 +275,7 @@ function ConvertFrom-CddsiRealtimeRelayForegroundControlBody {
 
     $now = $NowUtc.ToUniversalTime()
     if ($expiresAt -le $createdAt -or
-        ($expiresAt - $createdAt).TotalSeconds -gt 300 -or
+        ($expiresAt - $createdAt).TotalSeconds -gt 600 -or
         $expiresAt -le $now -or
         $createdAt -gt $now.AddSeconds(120)) {
         return New-CddsiRealtimeRelayForegroundControlInvalidInternal -BodySha256 $bodySha256

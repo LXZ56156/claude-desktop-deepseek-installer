@@ -47,7 +47,7 @@ $script:CddsiRealtimeMaxCredentialBlobBytes = 2048
 $script:CddsiRealtimeMaxClockSkewSeconds = 90
 $script:CddsiRealtimeMaxTtlSeconds = 600
 $script:CddsiRealtimeMaxAssertionLifetimeSeconds = 600
-$script:CddsiRealtimePublisherTtlSeconds = 300
+$script:CddsiRealtimePublisherTtlSeconds = 600
 $script:CddsiRealtimeMaxSafeInteger = [long]9007199254740991
 $script:CddsiRealtimeLiveSessions = @{}
 $script:CddsiRealtimeNotificationProperties = @(
@@ -401,7 +401,7 @@ function Test-CddsiRealtimeRelayNotificationInternal {
             throw 'INVALID_EXPIRY'
         }
         if ($ValidationMode -ceq 'Strict' -and
-            [Math]::Abs(($created - $NowUtc).TotalSeconds) -gt $script:CddsiRealtimeMaxClockSkewSeconds) {
+            ($created - $NowUtc).TotalSeconds -gt $script:CddsiRealtimeMaxClockSkewSeconds) {
             throw 'CREATED_AT_OUTSIDE_WINDOW'
         }
         if ($ValidationMode -ceq 'Strict' -and $expiry -le $NowUtc) {

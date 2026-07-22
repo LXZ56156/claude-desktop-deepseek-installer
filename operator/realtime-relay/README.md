@@ -66,7 +66,7 @@ acts on a fixed message kind. No body or free text is executed.
 The lean foreground body is canonical UTF-8 JSON with exactly these fields:
 
 ```json
-{"Schema":"CDDsi_FOREGROUND_CONTROL_V1","Lane":"host-to-vm","MessageId":"00000000-0000-4000-8000-000000000000","CycleId":"00000000-0000-4000-8000-000000000000","Kind":"SESSION_START","SenderRole":"HostCoordinator","ProductCommit":"0000000000000000000000000000000000000000","TestProfile":"FOREGROUND_CANARY","ResultStatus":"NONE","ResultCode":"NONE","EvidencePath":null,"EvidenceSha256":null,"CreatedAtUtc":"2026-07-22T00:00:00Z","ExpiresAtUtc":"2026-07-22T00:05:00Z"}
+{"Schema":"CDDsi_FOREGROUND_CONTROL_V1","Lane":"host-to-vm","MessageId":"00000000-0000-4000-8000-000000000000","CycleId":"00000000-0000-4000-8000-000000000000","Kind":"SESSION_START","SenderRole":"HostCoordinator","ProductCommit":"0000000000000000000000000000000000000000","TestProfile":"FOREGROUND_CANARY","ResultStatus":"NONE","ResultCode":"NONE","EvidencePath":null,"EvidenceSha256":null,"CreatedAtUtc":"2026-07-22T00:00:00Z","ExpiresAtUtc":"2026-07-22T00:10:00Z"}
 ```
 
 The exact `Kind` set is `SESSION_START`, `SESSION_READY`, `TEST_REQUEST`,
@@ -77,7 +77,7 @@ The exact `Kind` set is `SESSION_START`, `SESSION_READY`, `TEST_REQUEST`,
 Evidence fields are both null or a repository-relative safe path plus a
 lowercase SHA-256. They never contain prose, commands, logs, or prompts. The
 sender role/lane pair is fixed, both UUIDs are lowercase UUIDv4, the product
-commit is lowercase 40-hex, and expiry is no more than five minutes after
+commit is lowercase 40-hex, and expiry is no more than ten minutes after
 creation. A control commit adds exactly one `outbox/<12 digits>-<MessageId>.json`
 body plus any separately hashed evidence files referenced by it.
 
@@ -224,7 +224,7 @@ object with `SchemaVersion`, `Lane`, `MessageId`, `PayloadSha256`, and `Commit`.
 The caller copies the lowercase UUIDv4 MessageId from the already-created
 immutable control-repository envelope, and the relay notification preserves it
 exactly. Repository ID, ref, sender role, sequence, previous hash, creation
-time, and five-minute expiry are fixed or derived locally. No report body,
+time, and ten-minute expiry are fixed or derived locally. No report body,
 model text, prompt, code, command, or caller-selected repository/ref can enter
 the canonical publish body. The supplied MessageId is correlation data, not
 sender or command authority: the notification remains untrusted until the

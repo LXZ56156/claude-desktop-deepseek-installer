@@ -67,6 +67,13 @@ Describe 'foreground control body pure parser and validator' {
         @($result.PSObject.Properties.Name) | Should -Be @(
             'Schema', 'Status', 'Code', 'BodySha256', 'Body'
         )
+
+        $tenMinuteBody = New-CddsiForegroundControlTestBody `
+            -ExpiresAtUtc '2026-07-22T00:10:00Z'
+        (ConvertFrom-CddsiRealtimeRelayForegroundControlBody `
+                -BodyBytes (ConvertTo-CddsiForegroundControlTestBytes -Text $tenMinuteBody) `
+                -ExpectedLane 'host-to-vm' -NowUtc $script:NowUtc).Status |
+            Should -BeExactly 'OK'
     }
 
     It 'accepts the opposite VM-to-host role and a paired safe evidence pointer' {
@@ -351,11 +358,11 @@ Describe 'foreground control body pure parser and validator' {
         $result.Body | Should -BeNullOrEmpty
     }
 
-    It 'enforces UTC-second timestamps, a five-minute TTL, expiry, and future skew' -TestCases @(
+    It 'enforces UTC-second timestamps, a ten-minute TTL, expiry, and future skew' -TestCases @(
         @{ Name = 'fractional creation'; Created = '2026-07-22T00:00:00.000Z'; Expires = '2026-07-22T00:05:00Z' }
         @{ Name = 'offset creation'; Created = '2026-07-22T08:00:00+08:00'; Expires = '2026-07-22T00:05:00Z' }
         @{ Name = 'nonpositive TTL'; Created = '2026-07-22T00:02:00Z'; Expires = '2026-07-22T00:02:00Z' }
-        @{ Name = 'long TTL'; Created = '2026-07-22T00:00:00Z'; Expires = '2026-07-22T00:05:01Z' }
+        @{ Name = 'long TTL'; Created = '2026-07-22T00:00:00Z'; Expires = '2026-07-22T00:10:01Z' }
         @{ Name = 'expired'; Created = '2026-07-21T23:59:00Z'; Expires = '2026-07-22T00:01:00Z' }
         @{ Name = 'future skew'; Created = '2026-07-22T00:03:01Z'; Expires = '2026-07-22T00:04:01Z' }
         @{ Name = 'invalid date'; Created = '2026-02-30T00:00:00Z'; Expires = '2026-02-30T00:01:00Z' }

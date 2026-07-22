@@ -828,6 +828,12 @@ Describe 'realtime relay notification contract' {
         $result.Code | Should -BeExactly 'VALID'
         $result.Message.RepositoryId | Should -BeExactly '1301870499'
         $raw | Should -Not -Match '(?i)command|powershell|prompt|script|logbody|freetext'
+
+        $delayed = New-CddsiRealtimeTestMessage `
+            -CreatedAt $script:RealtimeNow.AddMinutes(-9).ToString('yyyy-MM-ddTHH:mm:ssZ') `
+            -Expiry $script:RealtimeNow.AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        (Test-CddsiRealtimeRelayNotificationInternal `
+                -RawMessage $delayed -NowUtc $script:RealtimeNow).Valid | Should -BeTrue
     }
 
     It 'rejects non-string schema fields instead of allowing PowerShell coercion' {
@@ -862,6 +868,10 @@ Describe 'realtime relay notification contract' {
             -Expiry $script:RealtimeNow.AddSeconds(-1).ToString('yyyy-MM-ddTHH:mm:ssZ')
         (Test-CddsiRealtimeRelayNotificationInternal -RawMessage $expired -NowUtc $script:RealtimeNow).Code |
             Should -BeExactly 'MESSAGE_EXPIRED'
+        $tooLong = New-CddsiRealtimeTestMessage `
+            -Expiry $script:RealtimeNow.AddSeconds(601).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        (Test-CddsiRealtimeRelayNotificationInternal -RawMessage $tooLong -NowUtc $script:RealtimeNow).Code |
+            Should -BeExactly 'INVALID_TTL'
     }
 
     It 'uses the JavaScript-safe integer boundary for cross-language sequence values' {
@@ -1004,15 +1014,19 @@ Describe 'realtime relay fake watcher state machine' {
         @($harness.Tracker.DelayValues) | Should -Be @(1017)
     }
 
-    It 'permits only an exact state-backed late ACK replay after freshness windows' {
+    It 'allows delayed unexpired consumption and limits expired replay to exact state' {
         $cases = @(
             [pscustomobject][ordered]@{
                 CreatedAt = $script:RealtimeNow.AddSeconds(-120).ToString('yyyy-MM-ddTHH:mm:ssZ')
                 Expiry = $script:RealtimeNow.AddMinutes(5).ToString('yyyy-MM-ddTHH:mm:ssZ')
+                UnseenStatus = 'SUCCEEDED'
+                UnseenCode = 'REALTIME_WATCH_COMPLETE'
             },
             [pscustomobject][ordered]@{
                 CreatedAt = $script:RealtimeNow.AddMinutes(-10).ToString('yyyy-MM-ddTHH:mm:ssZ')
                 Expiry = $script:RealtimeNow.AddSeconds(-1).ToString('yyyy-MM-ddTHH:mm:ssZ')
+                UnseenStatus = 'BLOCKED'
+                UnseenCode = 'REALTIME_NOTIFICATION_INVALID'
             }
         )
         foreach ($case in $cases) {
@@ -1050,9 +1064,11 @@ Describe 'realtime relay fake watcher state machine' {
             )
             $blocked = Invoke-CddsiRealtimeRelayWatcher -RelayExecutionContext $unseen.Context `
                 -Lane host-to-vm -RuntimeAssertion $unseen.Assertion -MaxMessages 1
-            $blocked.Status | Should -BeExactly 'BLOCKED'
-            $blocked.Code | Should -BeExactly 'REALTIME_NOTIFICATION_INVALID'
-            $unseen.Tracker.WakeInvocationCount | Should -Be 0
+            $blocked.Status | Should -BeExactly $case.UnseenStatus
+            $blocked.Code | Should -BeExactly $case.UnseenCode
+            $unseen.Tracker.WakeInvocationCount | Should -Be $(
+                if ($case.UnseenStatus -ceq 'SUCCEEDED') { 1 } else { 0 }
+            )
         }
     }
 
@@ -1260,6 +1276,8 @@ Describe 'realtime relay fake publisher state machine' {
             $validation.Message.RepositoryId | Should -BeExactly $policy.RepositoryId
             $validation.Message.Ref | Should -BeExactly 'refs/heads/main'
             $validation.Message.SenderRole | Should -BeExactly $policy.SenderRole
+            ([DateTimeOffset]$validation.Message.Expiry -
+                [DateTimeOffset]$validation.Message.CreatedAt).TotalSeconds | Should -Be 600
             $validation.Message.PSObject.Properties.Name | Should -Not -Contain 'Prompt'
             Assert-CddsiRealtimeZeroMetrics -Result $result
         }

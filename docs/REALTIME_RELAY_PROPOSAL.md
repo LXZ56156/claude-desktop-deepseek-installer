@@ -225,7 +225,7 @@ watcher 只能把验证通过的固定事件映射到预先登记的 runner verb
 assertion。调用方只能提交恰好包含 `SchemaVersion`、`Lane`、`MessageId`、`PayloadSha256`、
 `Commit` 的固定 pointer；其中小写 UUIDv4 `MessageId` 必须复制自已创建且不可变的 control-repo
 envelope，随后仍由消费端 Git `Poll` 二次验证。RepositoryId、ref、sender role、sequence、
-previous hash、创建时间和五分钟 expiry 均由本地固定策略或持久状态派生。客户端必须在首次
+previous hash、创建时间和十分钟 expiry 均由本地固定策略或持久状态派生。客户端必须在首次
 HTTP 之前原子保存规范 body 与其
 SHA-256。响应丢失、进程重启或 TTL 已过时仍只能重发相同 bytes/MessageId；只有精确绑定该消息的
 `201/PUBLISHED` 或 `200/PUBLISHED_IDEMPOTENT` 才能推进 publisher sequence/hash 并清除 pending。
