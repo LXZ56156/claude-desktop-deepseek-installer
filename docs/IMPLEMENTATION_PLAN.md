@@ -1,6 +1,6 @@
 # 实现计划
 
-更新日期：2026-07-21
+更新日期：2026-07-22
 
 ## 总目标
 
@@ -29,7 +29,7 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | P10A-0A | 双机 Fast Lane MVP 前置门 | **CONTROLLED_PAUSE**；所有旧 bundle/prompt superseded，不得恢复旧 bootstrap/产品 integration | relay-only VM smoke 可独立进行；日后是否从新 clean commit 重新 finalization 另行决定 |
-| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED** | Free-only HTTP 与跨设备 read/ACK 已通过；补生产 WebSocket reconnect/Hibernation E2E 后再评审是否成为主路径，不改变 P10/P11/P12 门 |
+| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED** | D-023 只授权一个有界 diagnostic cycle；先补 activation launcher、VM DPAPI/task 与公网 canary，再按 Host→VM 启用并在终态自动暂停，不改变 P10/P11/P12 门 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -69,6 +69,14 @@ VM task 若存在也必须保持 `PAUSED`。没有可靠 VM receipt 时不得推
 创建。本工作包已实施纯本地、DevelopmentOnly watcher 和独立 infra 源码；D-022
 现已允许创建已授权的 Free-only Cloudflare 资源并访问 VM 做 relay-only smoke，但不触发
 automation、不执行产品 Live。
+
+2026-07-22 的 D-023 取代“automation 永久不恢复”的当前意图，但没有把现有
+`PAUSED` 任务变成可执行入口。宿主任务仍绑定旧 commit 且只会返回
+`FAST_LANE_HOST_PREREQUISITES_UNPROVISIONED`；VM 也没有持久 credential、watcher
+或任务 readback。最短实现顺序固定为：薄 activation/canary launcher、两端 DPAPI
+credential 与 VM task（仍暂停）、公网双向/错误身份/重连/payload-not-executed
+canary、原位重绑当前最终提交，然后只启用一个 CycleId 的单轮诊断。任何终态后
+两端自动回到 `PAUSED`。这条恢复不进入产品 Live、Formal P10A/P10B/P11 或 P12。
 
 2026-07-21 经用户授权，只读复用其个人 Edge 既有登录态查看 Cloudflare Billing →
 Subscriptions：未列出 Workers/Workers Paid，另列出 active 的 Teams Free Base 与无关 R2 Paid。
@@ -845,7 +853,8 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
    R2 Paid。D-022 已取消 machine Billing receipt 的阻断权；Free-only Worker/DO、两项 secret
    binding、endpoint、postdeploy readback、Host HTTP 与跨设备最小 smoke evidence 已完成。
    生产 WebSocket reconnect/Hibernation 尚未真实 E2E，状态是
-   `PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`。
+   `PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
+   ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED`。
 - Free-only GET preflight 只记录 `default_usage_model=standard` 并明确输出
   `BillingPlanVerified=false`；任何 usage model 都不能充当 subscription receipt。Dashboard 人工
   观察不把整个账号称为 Free；R2 Paid 不授权 relay 使用 R2。既有 workers.dev

@@ -1,6 +1,7 @@
 # CDDsi realtime relay operator client
 
-Status: **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY /
+Status: **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /
+AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY /
 AUTOMATION_PAUSED**.
 
 This directory is an operator-coordination plane. It is DevelopmentOnly, is not
@@ -8,6 +9,23 @@ loaded by the product bootstrap, and is excluded from every release package.
 The existing protected-history control repositories and their minute polling
 remain the durable audit path and fallback. HostCoordinator and VM automation
 remain `PAUSED`.
+
+## D-023 bounded automation recovery
+
+The user has authorized one bounded Fast Lane diagnostic cycle. This does not
+make the existing task runnable: the Host task is bound to an old commit and a
+static `UNPROVISIONED` precheck, while the VM has no persistent relay secret,
+watcher, or automation readback. This directory also exposes library entry
+points rather than a production activation launcher.
+
+The next implementation is therefore a thin activation/canary launcher plus a
+one-use VM DPAPI provisioning handoff. Both tasks remain `PAUSED` while public
+WebSocket reconnect/resume, both allowed directions, wrong identity/lane,
+payload non-execution, and secret scanning are verified. Only then may the
+Host task and VM task start, in that order, for one fixed CycleId. Either a
+terminal acknowledgement, stop, failure, block, or timeout returns both tasks
+to `PAUSED`. The result remains diagnostic and grants no product Live, Formal
+P10A/P10B/P11, merge, release, promotion, or P12 authority.
 
 ## D-022 lean delivery profile
 

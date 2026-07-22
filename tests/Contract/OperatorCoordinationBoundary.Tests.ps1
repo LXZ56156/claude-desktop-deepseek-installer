@@ -52,7 +52,8 @@ Describe 'operator coordination static isolation boundary' {
         foreach ($requiredText in @(
             'LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /'
             'WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /'
-            'CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED'
+            'CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /'
+            'ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED'
             'invoke-vm-smoke.ps1 -PackagePath'
             'Cloudflare Worker + SQLite-backed Durable Object + WebSocket Hibernation'
             '`host-to-vm`'
@@ -85,7 +86,8 @@ Describe 'operator coordination static isolation boundary' {
             [Text.UTF8Encoding]::new($false, $true)
         )
         foreach ($requiredText in @(
-            'PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY /'
+            'PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /'
+            'AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY /'
             'AUTOMATION_PAUSED'
             '`invoke-vm-smoke.ps1 -PackagePath`'
             'New-CddsiRealtimeRelayLivePublisher'

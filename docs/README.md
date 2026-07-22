@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-21
+更新日期：2026-07-22
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -40,7 +40,8 @@ realtime relay 工作流已完成本地离线实现与质量门，而不是继�
 `REALTIME_RELAY_PROPOSAL.md` 的事实级别为
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`。外部步骤 1–7 已获 Free-only
+CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY /
+NOT_PRIMARY / AUTOMATION_PAUSED`。外部步骤 1–7 已获 Free-only
 授权，且用户已明确允许直接复用既有 encrypted keyring `default` OAuth profile；generation-1
 adoption receipt 与 Cloudflare 四 GET preflight 已完成，确认单账号、既有 workers.dev subdomain、
 目标 Worker 不存在，并报告 `WorkersUsageModel=STANDARD / BillingPlanVerified=false`。任何 usage
@@ -53,6 +54,8 @@ Paid 不把整个账号变成 Free，也不授权 relay 使用 R2。D-022 接受
 `ClientWebSocket`、时钟、出站网络和本地 relay 工作目录已就绪。Free-only Worker、SQLite-backed
 Durable Object、两项 secret binding、精确 postdeploy readback、Host HTTP smoke 和跨设备双向
 relay-only smoke 已完成。生产 WebSocket reconnect/Hibernation 尚未真实 E2E，因此 relay 不是主路径。
+2026-07-22 的 D-023 只授权一个有界 Fast Lane diagnostic cycle；activation launcher、
+VM DPAPI/task 和公网 canary 未完成前，两端仍保持 `PAUSED`，不能直接启用旧任务。
 该部署也不能启用持久 watcher、改变 automation
 状态或绕过现有 Git control repository、Formal Lane 与 P12 人工门。
 本文及其他稳定设计文档中的“已实现”摘要若与 `HANDOFF.md` 顶部或实际机器证据冲突，

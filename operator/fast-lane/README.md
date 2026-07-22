@@ -21,7 +21,8 @@ product integration, reset/test loop, product Live, or either automation.
 The independent work item in `docs/REALTIME_RELAY_PROPOSAL.md` now has status
 `LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`. A pure
+CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY /
+NOT_PRIMARY / AUTOMATION_PAUSED`. A pure
 PowerShell DevelopmentOnly publish/watch/fixed-wake client exists under
 `operator/realtime-relay/`; its exact client, threat, credential rotation,
 rollback, cleanup, and troubleshooting contract is in
@@ -42,6 +43,10 @@ printing identity or token. The Free-only Worker/SQLite Durable Object and two s
 then deployed at `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`; exact postdeploy
 readback, Host dual-role HTTP smoke, and cross-device relay-only smoke passed. Production WebSocket
 reconnect/Hibernation remains unverified, so the relay is not primary and automation stays paused.
+D-023 authorizes one bounded diagnostic cycle, but no existing task is activation-ready:
+the Host task is stale and fail-closed, and the VM has no persistent relay credential,
+watcher, or task readback. A thin launcher, VM DPAPI provisioning, and public canary must
+complete before the Host and then VM task may run for that single cycle and return to paused.
 With explicit user authorization, the existing signed-in personal Edge profile
 was used only to read Billing → Subscriptions. Workers/Workers Paid was not listed; active Teams
 Free Base and unrelated R2 Paid entries were listed. No account ID, email, address, payment method,

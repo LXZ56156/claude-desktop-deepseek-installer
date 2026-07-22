@@ -3,7 +3,8 @@
 状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
 WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED**
+CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
+ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED**
 
 静态产品/Release 分类：**LOCAL_OFFLINE_IMPLEMENTATION / NOT_PROVISIONED / NOT_ACTIVE**
 （DevelopmentOnly；外部授权与认证进度只由上方动态状态及 `docs/HANDOFF.md` 表达）。
@@ -42,6 +43,18 @@ relay-only smoke。用户回传的 `VM_RELAY_READINESS_V1` 为 `Ready=true`；VM
 PowerShell 7、Git、`ClientWebSocket`、时钟、GitHub/`workers.dev` 443 连通和本地
 relay state 目录均已就绪。该准备状态不恢复旧 bootstrap/产品 integration，也不启用
 HostCoordinator/VM automation。
+
+## D-023 单轮自动诊断决定（2026-07-22）
+
+用户已明确要求开始自动化测试。当前授权只恢复一个固定 CycleId 的 Fast Lane
+diagnostic cycle；它不把旧 automation prompt、旧 onboarding 或产品 Live 恢复为
+可执行状态。现有宿主任务仍绑定旧 commit 并带 `UNPROVISIONED` 静态门，VM 也没有
+持久 secret/watcher/task readback，因此状态是 `ACTIVATION_NOT_READY`，不能直接取消暂停。
+
+下一实现只补薄 activation/canary launcher、VM 一次性 DPAPI provisioning、两端 task
+readback 与公网双向/错误身份/断线 resume/payload-not-executed canary。通过后按 Host、VM
+顺序启动一轮，任一终态后自动回到 `PAUSED`。Formal P10A/P10B/P11、merge、release、
+promotion 与 P12 仍不在本授权内。
 
 ## 问题陈述
 
@@ -485,7 +498,8 @@ readiness 均已完成。Free-only endpoint
 `https://cddsi-realtime-relay.lizixuan6383828.workers.dev`、Worker、SQLite-backed Durable Object、
 两项 secret binding、postdeploy 精确回读、Host dual-role HTTP smoke 和跨设备双向 read/ACK
 均已完成，未记录 secret。生产 WebSocket reconnect/Hibernation 尚未真实公网 E2E，因此本文
-状态为 **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED**。
+状态为 **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
+ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED**。
 
 ## 官方技术参考
 

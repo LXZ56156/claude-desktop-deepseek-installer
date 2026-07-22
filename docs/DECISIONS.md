@@ -1,6 +1,6 @@
 # 决策记录
 
-更新日期：2026-07-21
+更新日期：2026-07-22
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
 才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。
@@ -38,6 +38,7 @@
 | D-020 | 双机 Codex 使用分权 relay 与分层 clean-start | 冻结 |
 | D-021 | GitHub Free public visibility 迁移 | 冻结 |
 | D-022 | Realtime relay 通信优先与风险成比例 | 冻结 |
+| D-023 | 一次性 Fast Lane 自动诊断恢复 | 冻结 |
 
 ## D-001：首选 managed configuration
 
@@ -368,3 +369,30 @@ D-022 只放宽 realtime relay operator coordination 的交付路径，不放宽
 Live 边界、P10/P11/P12 发布门或 D-003/D-010 的产品 API Key 合同。早期 relay
 文档中与本决定冲突的“未有 machine receipt/DPAPI 所以不得部署”表述，均视为
 已被本决定取代的历史硬化方案。
+
+## D-023：一次性 Fast Lane 自动诊断恢复
+
+**状态：冻结（2026-07-22）**
+
+用户已明确授权开始自动化测试。本决定仅恢复一次有界的 Fast Lane 自动诊断循环，
+不恢复任何旧 onboarding ZIP/prompt、旧 VM bootstrap、通用产品 integration 或产品
+Live。结果只属于 diagnostic evidence，不能作为 P10A 事实、P10B 候选或 P11 PASS。
+
+执行顺序固定为：
+
+1. 在 VM 当前用户下完成一次性 relay secret 导入并写入 DPAPI CurrentUser；明文交接
+   文件必须位于仓库外、仅 owner 可读，并在首次网络前删除，secret 不进入 prompt、
+   日志、Git、报告或 evidence。
+2. 从 VM 设备创建或原位更新唯一 VmTester automation；HostCoordinator 与 VmTester
+   均先保持 `PAUSED`。只有持久 credential、固定 endpoint/client binding、单任务
+   readback、双向 publish/watch/ACK、断线 resume、权限负测、payload 不执行、secret
+   scan 为 0 和 Git fallback canary 全部通过，才可激活。
+3. canary 通过后按 HostCoordinator、VmTester 的顺序启动，只处理一个已冻结 CycleId
+   的一轮 Fast Lane `TEST_REQUEST`。VM 仍只读产品仓库，不得修改、提交或推送产品
+   代码；relay 或自由文本不得成为命令。
+4. `HOST_ACK`、`STOP`、失败、阻断或超时任一发生后，两端 automation 都必须自动回到
+   `PAUSED`。本次授权随该轮终态消耗，不得自行创建下一轮、自动重试修复或保持常驻。
+
+本决定不要求为该 diagnostic cycle 补建 Formal Lane 的 snapshot receipt、CAS 或签名，
+但也不授予 Formal P10A、P10B 构建、P11、自动 merge、release、promotion 或越过 P12
+的任何权限。上述正式阶段继续按 D-020 及对应计划 fail closed。

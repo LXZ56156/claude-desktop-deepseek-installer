@@ -7,7 +7,18 @@
 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
 WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
-CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED。**
+CROSS_DEVICE_SMOKE_PASSED / AUTOMATION_RESUME_AUTHORIZED /
+ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED。**
+
+2026-07-22 用户已冻结 D-023，明确要求开始一次有界的 Fast Lane 自动诊断。
+这不是 P10A/P11，也不授权产品 Live、自动 merge、release 或 promotion。当前仍不能
+直接启用既有宿主任务：其 prompt 绑定旧 commit 且静态预检仍为
+`UNPROVISIONED`；VM 侧也没有持久 relay secret、watcher 或可信 automation
+readback。仓库目前只有底层 watcher/publisher/DPAPI 函数，没有可直接运行的生产
+activation launcher。因此下一执行项是补一个薄的 activation/canary 入口、轮换并
+一次性下发 VmTester secret、在 VM 创建仍为 `PAUSED` 的唯一任务，再完成公网
+WebSocket reconnect、双向权限和 payload-not-executed canary。通过后只启用一个
+CycleId 的单轮诊断，并在终态自动回到 `PAUSED`；不得把旧任务直接改为运行。
 
 2026-07-21 用户已冻结 D-022：realtime relay 以尽快打通 Host/VM 通信为
 首要目标，控制与现实风险成比例。machine Billing receipt/ticket、coordinated

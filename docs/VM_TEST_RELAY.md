@@ -1,6 +1,6 @@
 # 宿主机与 VM Codex 测试中继协议
 
-更新日期：2026-07-21
+更新日期：2026-07-22
 
 ## 定位与权威范围
 
@@ -48,6 +48,19 @@ D-022 已将 machine receipt/ticket、coordinated DPAPI/staging receipt 降为 o
 与跨设备 HTTP relay smoke 已完成；生产 WebSocket reconnect/Hibernation 仍待真实 E2E。该结果
 不改变产品 Live 和 automation 暂停。
 暂停后的精确事实和恢复条件只看 `HANDOFF.md` 顶部与实际 Git/remote/PR/CI/automation/evidence。
+
+## 2026-07-22 D-023 单轮自动诊断恢复
+
+用户已授权开始自动化测试，但范围只是一轮有界 Fast Lane diagnostic cycle。
+现有宿主 automation 仍是旧 commit 绑定的 fail-closed prompt；VM 没有持久
+VmTester secret、watcher 或 task readback，所以不得把旧任务直接取消暂停。
+
+下一执行顺序是：实现薄 activation/canary launcher；将新 VmTester capability 通过
+仓库外、owner-only、一次性文件导入 VM 的 DPAPI CurrentUser；创建唯一且仍为
+`PAUSED` 的 VM task；原位重绑宿主任务；完成公网双向、错身份/错方向、断线 resume、
+payload 不执行与 secret scan canary。全部通过后按 HostCoordinator、VmTester 顺序
+启用，只消费一个 CycleId；`HOST_ACK`、`STOP`、失败、阻断或超时后两端自动回到
+`PAUSED`。本轮结果只能是 diagnostic evidence，不是 P10A/P10B/P11 或发布依据。
 
 ## 暂停前实现快照（历史；不可执行）
 
@@ -163,7 +176,8 @@ DevelopmentOnly operator plane 中的纯 PowerShell 客户端。完整协议、�
 `REALTIME_RELAY_PROPOSAL.md`。当前状态严格为 `LOCAL_GATES_PASSED /
 EXTERNAL_AUTHORIZED_FREE_ONLY / AUTHENTICATED_READ_ONLY /
 BILLING_DASHBOARD_REVIEWED / WORKERS_PAID_NOT_LISTED /
-VM_RELAY_READY / PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / NOT_PRIMARY / AUTOMATION_PAUSED`；用户已授权
+VM_RELAY_READY / PROVISIONED / CROSS_DEVICE_SMOKE_PASSED /
+AUTOMATION_RESUME_AUTHORIZED / ACTIVATION_NOT_READY / NOT_PRIMARY / AUTOMATION_PAUSED`；用户已授权
 Free-only 外部门 1–7 项，并在知悉 scope 超集后明确允许直接复用既有 encrypted keyring
 `default` OAuth profile；真实精确 infra root 的 binding-absence proof、owner-marked adoption receipt
 与 GET-only preflight 已完成，脱敏 Dashboard 人工核对也已完成。Free-only endpoint
