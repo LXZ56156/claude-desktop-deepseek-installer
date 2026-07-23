@@ -305,7 +305,7 @@ Describe 'P1 isolation evidence contract' {
         $failedTests = @(
             [pscustomobject][ordered]@{
                 RelativePath = $testFiles[0]
-                StartLine = 2783L
+                StartLine = 2800L
                 Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
             }
         )
@@ -344,7 +344,7 @@ Describe 'P1 isolation evidence contract' {
 
         $evidence.SchemaVersion | Should -Be 2
         $evidence.Pester.FailedCount | Should -Be 1
-        $evidence.Pester.FailedTests[0].StartLine | Should -Be 2783
+        $evidence.Pester.FailedTests[0].StartLine | Should -Be 2800
         $evidence.Pester.FailedTestEvidenceTruncated | Should -BeFalse
     }
 

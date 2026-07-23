@@ -436,6 +436,18 @@ function ConvertTo-CddsiSafeDiagnosticText {
     return $safe
 }
 
+function Get-CddsiHarnessPathDisclosurePattern {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $normalized = $Path.Replace('\', '/')
+    $segments = $normalized.Split(
+        [char[]]@('/'),
+        [System.StringSplitOptions]::None)
+    return (@($segments | ForEach-Object {
+        [regex]::Escape([string]$_)
+    }) -join '[\\/]')
+}
+
 function Protect-CddsiHarnessText {
     param(
         [AllowNull()][string]$Text,
@@ -456,7 +468,15 @@ function Protect-CddsiHarnessText {
     foreach ($token in $PathTokens.Keys) {
         $value = [string]$PathTokens[$token]
         if (-not [string]::IsNullOrWhiteSpace($value)) {
-            $safe = [regex]::Replace($safe, [regex]::Escape($value), [string]$token, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            $pathPattern = Get-CddsiHarnessPathDisclosurePattern -Path $value
+            $safe = [regex]::Replace(
+                $safe,
+                $pathPattern,
+                [string]$token,
+                (
+                    [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+                    [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+                ))
         }
     }
     return ConvertTo-CddsiSafeDiagnosticText -Text $safe -MaximumLength $MaximumLength
@@ -476,7 +496,18 @@ function Test-CddsiSafeDiagnosticDisclosure {
     if (-not [string]::IsNullOrWhiteSpace($OwnershipToken) -and $Text.Contains($OwnershipToken)) { return $false }
     foreach ($token in $PathTokens.Keys) {
         $value = [string]$PathTokens[$token]
-        if (-not [string]::IsNullOrWhiteSpace($value) -and $Text.IndexOf($value, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $false }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $pathPattern = Get-CddsiHarnessPathDisclosurePattern -Path $value
+            if ([regex]::IsMatch(
+                    $Text,
+                    $pathPattern,
+                    (
+                        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+                        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+                    ))) {
+                return $false
+            }
+        }
     }
     return $true
 }

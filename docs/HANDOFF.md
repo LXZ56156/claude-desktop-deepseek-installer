@@ -1,13 +1,71 @@
 # 新任务交接
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 ## 当前动态状态（唯一入口）
 
 **MANUAL_HOST_VM_REPORT_TRANSFER_ONLY / RELAY_RETIRED /
-AUTOMATION_PAUSED_OR_ABSENT / VM_BATCH_RETEST_VALIDATED_FAILED /
-HOST_TEST_EVIDENCE_REPAIR_GATES_PASSED / H02_ROOT_CAUSE_PENDING_VM_RETEST /
-NO_PRODUCT_LIVE_AUTHORITY。**
+AUTOMATION_PAUSED_OR_ABSENT / VM_BATCH_RETEST_PARTIALLY_VALIDATED_FAILED /
+VM_EVIDENCE_MANIFEST_PARTIAL / PRODUCT_DEFECT_ZERO /
+HOST_TEST_DEFECT_REPAIRS_VALIDATED / VM_RETEST_REQUIRED /
+VM_STANDARD_TEMP_ROOT_CORRECTION_REQUIRED / NO_PRODUCT_LIVE_AUTHORITY。**
+
+2026-07-24 已接收用户人工拖回的第三份 minimal H02/full-quality
+`VM_BATCH_TEST_REPORT_V1` 详细报告。附件为 18867 bytes，SHA-256
+`7493505c3ed0cbf2547b1f7af9811bfe5230eafec51cc5cd2816285a331fc1f8`；
+其 commit `f1f5525b142e3ec8c0c195b163c6d8f76dd378a3`、tree
+`e8b87a3d0b063d7120f6b0b79c900cc993ceaf71` 与接收时本地、upstream、
+remote 和 PR #1 head 精确一致。冻结 H02 源文件 hash 也一致，报告中的 25 项
+repo-relative path/source line/静态 `It` 名称全部重新绑定 AST，未截断。
+
+这份附件没有原始 `quality-failure-v3.json`、validation 文件、canonical manifest
+envelope/整体 hash，也没有完整 aggregate/PS5.1/timeout injection/Release DryRun；
+用户先前搬回的 18 项 TSV 只能逐项交叉绑定 length/hash/path。因此 external evidence
+consistency 只能记为 `PARTIAL`，aggregate 零指标仍是 null，不能声称完整 VM gate 或
+完整 evidence manifest 已通过。
+
+第三份报告和宿主机独立复现的分类结论：
+
+- `PRODUCT_DEFECT=0`。25 项 H02 不是 25 个产品缺陷，而是同一个 `BeforeAll` fixture
+  Git push 在 VM 批处理器深层 `TEMP` 中触发 `Filename too long`；产品断言未到达，
+  此前 keygen mock/ACL 的静态猜测已被排除。
+- Git fixture 漏掉接收端 bare repository 的长路径配置属于 `TEST_DEFECT`。宿主机在
+  141 字符 owner-scoped synthetic `TEMP` 精确复现后，为每个 Git 命令固定
+  `-c core.longpaths=true`，并只在 owner-marked bare fixture 的 local config 写入
+  `core.longpaths=true`；不读取或修改 system/global Git config。
+- safe failure 脱敏只识别反斜杠、却放过 Git 输出的正斜杠 VM 私有路径，属于第二个
+  `TEST_DEFECT`。路径 token 现对正斜杠、反斜杠和混合分隔符做
+  culture-invariant/ignore-case 等价匹配；`tr-TR`、PS7 和 WinPS 5.1 回归均覆盖。
+- 在同一人为深层 `TEMP` 跑完整 H02，会在固定
+  `CDDsi\FastLane\packages|credentials` 产品合同路径继续触发 MAX_PATH；缩短这些
+  安全绑定名称会正确 fail closed，不能作为修复。该项保持 `ENVIRONMENT_BLOCKER`：
+  下一轮 VM controller 必须让标准 `scripts/check.ps1` 使用正常 OS temporary root，
+  不得把 `TEMP/TMP` 再嵌进 evidence run-root；标准门自身会创建、记账并清理
+  owner-marked HostSandbox。
+- cleanup 后未另存完整 H02 role evidence 仍是 `NOT_IMPLEMENTED` 诊断增强；outer v3
+  已携带 source-bound 失败摘要，不把未实现项冒充本轮缺陷。
+
+本轮不恢复或调用任何 relay/Cloudflare/Automation 路径，不改产品公开函数、release
+文件集合或安全断言。宿主机 focused PS7/WinPS 5.1 脱敏/证据合同为 39/39，额外的
+双引擎 `tr-TR` source-bound 窄回归为 3/3。一次标准门尝试在 WinPS 5.1/H02 的
+`rejects duplicate IDs and tampered payload text without executing it` 第二次
+`git commit` 打开 fixture `.git/index` 时遇到一次 `Permission denied`；同一 index
+此前的 commit、pull 和 add 均成功，前序 ACL 测试尚未执行，且 bare longpaths local
+config 不引用 writer index。该目标测试随后在三个独立 WinPS 5.1 进程中 3/3，完整
+WinPS 5.1 H02 为 25/25，因此现有证据只支持一次性环境占用候选；没有据此猜改 ACL、
+加入 retry、放宽 timeout 或降低断言。
+
+最终标准双引擎 gate RunId
+`c94f68bf-8b55-49e9-9d7f-8f9cfde5edef` 在 PS7/WinPS 5.1 各通过 617/617，
+31/31 trusted processes 与 68 条 harness ledger 精确，cleanup 成功、仓库快照未变，
+所有真实访问、越界写入、secret、意外 ledger 和 mutation 指标为 0。30 秒 timeout
+injection RunId `00937ad2-26e5-4511-9dc8-d5b1d820e134` 在 PS7 static worker
+以 `QUALITY_WORKER_TIMEOUT` fail closed；没有断言失败，cleanup 成功、
+`RepositoryContentChanged=false` 且 safe disclosure 通过。Release Simulation
+DryRun 通过 39 个 package files，四层 secret findings 为 0，inventory/hash/
+deterministic ZIP 精确且 `Changed=false`。提交门只接受在本段事实写入后的最终
+tracked bytes 上再次通过标准 gate、timeout injection 和 Release DryRun，不得用较早
+运行替代。
 
 2026-07-23 已接收第二份用户人工搬运的 `VM_BATCH_TEST_REPORT_V1`。报告精确绑定
 commit `d808a18db63361fd76f61efd63379eeef1475fee` 和 tree

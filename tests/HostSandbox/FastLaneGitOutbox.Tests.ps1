@@ -177,6 +177,7 @@
             }
             $gitArguments = @(
                 '-c', 'core.hooksPath=NUL', '-c', 'credential.helper=',
+                '-c', 'core.longpaths=true',
                 '-c', 'gc.auto=0', '-c', 'maintenance.auto=false'
             ) + @($Arguments)
             $result = Invoke-DeterministicFixtureGitProcess `
@@ -218,6 +219,18 @@
                 $Executable -cne $script:GitExecutable -or
                 $TimeoutMilliseconds -lt 1 -or $TimeoutMilliseconds -gt 2000
             ) { throw 'DETERMINISTIC_GIT_GRANT_OR_REQUESTED_TIMEOUT_INVALID' }
+            $longPathConfigCount = 0
+            for ($index = 0; $index -lt ($Arguments.Count - 1); $index++) {
+                if (
+                    $Arguments[$index] -ceq '-c' -and
+                    $Arguments[$index + 1] -ceq 'core.longpaths=true'
+                ) {
+                    $longPathConfigCount++
+                }
+            }
+            if ($longPathConfigCount -ne 1) {
+                throw 'DETERMINISTIC_GIT_LONG_PATH_CONFIG_INVALID'
+            }
 
             $fullWorkingDirectory = [IO.Path]::GetFullPath($WorkingDirectory)
             $ownerRoots = @($script:FixtureRoots | Where-Object {
@@ -382,6 +395,7 @@
             ))
             [void](Invoke-FixtureGit @('-C', $work, 'branch', '-M', 'main'))
             [void](Invoke-FixtureGit @('init', '--bare', '--quiet', $remote))
+            [void](Invoke-FixtureGit @(('--git-dir=' + $remote), 'config', '--local', 'core.longpaths', 'true'))
             [void](Invoke-FixtureGit @('-C', $work, 'remote', 'add', 'origin', '../control.git'))
             [void](Invoke-FixtureGit @('-C', $work, 'push', '--quiet', '-u', 'origin', 'main'))
             $script:OutboxFixtureTemplateGenesis = (
@@ -2045,6 +2059,9 @@
         $commandProcessor = (Get-Command cmd.exe -CommandType Application -ErrorAction Stop).Source
         $systemRoot = Split-Path (Split-Path $commandProcessor -Parent) -Parent
         $runnerSource = [IO.File]::ReadAllText($script:RunnerPath)
+        $fixtureGitSource = (Get-Command Invoke-FixtureGit -CommandType Function `
+                -ErrorAction Stop).ScriptBlock.ToString()
+        $fixtureGitSource | Should -Match "'core\.longpaths=true'"
         $runnerSource | Should -Match 'info\.EnvironmentVariables\.Clear\(\);'
         $runnerSource | Should -Match "'core\.longpaths=true'"
         $runnerSource | Should -Match "'gc\.auto=0'"

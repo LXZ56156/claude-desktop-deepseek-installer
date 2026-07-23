@@ -280,6 +280,17 @@ repo-relative path、正整数 source line 与静态 `It` 名称；worker 和父
 绑定到 tracked 源码 AST，禁止把任意 runtime/error 文本带入可分享证据。超时仍是 fail
 closed，部分进度不能冒充完整 PASS。
 
+可分享失败文本中的 path token 必须把 Windows 反斜杠、Git 正斜杠和混合分隔符视为
+同一路径，并使用 culture-invariant 的 ordinal-like ignore-case 语义；token 化后的
+disclosure validator 必须按同一规则复验。不得因当前 culture（包括 `tr-TR`）不同而
+保留 owner root、repository、tool 或 VM 私有绝对路径。
+
+外层 VM 批处理器不得把标准 `scripts/check.ps1` 的 `TEMP/TMP` 再重定向到深层
+evidence run-root。标准门会在正常 OS temporary root 中自行创建唯一
+`cddsi-test-<GUID>`，再把 worker 的 profile、HOME、TEMP、state 和 evidence 全部指向
+该 owner-marked sandbox；controller 的报告/evidence root 可以独立存放，但不能增加
+产品固定 `CDDsi\FastLane\packages|credentials` 路径的嵌套深度。
+
 ## Git 和开发依赖隔离
 
 所有测试质量门中的 Git 子进程设置：
@@ -288,6 +299,10 @@ closed，部分进度不能冒充完整 PASS。
 - `GIT_CONFIG_GLOBAL` 指向 sandbox 空配置或 Windows null device。
 - `GIT_OPTIONAL_LOCKS=0`。
 - synthetic HOME/XDG。
+
+需要 local bare remote 的 deterministic fixture 还必须为每次 Git 调用设置
+command-local `core.longpaths=true`，并只在该 owner-marked bare repository 的 local
+config 固定同值，使本地 receive-pack 不继承或修改 system/global Git config。
 
 `bootstrap-dev.ps1` 已收敛为 verify-only 校验器：只检查仓库固定 Pester lock 与
 runtime tree，不下载、安装、导入或修改 PowerShellGet repository、CurrentUser

@@ -197,11 +197,38 @@ Describe 'P1 trusted HostSandbox harness' {
         $token = ('a' * 64 -join '')
         $paths = [ordered]@{ '<REPOSITORY_ROOT>' = 'C:\Source Repo' }
         $apiKey = 'sk-' + ('z' * 32 -join '')
-        $safe = Protect-CddsiHarnessText -Text ('path=C:\Source Repo token=' + $token + ' key=' + $apiKey) -PathTokens $paths -OwnershipToken $token
+        $gitRenderedPath = 'C:/Source Repo/nested\objects'
+        (Test-CddsiSafeDiagnosticDisclosure -Text ('path=' + $gitRenderedPath) `
+                -PathTokens $paths) | Should -BeFalse
+
+        $safe = Protect-CddsiHarnessText `
+            -Text ('path=C:\Source Repo git=' + $gitRenderedPath +
+                ' token=' + $token + ' key=' + $apiKey) `
+            -PathTokens $paths `
+            -OwnershipToken $token
         $safe | Should -Match '<REPOSITORY_ROOT>'
         $safe | Should -Match '\[OWNERSHIP_TOKEN\]'
         $safe | Should -Match '\[REDACTED\]'
         $safe | Should -Not -Match [regex]::Escape($apiKey)
+        $safe | Should -Not -Match [regex]::Escape('C:\Source Repo')
+        $safe | Should -Not -Match [regex]::Escape('C:/Source Repo')
+        (Test-CddsiSafeDiagnosticDisclosure -Text $safe -PathTokens $paths `
+                -OwnershipToken $token) | Should -BeTrue
+
+        $originalCulture = [Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [Threading.Thread]::CurrentThread.CurrentCulture =
+                [Globalization.CultureInfo]::GetCultureInfo('tr-TR')
+            $culturePaths = [ordered]@{ '<SANDBOX_ROOT>' = 'C:\INSTALL' }
+            $cultureSafe = Protect-CddsiHarnessText -Text 'path=c:/install/nested' `
+                -PathTokens $culturePaths
+            $cultureSafe | Should -BeExactly 'path=<SANDBOX_ROOT>/nested'
+            (Test-CddsiSafeDiagnosticDisclosure -Text 'path=c:/install/nested' `
+                    -PathTokens $culturePaths) | Should -BeFalse
+        }
+        finally {
+            [Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+        }
     }
 
     It 'removes ANSI, control, and bidirectional characters before redaction' {
@@ -261,7 +288,7 @@ Describe 'P1 trusted HostSandbox harness' {
                 FailedTests = @(
                     [pscustomobject][ordered]@{
                         RelativePath = 'tests/HostSandbox/HostSandbox.Tests.ps1'
-                        StartLine = 252L
+                        StartLine = 279L
                         Name = 'creates an exact machine-readable safe failure envelope'
                     }
                 )
@@ -325,7 +352,7 @@ Describe 'P1 trusted HostSandbox harness' {
         $roundTrip.Progress.CurrentFailedTestEvidenceTruncated | Should -BeFalse
         $roundTrip.Progress.CurrentFailedTests[0].RelativePath |
             Should -BeExactly 'tests/HostSandbox/HostSandbox.Tests.ps1'
-        $roundTrip.Progress.CurrentFailedTests[0].StartLine | Should -Be 252
+        $roundTrip.Progress.CurrentFailedTests[0].StartLine | Should -Be 279
         $roundTrip.Progress.CurrentFailedTests[0].Name |
             Should -BeExactly 'creates an exact machine-readable safe failure envelope'
         $roundTrip.Progress.TimedOut | Should -BeTrue
@@ -340,7 +367,7 @@ Describe 'P1 trusted HostSandbox harness' {
     It 'accepts only source-bound static failed-test summaries' {
         $failedTest = [pscustomobject][ordered]@{
             RelativePath = 'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
-            StartLine = 2783L
+            StartLine = 2800L
             Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
         }
 
