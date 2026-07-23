@@ -57,17 +57,22 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 
 ## 2026-07-23 手动 VM 批量报告工作流
 
-已接收的首份 `VM_BATCH_TEST_REPORT_V1` 精确绑定修复前 commit/tree，报告状态为
-`PARTIAL`。宿主机校验了环境与计数等式、各门终态和零写入/零真实访问/零 secret
-指标；因未搬回 evidence manifest 正文，只能把外部 evidence 完整性标为
-`PARTIAL`。
+首份 `VM_BATCH_TEST_REPORT_V1` 精确绑定修复前 commit/tree，已完成公开 wrapper、
+UTF-8、分片和 timeout evidence 批修。随后收到的最小重测报告精确绑定
+`d808a18db63361fd76f61efd63379eeef1475fee` / tree
+`fb19143c0e3fe6e133733bd55b274f20138b3ced`；附带 canonical manifest 正文的实际
+4911 UTF-8 bytes 和 SHA-256
+`9763c6a68ecee87059c7ba49fd98db5c7030a7f7c6a0448d9397ad4206c6fbdb`
+与报告一致。宿主机只能验证搬回的 manifest 正文，不能声称重新读取了 VM-local
+30 个 evidence 文件。
 
 本轮批修范围固定为：
 
 - 六个中英文公开包装器的稳定 process exit 与四字段摘要；
 - worker/parent 严格 UTF-8 和中文/非 BMP 行为回归；
 - 双引擎各 1 Static + 13 frozen Pester shards，替代单个 900 秒 monolithic worker；
-- 可外层留存的 schema v2 timeout partial progress。
+- 可外层留存的 schema v3 partial progress；非超时 shard 失败同时保留最多 32 项
+  双重源码绑定的安全测试标识。
 
 lifecycle、完整 HTTP fault、未来 GUI/UAC 与真实多进程场景继续标为
 `NOT_IMPLEMENTED` 或 `REQUIRES_EXTERNAL_SNAPSHOT`，本轮不推测实现产品 Live。
@@ -947,7 +952,8 @@ Automation 或 scheduler 前置。正式 P10A/P11 仍受外部 snapshot/CAS/sign
 P1 runner 已存在。`scripts/bootstrap-dev.ps1` 只验证固定 Pester tree；
 `scripts/check.ps1` 要求三个工具的绝对路径与 SHA-256，并在 owner-marked sandbox
 内运行双引擎各 1 Static + 13 frozen Pester shards 和隔离 Git；worker 使用 strict
-UTF-8 round-trip evidence，timeout 输出 schema v2 partial progress。任何依赖、工具
+UTF-8 round-trip evidence，失败输出 schema v3 partial progress；非超时 Pester 失败还
+绑定安全的 repo-relative test path、source line 与静态 `It` 名称。任何依赖、工具
 identity、shard partition、suite count、证据
 schema 或 ledger 漂移均 fail closed，不得退回继承真实 HOME 的临时入口。
 

@@ -60,7 +60,7 @@ $script:SecretFindingCount = $null
 $script:RepositoryContentChanged = $null
 $script:RepositoryParseCache = @{}
 $script:InitialRepositoryHashByPath = @{}
-$script:CddsiWorkerMeasurementRuleVersion = 'cddsi-worker-measurement-rules-v3'
+$script:CddsiWorkerMeasurementRuleVersion = 'cddsi-worker-measurement-rules-v4'
 
 function Get-RepositoryFiles {
     $inventoryFullPath = [System.IO.Path]::GetFullPath($RepositoryInventoryPath)
@@ -356,6 +356,60 @@ function Get-CddsiWorkerRequiredSuiteSummarySha256 {
     return Get-CddsiWorkerSequenceSha256 -Values $lines
 }
 
+function Get-CddsiWorkerFailedTestEvidence {
+    param(
+        [Parameter(Mandatory = $true)]$PesterResult,
+        [Parameter(Mandatory = $true)][string[]]$AllowedRelativePaths,
+        [ValidateRange(1, 64)][int]$MaximumEntries = 32
+    )
+
+    $failedTests = @($PesterResult.Tests | Where-Object { [string]$_.Result -ceq 'Failed' })
+    if ([long]$PesterResult.FailedCount -ne $failedTests.Count) {
+        throw 'Pester failed-test count does not match the result inventory.'
+    }
+    $entries = New-Object System.Collections.Generic.List[object]
+    foreach ($test in @($failedTests | Select-Object -First $MaximumEntries)) {
+        $file = if ($null -ne $test.ScriptBlock) { [string]$test.ScriptBlock.File } else { '' }
+        if ([string]::IsNullOrWhiteSpace($file) -or -not [System.IO.Path]::IsPathRooted($file)) {
+            throw 'Failed Pester test is missing an absolute source binding.'
+        }
+        $fullPath = [System.IO.Path]::GetFullPath($file)
+        if (-not $fullPath.StartsWith($script:Root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Failed Pester test source escaped the repository.'
+        }
+        $relativePath = $fullPath.Substring($script:Root.Length + 1).Replace('\', '/')
+        if ($AllowedRelativePaths -cnotcontains $relativePath) {
+            throw 'Failed Pester test source escaped the selected shard.'
+        }
+        $startLine = [long]$test.ScriptBlock.StartPosition.StartLine
+        if ($startLine -lt 1) { throw 'Failed Pester test is missing a positive source line.' }
+
+        $parsed = Get-CddsiWorkerRepositoryParse -Path $fullPath
+        if (@($parsed.Errors).Count -ne 0) { throw 'Failed Pester test source has syntax errors.' }
+        $commands = @($parsed.Ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.Extent.StartLineNumber -eq $startLine -and
+                $node.GetCommandName() -ceq 'It'
+        }, $true))
+        if ($commands.Count -ne 1 -or $commands[0].CommandElements.Count -lt 2 -or
+            $commands[0].CommandElements[1] -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
+            throw 'Failed Pester test name is not a unique static source literal.'
+        }
+        $sourceName = [string]$commands[0].CommandElements[1].Value
+        if ([string]::IsNullOrWhiteSpace($sourceName) -or $sourceName.Length -gt 512 -or
+            [string]$test.Name -cne $sourceName) {
+            throw 'Failed Pester test name does not match its static source literal.'
+        }
+        $entries.Add([pscustomobject][ordered]@{
+            RelativePath = $relativePath
+            StartLine    = $startLine
+            Name         = $sourceName
+        })
+    }
+    return $entries.ToArray()
+}
+
 function New-CddsiWorkerIsolationEvidenceV2 {
     param(
         [Parameter(Mandatory = $true)][string]$RunId,
@@ -556,7 +610,7 @@ function New-CddsiWorkerStaticEvidenceV1 {
     }
 }
 
-function New-CddsiWorkerPesterShardEvidenceV1 {
+function New-CddsiWorkerPesterShardEvidenceV2 {
     param(
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][ValidateSet('PowerShell7', 'WindowsPowerShell')][string]$Engine,
@@ -576,12 +630,36 @@ function New-CddsiWorkerPesterShardEvidenceV1 {
     if ($TestFiles.Count -eq 0 -or (Get-CddsiWorkerSequenceSha256 -Values $TestFiles) -cne $ShardPathsSha256) {
         throw 'Pester shard test-file binding drift.'
     }
-    $pesterNames = @('DurationMilliseconds', 'FailedCount', 'InconclusiveCount', 'NotRunCount', 'PassedCount', 'Result', 'SkippedCount')
+    $pesterNames = @(
+        'DurationMilliseconds', 'FailedCount', 'FailedTestEvidenceTruncated', 'FailedTests',
+        'InconclusiveCount', 'NotRunCount', 'PassedCount', 'Result', 'SkippedCount'
+    )
     if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Pester -ExpectedNames $pesterNames)) {
         throw 'Pester shard result does not match the exact schema.'
     }
     foreach ($name in @('DurationMilliseconds', 'FailedCount', 'InconclusiveCount', 'NotRunCount', 'PassedCount', 'SkippedCount')) {
         Assert-CddsiWorkerNonNegativeInteger -Value $Pester.$name -Name "Shard.Pester.$name"
+    }
+    if ($Pester.FailedTestEvidenceTruncated -isnot [bool]) {
+        throw 'Pester shard failed-test truncation flag must be Boolean.'
+    }
+    $failedTests = @($Pester.FailedTests)
+    $expectedFailedTestEvidenceCount = [Math]::Min([long]$Pester.FailedCount, 32L)
+    if ($failedTests.Count -ne $expectedFailedTestEvidenceCount -or
+        [bool]$Pester.FailedTestEvidenceTruncated -ne ([long]$Pester.FailedCount -gt 32L)) {
+        throw 'Pester shard failed-test evidence count drift.'
+    }
+    foreach ($failedTest in $failedTests) {
+        if (-not (Test-CddsiWorkerExactPropertySet -InputObject $failedTest -ExpectedNames @('Name', 'RelativePath', 'StartLine'))) {
+            throw 'Pester shard failed-test evidence schema drift.'
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$failedTest.Name) -or
+            ([string]$failedTest.Name).Length -gt 512 -or
+            [string]::IsNullOrWhiteSpace([string]$failedTest.RelativePath)) {
+            throw 'Pester shard failed-test evidence contains an empty or oversized binding.'
+        }
+        Assert-CddsiWorkerNonNegativeInteger -Value $failedTest.StartLine -Name 'Shard.Pester.FailedTests.StartLine'
+        if ([long]$failedTest.StartLine -lt 1) { throw 'Pester shard failed-test source line must be positive.' }
     }
     if ([string]::IsNullOrWhiteSpace([string]$Pester.Result)) { throw 'Pester shard result is missing.' }
     foreach ($suite in @($RequiredSuiteResults)) {
@@ -609,7 +687,7 @@ function New-CddsiWorkerPesterShardEvidenceV1 {
     }
 
     return [pscustomobject][ordered]@{
-        SchemaVersion         = 1
+        SchemaVersion         = 2
         EvidenceType         = 'CddsiWorkerPesterShardEvidence'
         RunId                = $RunId
         Engine               = $Engine
@@ -1445,14 +1523,19 @@ if ($WorkerRole -ceq 'PesterShard') {
     if ($null -ne $result.Duration) {
         $durationMilliseconds = [long][Math]::Ceiling(([TimeSpan]$result.Duration).TotalMilliseconds)
     }
+    $failedTestEvidence = @(Get-CddsiWorkerFailedTestEvidence `
+        -PesterResult $result `
+        -AllowedRelativePaths $selectedShard.Paths)
     $pesterMeasurement = [pscustomobject][ordered]@{
-        Result               = [string]$result.Result
-        PassedCount          = [long]$result.PassedCount
-        FailedCount          = [long]$result.FailedCount
-        SkippedCount         = [long]$result.SkippedCount
-        NotRunCount          = [long]$result.NotRunCount
-        InconclusiveCount    = [long]$result.InconclusiveCount
-        DurationMilliseconds = $durationMilliseconds
+        Result                      = [string]$result.Result
+        PassedCount                 = [long]$result.PassedCount
+        FailedCount                 = [long]$result.FailedCount
+        FailedTests                 = $failedTestEvidence
+        FailedTestEvidenceTruncated = [bool]([long]$result.FailedCount -gt 32L)
+        SkippedCount                = [long]$result.SkippedCount
+        NotRunCount                 = [long]$result.NotRunCount
+        InconclusiveCount           = [long]$result.InconclusiveCount
+        DurationMilliseconds        = $durationMilliseconds
     }
     $shardProvenance = [pscustomobject][ordered]@{
         MeasurementRuleVersion          = $script:CddsiWorkerMeasurementRuleVersion
@@ -1464,7 +1547,7 @@ if ($WorkerRole -ceq 'PesterShard') {
         EngineGrantSha256               = $engineGrantSha256Actual
         QualityShardPolicySha256        = $qualityShardPolicy.PolicySha256
     }
-    $shardEvidence = New-CddsiWorkerPesterShardEvidenceV1 `
+    $shardEvidence = New-CddsiWorkerPesterShardEvidenceV2 `
         -RunId $RunId `
         -Engine $EngineId `
         -ShardId $ShardId `

@@ -254,6 +254,19 @@ Describe 'P1 trusted HostSandbox harness' {
         $canary = 'CDDSI_SYNTHETIC_CANARY_00000000000000000000000000000110'
         $paths = [ordered]@{ '<REPOSITORY_ROOT>' = 'C:\Sensitive Repo' }
         $apiKey = 'sk-' + ('r' * 32 -join '')
+        $currentFailure = [pscustomobject]@{
+            Pester = [pscustomobject]@{
+                FailedCount = 1L
+                FailedTestEvidenceTruncated = $false
+                FailedTests = @(
+                    [pscustomobject][ordered]@{
+                        RelativePath = 'tests/HostSandbox/HostSandbox.Tests.ps1'
+                        StartLine = 252L
+                        Name = 'creates an exact machine-readable safe failure envelope'
+                    }
+                )
+            }
+        }
         $progress = New-CddsiQualityFailureProgress `
             -CompletedRoleEvidence @(
                 [pscustomobject]@{
@@ -272,6 +285,7 @@ Describe 'P1 trusted HostSandbox harness' {
             -CurrentWorkerDescriptor ([pscustomobject]@{
                 Engine = 'PowerShell7'; WorkerRole = 'PesterShard'; ShardId = 'C02'
             }) `
+            -CurrentWorkerFailureEvidence $currentFailure `
             -ExpectedWorkerCount 28 `
             -TimedOut $true
         $evidence = New-CddsiSafeFailureEvidence `
@@ -292,7 +306,7 @@ Describe 'P1 trusted HostSandbox harness' {
             'Progress', 'RepositoryContentChanged', 'RunId', 'SafeFailureDisclosure', 'SafeFailureMessage',
             'Scenario', 'SchemaVersion', 'Status'
         )
-        $evidence.SchemaVersion | Should -Be 2
+        $evidence.SchemaVersion | Should -Be 3
         $evidence.Status | Should -BeExactly 'FAILED_SAFE'
         $evidence.RepositoryContentChanged | Should -BeTrue
         $evidence.CleanupOutcome | Should -BeExactly 'RefusedUnsafeCleanup'
@@ -307,6 +321,13 @@ Describe 'P1 trusted HostSandbox harness' {
         $roundTrip.Progress.CompletedTestFileCount | Should -Be 2
         $roundTrip.Progress.CompletedPassedCount | Should -Be 17
         $roundTrip.Progress.CurrentShardId | Should -BeExactly 'C02'
+        $roundTrip.Progress.CurrentFailedCount | Should -Be 1
+        $roundTrip.Progress.CurrentFailedTestEvidenceTruncated | Should -BeFalse
+        $roundTrip.Progress.CurrentFailedTests[0].RelativePath |
+            Should -BeExactly 'tests/HostSandbox/HostSandbox.Tests.ps1'
+        $roundTrip.Progress.CurrentFailedTests[0].StartLine | Should -Be 252
+        $roundTrip.Progress.CurrentFailedTests[0].Name |
+            Should -BeExactly 'creates an exact machine-readable safe failure envelope'
         $roundTrip.Progress.TimedOut | Should -BeTrue
         (Assert-CddsiSafeFailureEvidence -Evidence $roundTrip -PathTokens $paths -OwnershipToken $token -CanaryValue $canary) |
             Should -BeTrue
@@ -316,20 +337,49 @@ Describe 'P1 trusted HostSandbox harness' {
         $json | Should -Not -Match [regex]::Escape('C:\Sensitive Repo')
     }
 
+    It 'accepts only source-bound static failed-test summaries' {
+        $failedTest = [pscustomobject][ordered]@{
+            RelativePath = 'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
+            StartLine = 2783L
+            Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+        }
+
+        (Assert-CddsiSafeFailedTestSummary `
+            -FailedTests @($failedTest) `
+            -FailedCount 1 `
+            -Truncated $false) | Should -BeTrue
+        (Assert-CddsiFailedTestSourceBinding `
+            -FailedTests @($failedTest) `
+            -RepositoryRoot $script:RepoRoot `
+            -AllowedRelativePaths @($failedTest.RelativePath)) | Should -BeTrue
+
+        $forged = $failedTest.PSObject.Copy()
+        $forged.Name = 'forged runtime text'
+        {
+            Assert-CddsiFailedTestSourceBinding `
+                -FailedTests @($forged) `
+                -RepositoryRoot $script:RepoRoot `
+                -AllowedRelativePaths @($failedTest.RelativePath)
+        } | Should -Throw
+    }
+
     It 'rejects timeout progress that is not an exact worker-plan prefix' {
         $invalid = [pscustomobject][ordered]@{
-            SchemaVersion          = 1
-            Phase                  = 'QualityWorker'
-            ExpectedWorkerCount    = 28
-            CompletedWorkerCount   = 1
-            CompletedWorkerIds     = @('PowerShell7/X99')
-            CompletedShardCount    = 1
-            CompletedTestFileCount = 1L
-            CompletedPassedCount   = 1L
-            CurrentEngine          = 'PowerShell7'
-            CurrentWorkerRole      = 'PesterShard'
-            CurrentShardId         = 'C02'
-            TimedOut               = $true
+            SchemaVersion                     = 2
+            Phase                             = 'QualityWorker'
+            ExpectedWorkerCount               = 28
+            CompletedWorkerCount              = 1
+            CompletedWorkerIds                = @('PowerShell7/X99')
+            CompletedShardCount               = 1
+            CompletedTestFileCount            = 1L
+            CompletedPassedCount              = 1L
+            CurrentEngine                     = 'PowerShell7'
+            CurrentWorkerRole                 = 'PesterShard'
+            CurrentShardId                    = 'C02'
+            CurrentFailedCount                = 0L
+            CurrentFailedTests                = @()
+            CurrentFailedTestEvidenceTruncated = $false
+            TimedOut                          = $true
         }
         { Assert-CddsiQualityFailureProgress -Progress $invalid } | Should -Throw
 

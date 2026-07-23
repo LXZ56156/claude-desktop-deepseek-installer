@@ -56,11 +56,11 @@ catch {
         try {
             $failureEvidence = $failureJson | ConvertFrom-Json -ErrorAction Stop
             if (
-                $failureEvidence.SchemaVersion -eq 2 -and
+                $failureEvidence.SchemaVersion -eq 3 -and
                 $failureEvidence.EvidenceType -ceq 'CddsiSafeFailureEvidence' -and
                 $failureEvidence.Status -ceq 'FAILED_SAFE'
             ) {
-                [Console]::Error.WriteLine('CDDSI_SAFE_FAILURE_EVIDENCE_V2=' + $failureJson)
+                [Console]::Error.WriteLine('CDDSI_SAFE_FAILURE_EVIDENCE_V3=' + $failureJson)
             }
         }
         catch {

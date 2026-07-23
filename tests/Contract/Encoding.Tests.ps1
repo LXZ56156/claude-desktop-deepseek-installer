@@ -77,6 +77,6 @@ Describe 'entrypoint encoding contracts' {
         $runnerText | Should -Match '\$workerProcessResult\.StdOut\.Contains\(\$utf8RoundTripMarker\)'
         $runnerText | Should -Match '\$workerProcessResult\.StdErr\.Contains\(\$utf8RoundTripMarker\)'
         $checkText | Should -Match 'Initialize-CddsiConsoleEncoding \| Out-Null'
-        $checkText | Should -Match 'CDDSI_SAFE_FAILURE_EVIDENCE_V2='
+        $checkText | Should -Match 'CDDSI_SAFE_FAILURE_EVIDENCE_V3='
     }
 }

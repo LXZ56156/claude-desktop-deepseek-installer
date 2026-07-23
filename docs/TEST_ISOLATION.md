@@ -273,9 +273,12 @@ L2/L3 不能在父进程临时修改环境后继续执行，而应以 `-NoProfil
 
 每个 worker 都在 logger 单一进程级 UTF-8 入口之后向 stdout/stderr 写固定中文与
 非 BMP round-trip marker，父进程用严格 UTF-8 decoder 验回。worker 超时时必须杀死
-可用的完整进程树、有界 drain 管道，并输出 `CddsiSafeFailureEvidence` schema v2：
-包括当前 engine/role/shard、已完成 worker 的精确计划前缀、测试文件和通过断言计数；
-超时仍是 fail closed，部分进度不能冒充完整 PASS。
+可用的完整进程树、有界 drain 管道，并输出 `CddsiSafeFailureEvidence` schema v3：
+包括当前 engine/role/shard、已完成 worker 的精确计划前缀、测试文件和通过断言计数。
+非超时 Pester shard 失败还必须从 worker evidence 文件读取最多 32 项
+repo-relative path、正整数 source line 与静态 `It` 名称；worker 和父进程分别把名称重新
+绑定到 tracked 源码 AST，禁止把任意 runtime/error 文本带入可分享证据。超时仍是 fail
+closed，部分进度不能冒充完整 PASS。
 
 ## Git 和开发依赖隔离
 

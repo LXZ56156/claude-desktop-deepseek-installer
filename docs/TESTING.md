@@ -248,8 +248,10 @@ if ($releaseEvidence.Status -cne 'SUCCEEDED' -or $releaseEvidence.Changed -ne $f
 
 `ProcessTimeoutSeconds` 是每个冻结 worker 的上限，不是整套双引擎的一刀切预算。
 超时杀死可用进程树并有界 drain，外部 stderr 输出
-`CDDSI_SAFE_FAILURE_EVIDENCE_V2=<json>`；JSON 包含当前 engine/role/shard、已完成
-worker 计划前缀、test-file 与 passed counts。部分证据只能诊断，不能冒充 PASS。
+`CDDSI_SAFE_FAILURE_EVIDENCE_V3=<json>`；JSON 包含当前 engine/role/shard、已完成
+worker 计划前缀、test-file 与 passed counts。非超时 Pester 失败另含最多 32 个由
+worker/parent 双重绑定到 tracked static `It` 源码的 repo-relative path、source line
+和测试名；不包含任意错误正文。部分证据只能诊断，不能冒充 PASS。
 
 `check.ps1` 只接受绝对工具路径与对应 SHA-256，并由 HostSandbox runner 间接
 运行 Pester 和 Git；不继承真实用户 HOME/AppData/Temp、Git 配置或一般

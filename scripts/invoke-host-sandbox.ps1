@@ -501,11 +501,85 @@ function Get-CddsiUnicodeSafeTail {
     return $Text.Substring($start)
 }
 
+function Assert-CddsiSafeFailedTestSummary {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$FailedTests,
+        [Parameter(Mandatory = $true)][ValidateRange(0, 100000)][long]$FailedCount,
+        [Parameter(Mandatory = $true)][bool]$Truncated
+    )
+
+    $entries = @($FailedTests)
+    if ($entries.Count -ne [Math]::Min($FailedCount, 32L) -or
+        $Truncated -ne ($FailedCount -gt 32L)) {
+        throw 'Failed-test summary count or truncation binding drift.'
+    }
+    foreach ($entry in $entries) {
+        $names = @($entry.PSObject.Properties.Name | Sort-Object)
+        if (($names -join ',') -cne 'Name,RelativePath,StartLine') {
+            throw 'Failed-test summary schema drift.'
+        }
+        if (
+            [string]$entry.RelativePath -notmatch '^tests/(Contract|HostSandbox|Unit)/[A-Za-z0-9._-]+\.Tests\.ps1$' -or
+            ($entry.StartLine -isnot [int] -and $entry.StartLine -isnot [long]) -or
+            [long]$entry.StartLine -lt 1 -or
+            [string]::IsNullOrWhiteSpace([string]$entry.Name) -or
+            ([string]$entry.Name).Length -gt 512
+        ) {
+            throw 'Failed-test summary binding is invalid.'
+        }
+        $safeName = ConvertTo-CddsiSafeDiagnosticText -Text ([string]$entry.Name) -SkipTruncation
+        if ($safeName -cne [string]$entry.Name) {
+            throw 'Failed-test summary name contains unsafe diagnostic text.'
+        }
+    }
+    return $true
+}
+
+function Assert-CddsiFailedTestSourceBinding {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$FailedTests,
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+        [Parameter(Mandatory = $true)][string[]]$AllowedRelativePaths
+    )
+
+    $root = [System.IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\')
+    foreach ($failedTest in @($FailedTests)) {
+        if ($AllowedRelativePaths -cnotcontains [string]$failedTest.RelativePath) {
+            throw 'Pester shard failed-test source escaped the shard policy.'
+        }
+        $failedTestPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $root ([string]$failedTest.RelativePath)))
+        if (-not $failedTestPath.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Pester shard failed-test source escaped the repository.'
+        }
+        $tokens = $null
+        $parseErrors = $null
+        $sourceAst = [System.Management.Automation.Language.Parser]::ParseFile(
+            $failedTestPath, [ref]$tokens, [ref]$parseErrors)
+        if (@($parseErrors).Count -ne 0) { throw 'Pester shard failed-test source has syntax errors.' }
+        $matchingCommands = @($sourceAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.Extent.StartLineNumber -eq [long]$failedTest.StartLine -and
+                $node.GetCommandName() -ceq 'It'
+        }, $true))
+        if ($matchingCommands.Count -ne 1 -or
+            $matchingCommands[0].CommandElements.Count -lt 2 -or
+            $matchingCommands[0].CommandElements[1] -isnot
+                [System.Management.Automation.Language.StringConstantExpressionAst] -or
+            [string]$matchingCommands[0].CommandElements[1].Value -cne [string]$failedTest.Name) {
+            throw 'Pester shard failed-test source binding drift.'
+        }
+    }
+    return $true
+}
+
 function New-CddsiQualityFailureProgress {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$CompletedRoleEvidence,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CompletedWorkerIds,
         [AllowNull()]$CurrentWorkerDescriptor,
+        [AllowNull()]$CurrentWorkerFailureEvidence,
         [Parameter(Mandatory = $true)][ValidateRange(0, 1000)][int]$ExpectedWorkerCount,
         [Parameter(Mandatory = $true)][bool]$TimedOut
     )
@@ -544,24 +618,36 @@ function New-CddsiQualityFailureProgress {
         $currentWorkerRole = [string]$CurrentWorkerDescriptor.WorkerRole
         $currentShardId = [string]$CurrentWorkerDescriptor.ShardId
     }
+    $currentFailedCount = [long]0
+    $currentFailedTests = @()
+    $currentFailedTestEvidenceTruncated = $false
+    if ($null -ne $CurrentWorkerFailureEvidence) {
+        $currentFailedCount = [long]$CurrentWorkerFailureEvidence.Pester.FailedCount
+        $currentFailedTests = @($CurrentWorkerFailureEvidence.Pester.FailedTests)
+        $currentFailedTestEvidenceTruncated =
+            [bool]$CurrentWorkerFailureEvidence.Pester.FailedTestEvidenceTruncated
+    }
 
     $progress = [pscustomobject][ordered]@{
-        SchemaVersion          = 1
-        Phase                  = $phase
-        ExpectedWorkerCount    = $ExpectedWorkerCount
-        CompletedWorkerCount   = $completedIds.Count
-        CompletedWorkerIds     = $completedIds
-        CompletedShardCount    = $completedShardEvidence.Count
-        CompletedTestFileCount = [long](($completedShardEvidence | ForEach-Object {
+        SchemaVersion                     = 2
+        Phase                             = $phase
+        ExpectedWorkerCount               = $ExpectedWorkerCount
+        CompletedWorkerCount              = $completedIds.Count
+        CompletedWorkerIds                = $completedIds
+        CompletedShardCount               = $completedShardEvidence.Count
+        CompletedTestFileCount            = [long](($completedShardEvidence | ForEach-Object {
             @($_.TestFiles).Count
         } | Measure-Object -Sum).Sum)
-        CompletedPassedCount   = [long](($completedShardEvidence | ForEach-Object {
+        CompletedPassedCount              = [long](($completedShardEvidence | ForEach-Object {
             [long]$_.Pester.PassedCount
         } | Measure-Object -Sum).Sum)
-        CurrentEngine          = $currentEngine
-        CurrentWorkerRole      = $currentWorkerRole
-        CurrentShardId         = $currentShardId
-        TimedOut               = $TimedOut
+        CurrentEngine                     = $currentEngine
+        CurrentWorkerRole                 = $currentWorkerRole
+        CurrentShardId                    = $currentShardId
+        CurrentFailedCount                = $currentFailedCount
+        CurrentFailedTests                = $currentFailedTests
+        CurrentFailedTestEvidenceTruncated = $currentFailedTestEvidenceTruncated
+        TimedOut                          = $TimedOut
     }
     $null = Assert-CddsiQualityFailureProgress -Progress $progress
     return $progress
@@ -572,7 +658,8 @@ function Assert-CddsiQualityFailureProgress {
 
     $expectedNames = @(
         'CompletedPassedCount', 'CompletedShardCount', 'CompletedTestFileCount',
-        'CompletedWorkerCount', 'CompletedWorkerIds', 'CurrentEngine', 'CurrentShardId',
+        'CompletedWorkerCount', 'CompletedWorkerIds', 'CurrentEngine', 'CurrentFailedCount',
+        'CurrentFailedTestEvidenceTruncated', 'CurrentFailedTests', 'CurrentShardId',
         'CurrentWorkerRole', 'ExpectedWorkerCount', 'Phase', 'SchemaVersion', 'TimedOut'
     )
     $actualNames = @($Progress.PSObject.Properties.Name | Sort-Object)
@@ -580,7 +667,7 @@ function Assert-CddsiQualityFailureProgress {
         throw 'Quality failure progress schema drift.'
     }
     if (($Progress.SchemaVersion -isnot [int] -and $Progress.SchemaVersion -isnot [long]) -or
-        [long]$Progress.SchemaVersion -ne 1) {
+        [long]$Progress.SchemaVersion -ne 2) {
         throw 'Quality failure progress version is invalid.'
     }
     if ([string]$Progress.Phase -notin @('QualityHarness', 'QualityWorker')) {
@@ -598,6 +685,15 @@ function Assert-CddsiQualityFailureProgress {
             throw 'Quality failure progress long count is invalid.'
         }
     }
+    if (($Progress.CurrentFailedCount -isnot [int] -and $Progress.CurrentFailedCount -isnot [long]) -or
+        [long]$Progress.CurrentFailedCount -lt 0 -or
+        $Progress.CurrentFailedTestEvidenceTruncated -isnot [bool]) {
+        throw 'Quality failure progress failed-test summary is invalid.'
+    }
+    $null = Assert-CddsiSafeFailedTestSummary `
+        -FailedTests @($Progress.CurrentFailedTests) `
+        -FailedCount ([long]$Progress.CurrentFailedCount) `
+        -Truncated ([bool]$Progress.CurrentFailedTestEvidenceTruncated)
     if ([int]$Progress.ExpectedWorkerCount -notin @(0, 28)) {
         throw 'Quality failure progress expected worker count is invalid.'
     }
@@ -653,11 +749,16 @@ function Assert-CddsiQualityFailureProgress {
         ) {
             throw 'Quality failure progress current worker is not the next plan item.'
         }
+        if ([string]$Progress.CurrentWorkerRole -cne 'PesterShard' -and
+            [long]$Progress.CurrentFailedCount -ne 0) {
+            throw 'Only a Pester shard may expose a failed-test summary.'
+        }
     }
     elseif (
         -not [string]::IsNullOrEmpty([string]$Progress.CurrentEngine) -or
         -not [string]::IsNullOrEmpty([string]$Progress.CurrentWorkerRole) -or
-        -not [string]::IsNullOrEmpty([string]$Progress.CurrentShardId)
+        -not [string]::IsNullOrEmpty([string]$Progress.CurrentShardId) -or
+        [long]$Progress.CurrentFailedCount -ne 0
     ) {
         throw 'Quality failure progress harness identity is invalid.'
     }
@@ -683,7 +784,7 @@ function New-CddsiSafeFailureEvidence {
     $safeDisclosure = Test-CddsiSafeDiagnosticDisclosure -Text $safeMessage -PathTokens $PathTokens -OwnershipToken $OwnershipToken -CanaryValue $CanaryValue
     $null = Assert-CddsiQualityFailureProgress -Progress $Progress
     $evidence = [pscustomobject][ordered]@{
-        SchemaVersion            = 2
+        SchemaVersion            = 3
         EvidenceType             = 'CddsiSafeFailureEvidence'
         Scenario                 = $Scenario
         RunId                    = $RunId
@@ -716,7 +817,7 @@ function Assert-CddsiSafeFailureEvidence {
     $actualNames = @($Evidence.PSObject.Properties.Name | Sort-Object)
     if (($expectedNames -join "`n") -cne ($actualNames -join "`n")) { throw 'Safe failure evidence schema drift.' }
     if (($Evidence.SchemaVersion -isnot [int] -and $Evidence.SchemaVersion -isnot [long]) -or
-        [long]$Evidence.SchemaVersion -ne 2) { throw 'Safe failure evidence version is invalid.' }
+        [long]$Evidence.SchemaVersion -ne 3) { throw 'Safe failure evidence version is invalid.' }
     if ($Evidence.EvidenceType -cne 'CddsiSafeFailureEvidence' -or $Evidence.Status -cne 'FAILED_SAFE') { throw 'Safe failure evidence type is invalid.' }
     if ([string]$Evidence.RunId -notmatch '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$') { throw 'Safe failure evidence run binding is invalid.' }
     if ([string]$Evidence.PrimaryFailureCode -notmatch '^[A-Z0-9_]+$' -or [string]$Evidence.CleanupFailureCode -notmatch '^[A-Z0-9_]+$') { throw 'Safe failure evidence code is invalid.' }
@@ -1716,7 +1817,8 @@ function Read-CddsiWorkerRoleEvidence {
         [Parameter(Mandatory = $true)][string]$BoundaryManifestPath,
         [Parameter(Mandatory = $true)][string]$DependencyManifestPath,
         [Parameter(Mandatory = $true)]$QualityShardPolicy,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$Ledger
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$Ledger,
+        [switch]$AllowFailed
     )
 
     $path = Join-Path $Sandbox.Paths.Evidence $Descriptor.Leaf
@@ -1733,9 +1835,10 @@ function Read-CddsiWorkerRoleEvidence {
     }
     $evidence = $text | ConvertFrom-Json -ErrorAction Stop
     $expectedBinding = Get-CddsiSha256Text -Text ([System.IO.Path]::GetFullPath($Sandbox.Root).ToUpperInvariant())
+    $expectedSchemaVersion = if ($Descriptor.WorkerRole -ceq 'Static') { 1L } else { 2L }
     if (
         ($evidence.SchemaVersion -isnot [int] -and $evidence.SchemaVersion -isnot [long]) -or
-        [long]$evidence.SchemaVersion -ne 1 -or
+        [long]$evidence.SchemaVersion -ne $expectedSchemaVersion -or
         $evidence.RunId -cne $Sandbox.RunId -or
         $evidence.Engine -cne $Descriptor.Engine -or
         $evidence.SandboxBindingSha256 -cne $expectedBinding
@@ -1749,7 +1852,7 @@ function Read-CddsiWorkerRoleEvidence {
         -Sandbox $Sandbox
     $lock = Import-PowerShellDataFile -LiteralPath $DependencyManifestPath
     $expectedCommonProvenance = [ordered]@{
-        MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v3'
+        MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v4'
         RepositoryInventorySha256       = $inventoryMeasurement.InventorySha256
         InitialRepositoryManifestSha256 = $inventoryMeasurement.ManifestSha256
         FinalRepositoryManifestSha256   = $inventoryMeasurement.ManifestSha256
@@ -1856,7 +1959,10 @@ function Read-CddsiWorkerRoleEvidence {
         ) {
             throw 'Pester shard file-list binding drift.'
         }
-        $pesterNames = @('DurationMilliseconds', 'FailedCount', 'InconclusiveCount', 'NotRunCount', 'PassedCount', 'Result', 'SkippedCount')
+        $pesterNames = @(
+            'DurationMilliseconds', 'FailedCount', 'FailedTestEvidenceTruncated', 'FailedTests',
+            'InconclusiveCount', 'NotRunCount', 'PassedCount', 'Result', 'SkippedCount'
+        )
         if ((@($evidence.Pester.PSObject.Properties.Name | Sort-Object) -join "`n") -cne ($pesterNames -join "`n")) {
             throw 'Pester shard result schema drift.'
         }
@@ -1866,12 +1972,33 @@ function Read-CddsiWorkerRoleEvidence {
                 throw "Pester shard result is not an integer: $name"
             }
         }
-        if ($evidence.Pester.Result -cne 'Passed' -or [long]$evidence.Pester.PassedCount -le 0 -or
-            [long]$evidence.Pester.DurationMilliseconds -lt 0) {
-            throw 'Pester shard result is not clean.'
+        if ($evidence.Pester.FailedTestEvidenceTruncated -isnot [bool]) {
+            throw 'Pester shard failed-test truncation flag is invalid.'
         }
-        foreach ($name in @('FailedCount', 'InconclusiveCount', 'NotRunCount', 'SkippedCount')) {
-            if ([long]$evidence.Pester.$name -ne 0) { throw "Pester shard result is not zero: $name" }
+        $null = Assert-CddsiSafeFailedTestSummary `
+            -FailedTests @($evidence.Pester.FailedTests) `
+            -FailedCount ([long]$evidence.Pester.FailedCount) `
+            -Truncated ([bool]$evidence.Pester.FailedTestEvidenceTruncated)
+        $null = Assert-CddsiFailedTestSourceBinding `
+            -FailedTests @($evidence.Pester.FailedTests) `
+            -RepositoryRoot $RepositoryRoot `
+            -AllowedRelativePaths @($policyShard.Paths)
+        if ($AllowFailed) {
+            if ($evidence.Pester.Result -cne 'Failed' -or
+                [long]$evidence.Pester.FailedCount -lt 1 -or
+                [long]$evidence.Pester.DurationMilliseconds -lt 0) {
+                throw 'Pester shard failure evidence is not a failed result.'
+            }
+        }
+        else {
+            if ($evidence.Pester.Result -cne 'Passed' -or
+                [long]$evidence.Pester.PassedCount -le 0 -or
+                [long]$evidence.Pester.DurationMilliseconds -lt 0) {
+                throw 'Pester shard result is not clean.'
+            }
+            foreach ($name in @('FailedCount', 'InconclusiveCount', 'NotRunCount', 'SkippedCount')) {
+                if ([long]$evidence.Pester.$name -ne 0) { throw "Pester shard result is not zero: $name" }
+            }
         }
         foreach ($suiteResult in @($evidence.RequiredSuiteResults)) {
             if ((@($suiteResult.PSObject.Properties.Name | Sort-Object) -join ',') -cne 'RelativePath,Result,TestCount') {
@@ -1885,7 +2012,8 @@ function Read-CddsiWorkerRoleEvidence {
             })
             if ($suitePolicy.Count -ne 1 -or
                 @($policyShard.Paths) -cnotcontains [string]$suiteResult.RelativePath -or
-                $suiteResult.Result -cne 'Passed' -or
+                [string]$suiteResult.Result -notin @('Passed', 'Failed') -or
+                (-not $AllowFailed -and [string]$suiteResult.Result -cne 'Passed') -or
                 [long]$suiteResult.TestCount -ne [long]$suitePolicy[0].ExpectedTestCount) {
                 throw 'Pester shard required-suite binding drift.'
             }
@@ -1972,7 +2100,7 @@ function Merge-CddsiWorkerIsolationEvidence {
         RequiredSuiteFailureCount = [long]0
     }
     $provenance = [pscustomobject][ordered]@{
-        MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v3'
+        MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v4'
         RepositoryInventorySha256       = [string]$StaticEvidence.Provenance.RepositoryInventorySha256
         InitialRepositoryManifestSha256 = [string]$StaticEvidence.Provenance.InitialRepositoryManifestSha256
         FinalRepositoryManifestSha256   = [string]$StaticEvidence.Provenance.FinalRepositoryManifestSha256
@@ -2157,6 +2285,7 @@ $workerInvocationPlan = @()
 $workerRoleEvidence = New-Object System.Collections.Generic.List[object]
 $completedWorkerIds = New-Object System.Collections.Generic.List[string]
 $currentWorkerDescriptor = $null
+$currentWorkerFailureEvidence = $null
 
 try {
     $repositoryRootFull = [System.IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\')
@@ -2245,20 +2374,48 @@ try {
     if (-not [string]::Equals($inventoryEvidence.Path, $inventoryPath, [StringComparison]::OrdinalIgnoreCase)) { throw 'Repository inventory path drift.' }
     foreach ($descriptor in $workerInvocationPlan) {
         $currentWorkerDescriptor = $descriptor
-        $workerProcessResult = Invoke-CddsiTrustedProcess `
-            -RuleId $descriptor.RuleId `
-            -ToolGrant $descriptor.Grant `
-            -Arguments $descriptor.Arguments `
-            -Environment $descriptor.Environment `
-            -WorkingDirectory $sandbox.Root `
-            -TimeoutSeconds $ProcessTimeoutSeconds `
-            -ExpectedProcessRules $expectedProcessRules `
-            -ProcessOrdinal ([ref]$processOrdinal) `
-            -Ledger $ledger `
-            -RunId $runId `
-            -PathTokens $pathTokens `
-            -OwnershipToken $sandbox.OwnershipToken `
-            -CanaryValue $sandbox.CanaryValue
+        $currentWorkerFailureEvidence = $null
+        try {
+            $workerProcessResult = Invoke-CddsiTrustedProcess `
+                -RuleId $descriptor.RuleId `
+                -ToolGrant $descriptor.Grant `
+                -Arguments $descriptor.Arguments `
+                -Environment $descriptor.Environment `
+                -WorkingDirectory $sandbox.Root `
+                -TimeoutSeconds $ProcessTimeoutSeconds `
+                -ExpectedProcessRules $expectedProcessRules `
+                -ProcessOrdinal ([ref]$processOrdinal) `
+                -Ledger $ledger `
+                -RunId $runId `
+                -PathTokens $pathTokens `
+                -OwnershipToken $sandbox.OwnershipToken `
+                -CanaryValue $sandbox.CanaryValue
+        }
+        catch {
+            $workerProcessError = $_
+            $workerTimedOut = (
+                [string]$workerProcessError.Exception.Data['CddsiProcessFailureCode'] -ceq
+                'PROCESS_TIMEOUT'
+            )
+            if ($descriptor.WorkerRole -ceq 'PesterShard' -and -not $workerTimedOut) {
+                try {
+                    $currentWorkerFailureEvidence = Read-CddsiWorkerRoleEvidence `
+                        -Descriptor $descriptor `
+                        -Sandbox $sandbox `
+                        -RepositoryRoot $repositoryRootFull `
+                        -RepositoryInventoryPath $inventoryPath `
+                        -BoundaryManifestPath $boundaryManifestPath `
+                        -DependencyManifestPath $dependencyManifestPath `
+                        -QualityShardPolicy $qualityShardPolicy `
+                        -Ledger $ledger `
+                        -AllowFailed
+                }
+                catch {
+                    $currentWorkerFailureEvidence = $null
+                }
+            }
+            throw $workerProcessError
+        }
         $utf8RoundTripMarker = 'CDDSI_UTF8_ROUNDTRIP=质量检查 😀 𠮷'
         if (
             -not $workerProcessResult.StdOut.Contains($utf8RoundTripMarker) -or
@@ -2375,6 +2532,7 @@ catch {
             -CompletedRoleEvidence $workerRoleEvidence.ToArray() `
             -CompletedWorkerIds $completedWorkerIds.ToArray() `
             -CurrentWorkerDescriptor $currentWorkerDescriptor `
+            -CurrentWorkerFailureEvidence $currentWorkerFailureEvidence `
             -ExpectedWorkerCount $workerInvocationPlan.Count `
             -TimedOut $timedOut
         $failureEvidence = New-CddsiSafeFailureEvidence -Scenario Quality -RunId $runId -PrimaryFailureCode $primaryFailureCode -PrimaryFailureMessage $primaryError.Exception.Message -CleanupOutcome $cleanupOutcome -CleanupFailureCode $cleanupFailureCode -RepositoryContentChanged $repositoryChangedAfterFailure -Progress $failureProgress -PathTokens $pathTokens -OwnershipToken $ownershipToken -CanaryValue $canaryValue

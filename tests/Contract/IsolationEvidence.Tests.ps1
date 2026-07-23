@@ -64,7 +64,7 @@
         $suiteResults = @(
             [pscustomobject][ordered]@{
                 RelativePath = 'tests/Contract/IsolationEvidence.Tests.ps1'
-                TestCount = 16
+                TestCount = 18
                 Result = 'Passed'
             }
         )
@@ -111,7 +111,7 @@
         }
         $sameRepositoryManifestSha256 = ('b' * 64) -join ''
         $provenance = [pscustomobject][ordered]@{
-            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v3'
+            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v4'
             RepositoryInventorySha256 = ('a' * 64) -join ''
             InitialRepositoryManifestSha256 = $sameRepositoryManifestSha256
             FinalRepositoryManifestSha256 = $sameRepositoryManifestSha256
@@ -253,6 +253,101 @@ Describe 'P1 isolation evidence contract' {
         { New-CddsiWorkerIsolationEvidenceV2 @fixture } | Should -Throw
     }
 
+    It 'binds failed Pester tests to static repository source names and lines' {
+        $relativePath = 'tests/Contract/IsolationEvidence.Tests.ps1'
+        $fullPath = Join-Path $script:RepoRoot $relativePath
+        $script:InitialRepositoryHashByPath[$relativePath] =
+            (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $fullPath, [ref]$tokens, [ref]$parseErrors)
+        @($parseErrors).Count | Should -Be 0
+        $testName = 'binds failed Pester tests to static repository source names and lines'
+        $sourceCommands = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -ceq 'It' -and
+                $node.CommandElements.Count -ge 2 -and
+                $node.CommandElements[1] -is
+                    [Management.Automation.Language.StringConstantExpressionAst] -and
+                [string]$node.CommandElements[1].Value -ceq $testName
+        }, $true))
+        $sourceCommands.Count | Should -Be 1
+        $fakeResult = [pscustomobject]@{
+            FailedCount = 1L
+            Tests = @(
+                [pscustomobject]@{
+                    Result = 'Failed'
+                    Name = $testName
+                    ScriptBlock = [pscustomobject]@{
+                        File = $fullPath
+                        StartPosition = [pscustomobject]@{
+                            StartLine = [long]$sourceCommands[0].Extent.StartLineNumber
+                        }
+                    }
+                }
+            )
+        }
+
+        $failedTests = @(Get-CddsiWorkerFailedTestEvidence `
+            -PesterResult $fakeResult `
+            -AllowedRelativePaths @($relativePath))
+
+        $failedTests.Count | Should -Be 1
+        $failedTests[0].RelativePath | Should -BeExactly $relativePath
+        $failedTests[0].StartLine | Should -Be $sourceCommands[0].Extent.StartLineNumber
+        $failedTests[0].Name | Should -BeExactly $testName
+    }
+
+    It 'creates bounded schema version 2 shard failure evidence' {
+        $testFiles = @('tests/HostSandbox/FastLaneGitOutbox.Tests.ps1')
+        $failedTests = @(
+            [pscustomobject][ordered]@{
+                RelativePath = $testFiles[0]
+                StartLine = 2783L
+                Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+            }
+        )
+        $pester = [pscustomobject][ordered]@{
+            Result = 'Failed'
+            PassedCount = 22L
+            FailedCount = 1L
+            FailedTests = $failedTests
+            FailedTestEvidenceTruncated = $false
+            SkippedCount = 0L
+            NotRunCount = 0L
+            InconclusiveCount = 0L
+            DurationMilliseconds = 1000L
+        }
+        $provenance = [pscustomobject][ordered]@{
+            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v4'
+            RepositoryInventorySha256 = ('a' * 64) -join ''
+            InitialRepositoryManifestSha256 = ('b' * 64) -join ''
+            FinalRepositoryManifestSha256 = ('b' * 64) -join ''
+            DependencyManifestSha256 = ('c' * 64) -join ''
+            PesterTreeSha256 = ('d' * 64) -join ''
+            EngineGrantSha256 = $script:WorkerGrantSha256
+            QualityShardPolicySha256 = ('e' * 64) -join ''
+        }
+
+        $evidence = New-CddsiWorkerPesterShardEvidenceV2 `
+            -RunId '00000000-0000-0000-0000-000000000004' `
+            -Engine PowerShell7 `
+            -ShardId H02 `
+            -SandboxBindingSha256 (('f' * 64) -join '') `
+            -ShardPathsSha256 (Get-CddsiWorkerSequenceSha256 -Values $testFiles) `
+            -TestFiles $testFiles `
+            -Pester $pester `
+            -Provenance $provenance `
+            -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+
+        $evidence.SchemaVersion | Should -Be 2
+        $evidence.Pester.FailedCount | Should -Be 1
+        $evidence.Pester.FailedTests[0].StartLine | Should -Be 2783
+        $evidence.Pester.FailedTestEvidenceTruncated | Should -BeFalse
+    }
+
     It 'aggregates actual TestSafe and DryRun ledger and mutation-spy records' {
         $testSafeCall = [pscustomobject]@{
             Provider = 'FileSystem'
@@ -364,7 +459,7 @@ Describe 'P1 isolation evidence contract' {
         $shardBranch = $workerText.IndexOf("if (`$WorkerRole -ceq 'PesterShard') {", [StringComparison]::Ordinal)
         $staticStep = $workerText.IndexOf("Invoke-CheckStep -Name 'Execution files", [StringComparison]::Ordinal)
         $staticEvidence = $workerText.IndexOf('$staticEvidence = New-CddsiWorkerStaticEvidenceV1', [StringComparison]::Ordinal)
-        $shardEvidence = $workerText.IndexOf('$shardEvidence = New-CddsiWorkerPesterShardEvidenceV1', [StringComparison]::Ordinal)
+        $shardEvidence = $workerText.IndexOf('$shardEvidence = New-CddsiWorkerPesterShardEvidenceV2', [StringComparison]::Ordinal)
 
         $shardBranch | Should -BeGreaterOrEqual 0
         $shardEvidence | Should -BeGreaterThan $shardBranch

@@ -5,44 +5,47 @@
 ## 当前动态状态（唯一入口）
 
 **MANUAL_HOST_VM_REPORT_TRANSFER_ONLY / RELAY_RETIRED /
-AUTOMATION_PAUSED_OR_ABSENT / VM_BATCH_REPORT_VALIDATED_PARTIAL /
-HOST_BATCH_REPAIR_GATES_PASSED / NO_PRODUCT_LIVE_AUTHORITY。**
+AUTOMATION_PAUSED_OR_ABSENT / VM_BATCH_RETEST_VALIDATED_FAILED /
+HOST_TEST_EVIDENCE_REPAIR_GATES_PASSED / H02_ROOT_CAUSE_PENDING_VM_RETEST /
+NO_PRODUCT_LIVE_AUTHORITY。**
 
-2026-07-23 已接收用户人工搬运的 `VM_BATCH_TEST_REPORT_V1`。报告绑定修复前
-commit `c0efdf44fb69c4cc94fd47178e5977964dea8e4d` 和 tree
-`8e70c3cf5444357a9b41cbbb4c58d7225433646b`，与当时宿主机精确 HEAD/tree
-一致；191 个场景满足 `73 executed + 108 blocked + 10 not implemented`，已执行项满足
-`69 passed + 2 failed + 2 expected fail-closed`。报告的零产品写入、零真实产品网络、
-零 Credential Manager/registry、零 sandbox 外写入、零意外 ledger/mutation spy 和
-零 secret 指标内部一致。宿主机未取得 VM-local evidence manifest 正文，只有
-SHA-256 `2df46754931aab8868713143816a5f60c830bdca816aa35153cca17b0fc7ff5d`，
-所以外部 evidence 完整性只能标为 `PARTIAL`，不得猜测为已验证。
+2026-07-23 已接收第二份用户人工搬运的 `VM_BATCH_TEST_REPORT_V1`。报告精确绑定
+commit `d808a18db63361fd76f61efd63379eeef1475fee` 和 tree
+`fb19143c0e3fe6e133733bd55b274f20138b3ced`，与宿主机接收时 HEAD/tree 一致。
+18 个场景满足
+`8 passed + 1 failed + 3 blocked + 2 expected fail-closed + 4 not implemented`，
+11 个 executed 满足 `8 + 1 + 2`。附带 canonical manifest 正文实际为 4911 UTF-8
+bytes，重新计算 SHA-256 为
+`9763c6a68ecee87059c7ba49fd98db5c7030a7f7c6a0448d9397ad4206c6fbdb`，
+与报告一致；其 RunId/commit/tree、30 个 entry 和 Issues 引用内部一致。宿主机未取得
+VM-local 30 个文件字节，因此只证明搬回 manifest 正文绑定，不声称逐项重新哈希。
 
-分类结论：
+第二份报告分类结论：
 
-- 六个中英文公开包装器把结构化 `ACTION_REQUIRED / Success=false` 错报为 process
-  exit 0：`PRODUCT_DEFECT`，同时缺进程链合同为 `TEST_DEFECT`。
-- 单个 PS7 worker 在 900 秒后截断整树：`TEST_DEFECT`；超时本身是预期 fail closed，
-  不是产品缺陷。
-- timeout tail 的中文乱码：`TEST_DEFECT`。
-- lifecycle、完整 HTTP fault、未来 GUI/UAC 和真实多进程覆盖：`NOT_IMPLEMENTED`；
-  需要真实 GUI/系统基线的部分为 `REQUIRES_EXTERNAL_SNAPSHOT`，本轮不做推测性
-  Live 修复。
+- `PRODUCT_DEFECT=0`。六个 wrapper 均以 exit 4 返回完整四字段；两个 Live negative
+  均为 `EXPECTED_FAIL_CLOSED`。
+- `TD-002` 为 `TEST_DEFECT`：PS7/H02 报告 aggregate `Failed=3`，但旧 worker evidence
+  未保留失败测试名；报告列出的 keygen mock 与 ACL readback triplet 都只是静态假设。
+  宿主机同文件 focused 为 25/25、完整门双引擎也通过，不能据此猜改 mock 或削弱 ACL。
+- `TD-001` 为 VM 批处理器自身的 `TEST_DEFECT`：一项辅助 Git status 未显式抑制
+  system/global config；它不命中产品仓库文件，由下一轮 VM harness 修正。
+- lifecycle、完整 HTTP fault、GUI/UAC、真实多进程仍是 `NOT_IMPLEMENTED`；真实
+  GUI/system baseline 是 `REQUIRES_EXTERNAL_SNAPSHOT`。
 
-本轮按共同根因修复：公开 CLI 固定四字段与稳定退出码；logger 单一进程级 UTF-8
-入口、严格父进程解码及中文/非 BMP round-trip；双引擎各 1 个 Static worker 加
-13 个冻结 Pester shards；超时安全证据包含当前 engine/role/shard、已完成 worker/
-测试文件/断言计数，并以固定 JSON marker 交给外层保留。focused 回归为 78/78；
-六个最终 `.cmd` 进程级回归全部 exit 4 且四字段完整。实际 30 秒 fault injection 在
-`PowerShell7/C02` fail closed，保留 2 个已完成 worker、5 个 test files、51 个通过
-断言，`RepositoryContentChanged=false` 且无 U+FFFD。
+本轮只修已证实的诊断合同缺口：Pester shard evidence 升为 schema v2，measurement
+rules 升为 v4；非超时失败最多保留 32 项 repo-relative path、source line 和静态
+`It` 名称，worker 与父进程各自重新绑定 tracked AST。外层
+`CDDSI_SAFE_FAILURE_EVIDENCE_V3` / progress schema v2 在报告中携带当前失败项，
+禁止任意 runtime/error 文本进入结构化清单。相关 focused tests 为 58/58。
 
-最终标准门在 PS7 和 Windows PowerShell 5.1 各通过 614/614，精确为 31 个 trusted
-process、68 条 harness ledger，cleanup 成功、仓库快照未变、secret findings 为 0。
-Release Simulation DryRun 通过 39 个 package files，四层 secret findings 为 0，
-inventory/hash/deterministic ZIP 精确且 `Changed=false`；working/cached
-`git diff --check`、独立编码检查均通过，无新增/删除/重命名文件。PR #1 head/CI
-在最终 commit push 后核验，不在 tracked 文档中自引用尚未生成的 commit/tree。
+最终标准门发现并在 PS7 与 Windows PowerShell 5.1 各通过 617/617，精确为 31 个
+trusted process、68 条 harness ledger，cleanup 成功、仓库快照未变、所有真实访问/
+secret/意外 ledger 指标为 0。30 秒 fault injection 在 `PowerShell7/C02` exit 1，
+保留 2 个已完成 worker、5 个 test files、51 个通过断言，failed-test count 为 0，
+cleanup 成功、`RepositoryContentChanged=false` 且无 U+FFFD。Release Simulation
+DryRun 通过 39 个 package files，四层 secret findings 为 0，inventory/hash/
+deterministic ZIP 精确且 `Changed=false`。PR #1 head/CI 在最终 commit push 后核验，
+不在 tracked 文档中自引用尚未生成的 commit/tree。
 
 realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
 Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、

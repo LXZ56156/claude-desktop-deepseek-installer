@@ -45,6 +45,16 @@ VM-local `EvidenceRoot` 不能由宿主机直接证明。只有 manifest hash、
 `REQUIRES_EXTERNAL_SNAPSHOT`、`EXPECTED_FAIL_CLOSED`；预期 fail closed 不是产品
 缺陷。宿主机只用 fake/synthetic provider、TestSafe/DryRun 或只读分析复现。
 
+manifest 正文随报告搬回时，宿主机必须按报告声明的 canonicalization 重新计算 byte
+length 和 SHA-256，并逐项核对 RunId/TestCommit/TestTree、entry count、relative path、
+length/hash 形状以及 Issues 引用。该校验只能证明“搬回的 manifest 正文与报告绑定”；
+未同时取得 VM-local 文件字节时，不得声称已重新哈希每个 evidence entry。
+
+标准门非超时 Pester shard 失败必须通过 `CDDSI_SAFE_FAILURE_EVIDENCE_V3` 返回受限
+`CurrentFailedTests`：最多 32 项 repo-relative test path、正整数 source line 和静态
+`It` 名称，并由 worker 与父进程分别重新绑定 tracked 源码 AST。VM 报告应直接引用这些
+结构化字段，不再用计数推测失败测试。
+
 ## 2026-07-21/22 relay 设计（历史；已退役，无操作权）
 
 以下所有 Fast Lane、envelope、outbox、Cloudflare、credential、Automation、watcher
