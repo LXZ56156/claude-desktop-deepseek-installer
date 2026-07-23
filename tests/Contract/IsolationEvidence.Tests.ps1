@@ -111,7 +111,7 @@
         }
         $sameRepositoryManifestSha256 = ('b' * 64) -join ''
         $provenance = [pscustomobject][ordered]@{
-            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v2'
+            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v3'
             RepositoryInventorySha256 = ('a' * 64) -join ''
             InitialRepositoryManifestSha256 = $sameRepositoryManifestSha256
             FinalRepositoryManifestSha256 = $sameRepositoryManifestSha256
@@ -359,23 +359,19 @@ Describe 'P1 isolation evidence contract' {
         $safe | Should -Not -Match '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u202A-\u202E]'
     }
 
-    It 'reloads pure P1 libraries after Pester before synthetic evidence measurement' {
+    It 'separates Pester shards from static validation and monolithic test discovery' {
         $workerText = [System.IO.File]::ReadAllText((Join-Path $script:RepoRoot 'scripts\check-worker.ps1'))
-        $pesterGate = "if (`$SkipPester) { throw 'Worker isolation evidence requires the pinned Pester suites.' }"
-        $executionContextLoad = ". (Join-Path `$script:Root 'lib\execution-context.ps1')"
-        $fakeProviderLoad = ". (Join-Path `$script:Root 'lib\fake-providers.ps1')"
-        $measurement = '$syntheticMeasurements = Measure-CddsiWorkerSyntheticIsolationScenarios'
+        $shardBranch = $workerText.IndexOf("if (`$WorkerRole -ceq 'PesterShard') {", [StringComparison]::Ordinal)
+        $staticStep = $workerText.IndexOf("Invoke-CheckStep -Name 'Execution files", [StringComparison]::Ordinal)
+        $staticEvidence = $workerText.IndexOf('$staticEvidence = New-CddsiWorkerStaticEvidenceV1', [StringComparison]::Ordinal)
+        $shardEvidence = $workerText.IndexOf('$shardEvidence = New-CddsiWorkerPesterShardEvidenceV1', [StringComparison]::Ordinal)
 
-        $pesterGateIndex = $workerText.IndexOf($pesterGate, [StringComparison]::Ordinal)
-        $executionContextIndex = $workerText.IndexOf($executionContextLoad, [StringComparison]::Ordinal)
-        $fakeProviderIndex = $workerText.IndexOf($fakeProviderLoad, [StringComparison]::Ordinal)
-        $measurementIndex = $workerText.IndexOf($measurement, [StringComparison]::Ordinal)
-        $pesterGateIndex | Should -BeGreaterOrEqual 0
-        $executionContextIndex | Should -BeGreaterThan $pesterGateIndex
-        $fakeProviderIndex | Should -BeGreaterThan $executionContextIndex
-        $measurementIndex | Should -BeGreaterThan $fakeProviderIndex
-        @([regex]::Matches($workerText, [regex]::Escape($executionContextLoad))).Count | Should -Be 1
-        @([regex]::Matches($workerText, [regex]::Escape($fakeProviderLoad))).Count | Should -Be 1
+        $shardBranch | Should -BeGreaterOrEqual 0
+        $shardEvidence | Should -BeGreaterThan $shardBranch
+        $staticStep | Should -BeGreaterThan $shardEvidence
+        $staticEvidence | Should -BeGreaterThan $staticStep
+        $workerText | Should -Not -Match [regex]::Escape("Invoke-Pester -Path (Join-Path `$script:Root 'tests')")
+        $workerText | Should -Match 'Invoke-Pester -Path \$selectedFullPaths'
     }
 
     It 'keeps the P1 core free from direct host I/O and dynamic scriptblock dispatch' {

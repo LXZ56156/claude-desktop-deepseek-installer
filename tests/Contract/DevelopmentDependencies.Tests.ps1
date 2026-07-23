@@ -66,6 +66,43 @@ Describe 'vendored Pester development dependency' {
         $pester.OfficialLicenseUrl | Should -BeExactly 'https://www.apache.org/licenses/LICENSE-2.0.html'
     }
 
+    It 'freezes an exact ordinal shard partition over every repository test file' {
+        @($script:DependencyLock.Keys | Sort-Object) | Should -Be @(
+            'IsolationEvidenceSuites', 'Pester', 'QualityShards', 'SchemaVersion'
+        )
+        $shards = @($script:DependencyLock.QualityShards)
+        @($shards.ShardId) | Should -Be @(
+            'C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08',
+            'U01', 'U02', 'H01', 'H02', 'H03'
+        )
+        $listed = New-Object System.Collections.Generic.List[string]
+        foreach ($shard in $shards) {
+            @($shard.Keys | Sort-Object) | Should -Be @('Paths', 'ShardId')
+            [string]$shard.ShardId | Should -Match '^[CHU][0-9]{2}$'
+            $paths = [string[]]@($shard.Paths)
+            $ordinal = [string[]]$paths.Clone()
+            [Array]::Sort($ordinal, [StringComparer]::Ordinal)
+            ($paths -join "`n") | Should -BeExactly ($ordinal -join "`n")
+            foreach ($path in $paths) {
+                $path | Should -Match '^tests/(?:Contract|HostSandbox|Unit)/[^/]+\.Tests\.ps1$'
+                [System.IO.Path]::IsPathRooted($path) | Should -BeFalse
+                @($path.Split('/') | Where-Object { $_ -in @('', '.', '..') }).Count | Should -Be 0
+                $listed.Add($path)
+            }
+        }
+        $listedArray = [string[]]$listed.ToArray()
+        $listedOrdinal = [string[]]$listedArray.Clone()
+        [Array]::Sort($listedOrdinal, [StringComparer]::Ordinal)
+        $actual = [string[]]@(
+            Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'tests') -Recurse -Filter '*.Tests.ps1' -File |
+                ForEach-Object { $_.FullName.Substring($script:RepoRoot.Length + 1).Replace('\', '/') }
+        )
+        [Array]::Sort($actual, [StringComparer]::Ordinal)
+        $listedArray.Count | Should -Be 42
+        @($listedArray | Sort-Object -Unique).Count | Should -Be 42
+        ($listedOrdinal -join "`n") | Should -BeExactly ($actual -join "`n")
+    }
+
     It 'keeps bootstrap verify-only with no network module installation import or writes' {
         $tokens = $null
         $errors = $null
@@ -123,6 +160,7 @@ Describe 'vendored Pester development dependency' {
             SchemaVersion            = 1
             Pester                  = $unsafePester
             IsolationEvidenceSuites = $script:DependencyLock.IsolationEvidenceSuites
+            QualityShards           = $script:DependencyLock.QualityShards
         }
 
         { Assert-CddsiVendoredPesterTree -RepositoryRoot $testRepository -DependencyLock $unsafeLock } | Should -Throw
@@ -203,6 +241,7 @@ Describe 'GitHub Actions workflow supply-chain and evidence contracts' {
             $jobMatches.Count | Should -Be 1
             $jobMatches[0].Groups['name'].Value | Should -BeExactly $contracts[$name].Job
             @([regex]::Matches($text, '(?m)^    runs-on: windows-latest$')).Count | Should -Be 1
+            @([regex]::Matches($text, '(?m)^    timeout-minutes: 60$')).Count | Should -Be 1
             $text | Should -Not -Match '(?mi)^[ ]*[a-z0-9-]+:[ ]*write[ ]*$'
             $text | Should -Not -Match '(?mi)^[ ]*(pull_request_target|schedule):[ ]*$'
             $text | Should -Not -Match '(?im)(-Mode\s+[''"]?Live\b|\bMode\s*[:=]\s*[''"]?Live\b|^[ ]+Live:[ ]*$)'
@@ -255,8 +294,8 @@ Describe 'GitHub Actions workflow supply-chain and evidence contracts' {
         $expectedQualityPropertySet = 'CLEANUP_OUTCOME,FORBIDDEN_RESOURCE_ACCESS_COUNT,HARNESS_LEDGER,HARNESS_LEDGER_EXACT,LIVE_PROVIDER_LOADED,MUTATION_SPY_COUNTS,OUTSIDE_SANDBOX_WRITE_COUNT,PRODUCT_LIVE_PROCESS_SPAWN_COUNT,PRODUCT_NETWORK_REQUEST_COUNT,REAL_REGISTRY_ACCESS_COUNT,REPOSITORY_AFTER_DIRECTORY_COUNT,REPOSITORY_AFTER_FILE_COUNT,REPOSITORY_AFTER_SHA256,REPOSITORY_BEFORE_DIRECTORY_COUNT,REPOSITORY_BEFORE_FILE_COUNT,REPOSITORY_BEFORE_SHA256,REPOSITORY_CONTENT_CHANGED,REPOSITORY_SNAPSHOT_SCOPE,RunId,SAFE_FAILURE_DISCLOSURE,Scenario,SchemaVersion,SECRET_FINDINGS,TRUSTED_HARNESS_PROCESS_COUNT,TRUSTED_PROCESS_ACTUAL_COUNT,TRUSTED_PROCESS_EXPECTED_COUNT,TRUSTED_PROCESS_SEQUENCE,UNAPPROVED_HARNESS_NETWORK_COUNT,UNAPPROVED_HARNESS_PROCESS_COUNT,UNEXPECTED_LEDGER_ENTRY_COUNT,WORKER_EVIDENCE'
         $expectedMutationSpySet = 'AppX,Credential,Environment,Feature,FileSystem,Network,Process,Registry,Restart,Service'
         $expectedWorkerEngineSet = 'PowerShell7,WindowsPowerShell'
-        $expectedTrustedProcessSequence = 'GitInventory,QualityWorkerPowerShell7,QualityWorkerWindowsPowerShell,GitDiffCheck,GitCachedDiffCheck'
-        $expectedHarnessLedgerSequence = 'ValidateToolGrant,ValidateToolGrant,ValidateToolGrant,CreateSandbox,WriteOwnerMarker,CreateSyntheticEnvironment,GitInventory,WriteRepositoryInventory,QualityWorkerPowerShell7,ReadWorkerEvidence,QualityWorkerWindowsPowerShell,ReadWorkerEvidence,GitDiffCheck,GitCachedDiffCheck,ScanSandboxArtifacts,CleanupSandbox'
+        $expectedTrustedProcessSequence = 'GitInventory,QualityStaticPowerShell7,QualityShardPowerShell7C01,QualityShardPowerShell7C02,QualityShardPowerShell7C03,QualityShardPowerShell7C04,QualityShardPowerShell7C05,QualityShardPowerShell7C06,QualityShardPowerShell7C07,QualityShardPowerShell7C08,QualityShardPowerShell7U01,QualityShardPowerShell7U02,QualityShardPowerShell7H01,QualityShardPowerShell7H02,QualityShardPowerShell7H03,QualityStaticWindowsPowerShell,QualityShardWindowsPowerShellC01,QualityShardWindowsPowerShellC02,QualityShardWindowsPowerShellC03,QualityShardWindowsPowerShellC04,QualityShardWindowsPowerShellC05,QualityShardWindowsPowerShellC06,QualityShardWindowsPowerShellC07,QualityShardWindowsPowerShellC08,QualityShardWindowsPowerShellU01,QualityShardWindowsPowerShellU02,QualityShardWindowsPowerShellH01,QualityShardWindowsPowerShellH02,QualityShardWindowsPowerShellH03,GitDiffCheck,GitCachedDiffCheck'
+        $expectedHarnessLedgerSequence = 'ValidateToolGrant,ValidateToolGrant,ValidateToolGrant,CreateSandbox,WriteOwnerMarker,CreateSyntheticEnvironment,GitInventory,WriteRepositoryInventory,QualityStaticPowerShell7,ReadWorkerEvidence,QualityShardPowerShell7C01,ReadWorkerEvidence,QualityShardPowerShell7C02,ReadWorkerEvidence,QualityShardPowerShell7C03,ReadWorkerEvidence,QualityShardPowerShell7C04,ReadWorkerEvidence,QualityShardPowerShell7C05,ReadWorkerEvidence,QualityShardPowerShell7C06,ReadWorkerEvidence,QualityShardPowerShell7C07,ReadWorkerEvidence,QualityShardPowerShell7C08,ReadWorkerEvidence,QualityShardPowerShell7U01,ReadWorkerEvidence,QualityShardPowerShell7U02,ReadWorkerEvidence,QualityShardPowerShell7H01,ReadWorkerEvidence,QualityShardPowerShell7H02,ReadWorkerEvidence,QualityShardPowerShell7H03,ReadWorkerEvidence,QualityStaticWindowsPowerShell,ReadWorkerEvidence,QualityShardWindowsPowerShellC01,ReadWorkerEvidence,QualityShardWindowsPowerShellC02,ReadWorkerEvidence,QualityShardWindowsPowerShellC03,ReadWorkerEvidence,QualityShardWindowsPowerShellC04,ReadWorkerEvidence,QualityShardWindowsPowerShellC05,ReadWorkerEvidence,QualityShardWindowsPowerShellC06,ReadWorkerEvidence,QualityShardWindowsPowerShellC07,ReadWorkerEvidence,QualityShardWindowsPowerShellC08,ReadWorkerEvidence,QualityShardWindowsPowerShellU01,ReadWorkerEvidence,QualityShardWindowsPowerShellU02,ReadWorkerEvidence,QualityShardWindowsPowerShellH01,ReadWorkerEvidence,QualityShardWindowsPowerShellH02,ReadWorkerEvidence,QualityShardWindowsPowerShellH03,ReadWorkerEvidence,GitDiffCheck,GitCachedDiffCheck,ScanSandboxArtifacts,CleanupSandbox'
 
         foreach ($name in @('ci.yml', 'release-dry-run.yml')) {
             $text = [System.IO.File]::ReadAllText((Join-Path $script:RepoRoot ".github\workflows\$name"))
@@ -286,6 +325,8 @@ Describe 'GitHub Actions workflow supply-chain and evidence contracts' {
             $text | Should -Match '(?s)HARNESS_LEDGER.*?RuleId.*?-join.*?-cne'
             $text | Should -Match '(?s)TRUSTED_PROCESS_EXPECTED_COUNT.*?-ne.*?TRUSTED_PROCESS_ACTUAL_COUNT'
             $text | Should -Match '(?s)TRUSTED_PROCESS_ACTUAL_COUNT.*?-ne.*?TRUSTED_HARNESS_PROCESS_COUNT'
+            $text | Should -Match 'TRUSTED_PROCESS_EXPECTED_COUNT\s+-ne\s+31'
+            $text | Should -Match 'HARNESS_LEDGER\.Count\s+-ne\s+68'
             $text | Should -Match '(?s)SchemaVersion.*?-ne\s+2'
             $text | Should -Match "(?s)Scenario.*?-cne\s+'Quality'"
             $text | Should -Match '(?s)SAFE_FAILURE_DISCLOSURE.*?-ne\s+\$true'

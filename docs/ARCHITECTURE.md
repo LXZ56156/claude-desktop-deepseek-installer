@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-21
+更新日期：2026-07-23
 
 ## 定位
 
@@ -25,10 +25,10 @@ Entrypoints
               -> Live adapters (VM/UserLive only)
 
 OperatorCoordination (separate development plane)
-  -> Fast Lane policy + pure relay state machine + readiness
-     -> deterministic onboarding + bounded directional Git transport
-        -> pure/fake reset + VM-only provider boundary + synthetic rehearsal
-           -> external protection assertion, credentials, paused tasks and VM evidence
+  -> Host freezes exact commit/tree + complete retest prompt
+     -> user manually transfers prompt/report
+        -> VM read-only batch tests
+           -> Host validates untrusted report and batch-fixes common roots
 ~~~
 
 ### Entrypoints
@@ -97,9 +97,14 @@ Feature、Service、Credential、Clock。
 ### Operator coordination plane
 
 双机测试闭环属于独立 OperatorCoordination development plane，权威合同见
-`VM_TEST_RELAY.md`。它不进入产品 bootstrap、ProductCore、Release 或 trusted
-harness runtime；trusted harness 仅可从自己的 allow-listed 测试入口调用其
-synthetic/local/fake contract。它不充当正式证据验证器。截至 2026-07-22，宿主机侧
+`VM_TEST_RELAY.md`。当前只通过用户人工搬运完整提示词和
+`VM_BATCH_TEST_REPORT_V1`；Host 唯一写代码，VM 只读。报告先按 commit/tree、矩阵、
+零指标与 evidence manifest 校验，再按共同根因批修。该平面不进入产品 bootstrap、
+ProductCore、Release 或 trusted harness runtime，也不充当正式证据验证器。
+
+realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler、
+`codex exec resume` 和旧 onboarding/canary/finalization 已退役，无操作权。以下截至
+2026-07-22 的实现说明只保留 DevelopmentOnly 历史/回归背景：宿主机侧
 Git transport/runtime、onboarding 和 readiness 合同已实现，三仓 public visibility 与
 服务端 protected history 已部署；Cloudflare realtime accelerator 的产品侧纯 PowerShell
 合同、独立 infra 实现和离线测试也已完成。Free-only 外部步骤虽已获授权，既有 Cloudflare
@@ -268,6 +273,12 @@ TestSafe/DryRun 的潜在修改操作必须 `Changed=false`。结果、异常、
 `Success=true` 只对应 `SUCCEEDED`。`Data` 分别携带每项能力的
 `READY/BLOCKED/PENDING_RESTART/UNSUPPORTED/UNKNOWN` 和 UI 的
 `PASS/FAIL/NOT_TESTED`，不得把三个层级压成一个布尔值。
+
+非 `-PassThru` 的公开 CLI 入口必须输出固定四行 `Status`、`ErrorCode`、
+`Changed`、`NextStep`，并使用稳定退出码：
+`SUCCEEDED=0`、`FAILED=1`、`PARTIAL=2`、`RESTART_REQUIRED=3`、
+`ACTION_REQUIRED=4`、`CANCELLED=5`。中英文 `.cmd` 只转发该退出码，不重新解释
+结构化状态。
 
 ## 固定完整功能流程
 

@@ -50,7 +50,24 @@
 - 可恢复备份与可分享脱敏快照是两个不同合同。脱敏快照永远不得作为恢复源；
   未来跨重启恢复材料必须使用 DPAPI CurrentUser 或经评审的等效保护。
 
-## Realtime relay 交付优先级
+## 当前 Host/VM 手动测试闭环
+
+- realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
+  Automation、scheduler 和 `codex exec resume` 已全部废弃，不得调试、恢复、部署、
+  调用或作为测试/交付依赖；不得再要求用户搬运通信凭据。
+- Host/VM 之间只由用户人工搬运完整 `VM_BATCH_TEST_REPORT_V1` 和宿主机生成的完整
+  重测提示词。Automation 必须保持 `PAUSED` 或 `ABSENT`，也不再执行 readback。
+- 宿主机是产品代码唯一写入者。VM 只读冻结的精确 commit/tree，执行批量测试并返回
+  不可信报告/RepairProposal；宿主机先校验绑定、范围、终态、零指标和 evidence
+  manifest，再按共同根因批修。
+- 旧 onboarding ZIP、foreground canary、VM bootstrap、automation binding 和 relay
+  finalization 均已 superseded，不得继续。普通批量报告不是 P10A/P11 正式证据；Formal
+  Lane 的外部 snapshot receipt、CAS、签名和 P12 人工门保持不变。
+
+## Realtime relay 交付优先级（历史；已撤销，无操作权）
+
+以下 D-022/D-024 内容只保留历史理由和回归背景。D-025 及上节优先；不得据此执行
+Cloudflare、relay、watcher、control repo、credential 或 automation 操作。
 
 `docs/DECISIONS.md` 的 D-022 是 realtime relay 的当前冻结原则，并优先于
 早期 relay 文档中更严格的预防性门槛：
@@ -77,7 +94,11 @@
   不自动 merge、release、promotion，不越过 P12；Formal Lane 的 snapshot
   receipt、CAS 与签名要求不变。
 
-## 双机 VM 测试闭环
+## 双机 VM 测试闭环（历史自动化设计；已由手动闭环取代）
+
+以下自动 outbox、scheduled task、watcher 和 relay envelope 设计不再是当前路径，
+不得恢复或依赖；其中宿主机唯一写权、VM 只读、正式快照/CAS/签名和禁止自动发布等
+安全不变量继续有效。
 
 - 宿主机 Codex 是唯一代码写入者：只允许它修改源码、runbook 和候选构建定义，
   执行宿主机质量门并提交、推送修复。VM Codex 只允许拉取精确版本、测试、分析

@@ -221,11 +221,59 @@ Describe 'P1 trusted HostSandbox harness' {
         $safe | Should -Not -Match '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u202A-\u202E]'
     }
 
+    It 'keeps Chinese and non-BMP characters intact at the timeout-tail boundary' {
+        $suffix = '质量检查：中文 😀 𠮷'
+        $text = ('x' * 5000) + $suffix
+        $tail = Get-CddsiUnicodeSafeTail -Text $text -MaximumLength $suffix.Length
+        $tail | Should -BeExactly $suffix
+        $tail | Should -Not -Match ([string][char]0xFFFD)
+
+        $boundary = ('y' * 12) + [char]0xD83D + [char]0xDE00 + 'z'
+        $safeBoundary = Get-CddsiUnicodeSafeTail -Text $boundary -MaximumLength 2
+        $safeBoundary | Should -BeExactly 'z'
+        @($safeBoundary.ToCharArray() | Where-Object {
+            [char]::IsHighSurrogate($_) -or [char]::IsLowSurrogate($_)
+        }).Count | Should -Be 0
+    }
+
+    It 'bounds redirected-task draining and preserves decoded Unicode' {
+        $completedSource = New-Object 'System.Threading.Tasks.TaskCompletionSource[string]'
+        $completedSource.SetResult('质量检查 😀 𠮷')
+        $completed = Read-CddsiProcessTextTask -Task $completedSource.Task -WaitMilliseconds 100 -FailureText 'FAILED'
+        $completed.Succeeded | Should -BeTrue
+        $completed.Text | Should -BeExactly '质量检查 😀 𠮷'
+
+        $pendingSource = New-Object 'System.Threading.Tasks.TaskCompletionSource[string]'
+        $pending = Read-CddsiProcessTextTask -Task $pendingSource.Task -WaitMilliseconds 1 -FailureText 'OUTPUT_DRAIN_TIMEOUT'
+        $pending.Succeeded | Should -BeFalse
+        $pending.Text | Should -BeExactly 'OUTPUT_DRAIN_TIMEOUT'
+    }
+
     It 'creates an exact machine-readable safe failure envelope' {
         $token = ('b' * 64 -join '')
         $canary = 'CDDSI_SYNTHETIC_CANARY_00000000000000000000000000000110'
         $paths = [ordered]@{ '<REPOSITORY_ROOT>' = 'C:\Sensitive Repo' }
         $apiKey = 'sk-' + ('r' * 32 -join '')
+        $progress = New-CddsiQualityFailureProgress `
+            -CompletedRoleEvidence @(
+                [pscustomobject]@{
+                    EvidenceType = 'CddsiWorkerStaticEvidence'
+                    Engine       = 'PowerShell7'
+                },
+                [pscustomobject]@{
+                    EvidenceType = 'CddsiWorkerPesterShardEvidence'
+                    Engine       = 'PowerShell7'
+                    ShardId      = 'C01'
+                    TestFiles    = @('tests/Contract/One.Tests.ps1', 'tests/Unit/Two.Tests.ps1')
+                    Pester       = [pscustomobject]@{ PassedCount = 17L }
+                }
+            ) `
+            -CompletedWorkerIds @('PowerShell7/Static', 'PowerShell7/C01') `
+            -CurrentWorkerDescriptor ([pscustomobject]@{
+                Engine = 'PowerShell7'; WorkerRole = 'PesterShard'; ShardId = 'C02'
+            }) `
+            -ExpectedWorkerCount 28 `
+            -TimedOut $true
         $evidence = New-CddsiSafeFailureEvidence `
             -Scenario Quality `
             -RunId '00000000-0000-0000-0000-000000000110' `
@@ -234,15 +282,17 @@ Describe 'P1 trusted HostSandbox harness' {
             -CleanupOutcome RefusedUnsafeCleanup `
             -CleanupFailureCode CLEANUP_REFUSED_UNSAFE `
             -RepositoryContentChanged $true `
+            -Progress $progress `
             -PathTokens $paths `
             -OwnershipToken $token `
             -CanaryValue $canary
 
         @($evidence.PSObject.Properties.Name | Sort-Object) | Should -Be @(
             'CleanupFailureCode', 'CleanupOutcome', 'EvidenceType', 'PrimaryFailureCode',
-            'RepositoryContentChanged', 'RunId', 'SafeFailureDisclosure', 'SafeFailureMessage',
+            'Progress', 'RepositoryContentChanged', 'RunId', 'SafeFailureDisclosure', 'SafeFailureMessage',
             'Scenario', 'SchemaVersion', 'Status'
         )
+        $evidence.SchemaVersion | Should -Be 2
         $evidence.Status | Should -BeExactly 'FAILED_SAFE'
         $evidence.RepositoryContentChanged | Should -BeTrue
         $evidence.CleanupOutcome | Should -BeExactly 'RefusedUnsafeCleanup'
@@ -251,10 +301,62 @@ Describe 'P1 trusted HostSandbox harness' {
         $roundTrip = $json | ConvertFrom-Json
         $roundTrip.PrimaryFailureCode | Should -BeExactly 'PRIMARY_FAILURE'
         $roundTrip.CleanupFailureCode | Should -BeExactly 'CLEANUP_REFUSED_UNSAFE'
+        $roundTrip.Progress.Phase | Should -BeExactly 'QualityWorker'
+        $roundTrip.Progress.CompletedWorkerCount | Should -Be 2
+        $roundTrip.Progress.CompletedShardCount | Should -Be 1
+        $roundTrip.Progress.CompletedTestFileCount | Should -Be 2
+        $roundTrip.Progress.CompletedPassedCount | Should -Be 17
+        $roundTrip.Progress.CurrentShardId | Should -BeExactly 'C02'
+        $roundTrip.Progress.TimedOut | Should -BeTrue
+        (Assert-CddsiSafeFailureEvidence -Evidence $roundTrip -PathTokens $paths -OwnershipToken $token -CanaryValue $canary) |
+            Should -BeTrue
         $json | Should -Not -Match [regex]::Escape($apiKey)
         $json | Should -Not -Match [regex]::Escape($token)
         $json | Should -Not -Match [regex]::Escape($canary)
         $json | Should -Not -Match [regex]::Escape('C:\Sensitive Repo')
+    }
+
+    It 'rejects timeout progress that is not an exact worker-plan prefix' {
+        $invalid = [pscustomobject][ordered]@{
+            SchemaVersion          = 1
+            Phase                  = 'QualityWorker'
+            ExpectedWorkerCount    = 28
+            CompletedWorkerCount   = 1
+            CompletedWorkerIds     = @('PowerShell7/X99')
+            CompletedShardCount    = 1
+            CompletedTestFileCount = 1L
+            CompletedPassedCount   = 1L
+            CurrentEngine          = 'PowerShell7'
+            CurrentWorkerRole      = 'PesterShard'
+            CurrentShardId         = 'C02'
+            TimedOut               = $true
+        }
+        { Assert-CddsiQualityFailureProgress -Progress $invalid } | Should -Throw
+
+        $invalid.CompletedWorkerIds = @('PowerShell7/Static')
+        $invalid.CompletedShardCount = 1
+        { Assert-CddsiQualityFailureProgress -Progress $invalid } | Should -Throw
+
+        $invalid.CompletedShardCount = 0
+        $invalid.SchemaVersion = '1'
+        { Assert-CddsiQualityFailureProgress -Progress $invalid } | Should -Throw
+    }
+
+    It 'keeps full safe diagnostics free of split surrogate pairs' {
+        $paths = [ordered]@{ '<REPOSITORY_ROOT>' = 'C:\Synthetic Repo' }
+        $headBoundary = ('h' * 116) + '😀' + ('m' * 200) + '𠮷' + ('t' * 200)
+        $safe = Protect-CddsiHarnessText -Text $headBoundary -PathTokens $paths -MaximumLength 256
+        $roundTrip = ([pscustomobject]@{ Text = $safe } | ConvertTo-Json -Compress) | ConvertFrom-Json
+        $roundTrip.Text | Should -BeExactly $safe
+        $roundTrip.Text | Should -Not -Match ([string][char]0xFFFD)
+        for ($index = 0; $index -lt $safe.Length; $index++) {
+            if ([char]::IsHighSurrogate($safe[$index])) {
+                ($index + 1 -lt $safe.Length -and [char]::IsLowSurrogate($safe[$index + 1])) | Should -BeTrue
+            }
+            if ([char]::IsLowSurrogate($safe[$index])) {
+                ($index -gt 0 -and [char]::IsHighSurrogate($safe[$index - 1])) | Should -BeTrue
+            }
+        }
     }
 
     It 'reports only deterministic field names for worker provenance drift' {

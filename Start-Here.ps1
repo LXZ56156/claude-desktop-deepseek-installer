@@ -15,6 +15,15 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+trap {
+    if ($PassThru) { throw $_ }
+    Write-Host 'Status=FAILED'
+    Write-Host 'ErrorCode=UNHANDLED_SAFE_FAILURE'
+    Write-Host 'Changed=false'
+    Write-Host 'NextStep=Review safe logs before retrying.'
+    exit 1
+}
+
 $bootstrapPath = Join-Path $PSScriptRoot 'lib\bootstrap.ps1'
 . $bootstrapPath
 $mode = Resolve-CddsiExecutionMode -TestSafe:$TestSafe -DryRun:$DryRun -Live:$Live
@@ -163,3 +172,8 @@ Write-CddsiLog -ExecutionContext $Context -Level INFO -Message $result.MessageSa
 if ($PassThru) {
     return $result
 }
+
+foreach ($line in @(Format-CddsiOperationCliSummary -Result $result)) {
+    Write-Host $line
+}
+exit (Get-CddsiOperationExitCode -Status $result.Status)

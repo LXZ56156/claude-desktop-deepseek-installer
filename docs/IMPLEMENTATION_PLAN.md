@@ -1,6 +1,6 @@
 # 实现计划
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 ## 总目标
 
@@ -8,8 +8,9 @@
 Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程或系统动作。真实
 工作分两道 VM 门：先在 disposable Windows VM 执行 P10A 窄范围校准并冻结事实，
 再构建 P10B 双候选，最后由另一轮 disposable VM 与 VM 内 Codex 执行 P11 全面验收。
-两道 VM 门之前先完成 P10A-0A 双机 Fast Lane MVP 前置门；该外部控制面只
-协调宿主机 Codex 与只读 VM Codex，不属于产品或 trusted test harness。
+当前开发反馈只通过用户人工搬运 `VM_BATCH_TEST_REPORT_V1`；realtime/Fast Lane
+已退役，不再是 P10A/P11 前置。该手动协调不属于产品或 trusted test harness，也不
+增加任何 Live authority。
 
 产品流程和完成定义见 `PRODUCT_SPEC.md`；宿主机安全门见
 `TEST_ISOLATION.md`；双机职责与消息协议见 `VM_TEST_RELAY.md`。
@@ -28,8 +29,8 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
-| P10A-0A | 双机 Fast Lane MVP 前置门 | **CONTROLLED_PAUSE**；所有旧 bundle/prompt superseded，不得恢复旧 bootstrap/产品 integration | relay-only VM smoke 可独立进行；日后是否从新 clean commit 重新 finalization 另行决定 |
-| R0 | Realtime Fast Lane accelerator（独立 operator 工作流） | **PROVISIONED / CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED / HOST_FOREGROUND_CREDENTIAL_READY / VM_FOREGROUND_CREDENTIAL_READY / VM_DEPLOY_KEY_REGISTERED / CLEAN_ROOM_EPOCH_DEPLOYED / FOREGROUND_CANARY_PENDING / NOT_PRIMARY / AUTOMATION_PAUSED** | D-024 由 Host/VM 两个新对话前台运行有界 relay cycle；干净 room epoch 已部署，下一步执行 canary；Automation 不是门，不改变 P10/P11/P12 门 |
+| P10A-0A | 旧双机 Fast Lane MVP 前置门 | **RETIRED / SUPERSEDED** | 不恢复旧 bundle/bootstrap/automation/relay；当前只人工搬运批量报告 |
+| R0 | Realtime Fast Lane accelerator（历史 operator 工作流） | **RETIRED / NO_OPERATION_AUTHORITY / AUTOMATION_PAUSED_OR_ABSENT** | 保留 DevelopmentOnly 回归字节；禁止 Cloudflare/relay/watcher/control repo/automation 操作 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
 | P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
@@ -54,7 +55,30 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 - P10B 未完成，不得开始 P11 全面 VM Live。
 - P11 未通过，不得宣称产品完成或进入 P12。
 
-## 2026-07-21 controlled pause 与 lean realtime relay 工作流
+## 2026-07-23 手动 VM 批量报告工作流
+
+已接收的首份 `VM_BATCH_TEST_REPORT_V1` 精确绑定修复前 commit/tree，报告状态为
+`PARTIAL`。宿主机校验了环境与计数等式、各门终态和零写入/零真实访问/零 secret
+指标；因未搬回 evidence manifest 正文，只能把外部 evidence 完整性标为
+`PARTIAL`。
+
+本轮批修范围固定为：
+
+- 六个中英文公开包装器的稳定 process exit 与四字段摘要；
+- worker/parent 严格 UTF-8 和中文/非 BMP 行为回归；
+- 双引擎各 1 Static + 13 frozen Pester shards，替代单个 900 秒 monolithic worker；
+- 可外层留存的 schema v2 timeout partial progress。
+
+lifecycle、完整 HTTP fault、未来 GUI/UAC 与真实多进程场景继续标为
+`NOT_IMPLEMENTED` 或 `REQUIRES_EXTERNAL_SNAPSHOT`，本轮不推测实现产品 Live。
+宿主机完成同分支 PR #1 的 gates/commit/push/CI 后，由用户人工把完整重测提示词送入
+VM；VM 仍只读，报告仍是不可信数据。
+
+## 2026-07-21 controlled pause 与 lean realtime relay 工作流（历史；已退役）
+
+本节及后续 P10A-0A 自动 outbox/onboarding/relay 内容只保留历史，无操作权。D-025
+明确禁止恢复 Cloudflare、watcher、control repo、Automation、scheduler、
+`codex exec resume`、旧 ZIP/canary/finalization。
 
 旧 VM bootstrap 路径已受控暂停。不得继续交付或执行任何 onboarding ZIP/prompt，不运行
 旧 integration、reset、旧产品测试循环或 Formal Lane。这不禁止进入已准备的 VM 执行独立
@@ -787,6 +811,18 @@ CHANGELOG、文件名内容或 ZIP metadata。
 
 ## 当前停点与下一工作包
 
+2026-07-23 当前停点是宿主机批量修复收口：VM 报告已校验为 `PARTIAL`，可安全
+复现的 wrapper/timeout/encoding 根因已批修；下一步固定为完整双引擎质量门、
+Release DryRun、同分支 PR #1 commit/push/CI，然后由用户人工搬运最小 VM 重测
+提示词。Automation 保持 `PAUSED`/`ABSENT`；不得执行任何 Cloudflare/relay/control
+repo/watcher/scheduler/旧 onboarding/finalization。
+
+未在本轮实现的 lifecycle、完整 HTTP fault、GUI/UAC 和真正跨进程竞争继续作为
+`NOT_IMPLEMENTED`/`REQUIRES_EXTERNAL_SNAPSHOT` blocker，不通过放宽断言、扩大产品
+timeout 或伪造 evidence 解决。
+
+### 2026-07-22 停点与 Cloudflare 工作包（历史；已退役）
+
 P3-P4、P5-P7 纯合同、P8 fake orchestrator、P9 synthetic、P10A
 evidence/consumption、P10B 宿主机支撑合同和 P10A-0A 本地 TestSafe/DryRun 合同切片
 均已实现。P10A-0A 宿主机侧又完成固定 Git outbox、readiness、deterministic onboarding 和
@@ -839,6 +875,13 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
 隔离入口，不能写成可工作 Live adapter。
 
 ## 当前外部阻塞与紧接下一步
+
+当前普通开发重测只需用户人工把宿主机给出的完整提示词带到 VM，再把完整
+`VM_BATCH_TEST_REPORT_V1` 带回；不存在 relay credential、Cloudflare、control repo、
+Automation 或 scheduler 前置。正式 P10A/P11 仍受外部 snapshot/CAS/signing 与不可变
+候选约束，P3 缺口中需要真实 GUI/UAC/系统基线的部分也仍需外部快照。
+
+以下 2026-07-22 relay/credential/automation 清单仅为历史，不是当前 blocker 或下一步：
 
 - 服务端 protected history 已完成，但 controlled pause 明确覆盖旧 bootstrap 派生逻辑；
   `CanStartVmBootstrap=false`。即使未来 clean HEAD、bundle、暂停 task、remote/PR/CI 再次
@@ -903,7 +946,9 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
 
 P1 runner 已存在。`scripts/bootstrap-dev.ps1` 只验证固定 Pester tree；
 `scripts/check.ps1` 要求三个工具的绝对路径与 SHA-256，并在 owner-marked sandbox
-内运行双引擎 Pester 和隔离 Git。任何依赖、工具 identity、suite count、证据
+内运行双引擎各 1 Static + 13 frozen Pester shards 和隔离 Git；worker 使用 strict
+UTF-8 round-trip evidence，timeout 输出 schema v2 partial progress。任何依赖、工具
+identity、shard partition、suite count、证据
 schema 或 ledger 漂移均 fail closed，不得退回继承真实 HOME 的临时入口。
 
 ## P1 之后每个工作包的固定完成门

@@ -10,7 +10,7 @@ permissions:
 jobs:
   release-contract:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       POWERSHELL_UPDATECHECK: 'Off'
       POWERSHELL_TELEMETRY_OPTOUT: '1'
@@ -141,17 +141,17 @@ jobs:
           if ($actualWorkerEngineSet -cne $expectedWorkerEngineSet) {
             throw 'Quality worker engine set is incomplete.'
           }
-          $expectedTrustedProcessSequence = 'GitInventory,QualityWorkerPowerShell7,QualityWorkerWindowsPowerShell,GitDiffCheck,GitCachedDiffCheck'
+          $expectedTrustedProcessSequence = 'GitInventory,QualityStaticPowerShell7,QualityShardPowerShell7C01,QualityShardPowerShell7C02,QualityShardPowerShell7C03,QualityShardPowerShell7C04,QualityShardPowerShell7C05,QualityShardPowerShell7C06,QualityShardPowerShell7C07,QualityShardPowerShell7C08,QualityShardPowerShell7U01,QualityShardPowerShell7U02,QualityShardPowerShell7H01,QualityShardPowerShell7H02,QualityShardPowerShell7H03,QualityStaticWindowsPowerShell,QualityShardWindowsPowerShellC01,QualityShardWindowsPowerShellC02,QualityShardWindowsPowerShellC03,QualityShardWindowsPowerShellC04,QualityShardWindowsPowerShellC05,QualityShardWindowsPowerShellC06,QualityShardWindowsPowerShellC07,QualityShardWindowsPowerShellC08,QualityShardWindowsPowerShellU01,QualityShardWindowsPowerShellU02,QualityShardWindowsPowerShellH01,QualityShardWindowsPowerShellH02,QualityShardWindowsPowerShellH03,GitDiffCheck,GitCachedDiffCheck'
           $actualTrustedProcessSequence = @($evidence.TRUSTED_PROCESS_SEQUENCE | ForEach-Object RuleId) -join ','
           if ($actualTrustedProcessSequence -cne $expectedTrustedProcessSequence -or
-              $evidence.TRUSTED_PROCESS_EXPECTED_COUNT -ne 5 -or
+              $evidence.TRUSTED_PROCESS_EXPECTED_COUNT -ne 31 -or
               $evidence.TRUSTED_PROCESS_ACTUAL_COUNT -ne $evidence.TRUSTED_PROCESS_EXPECTED_COUNT -or
               $evidence.TRUSTED_PROCESS_ACTUAL_COUNT -ne $evidence.TRUSTED_HARNESS_PROCESS_COUNT) {
             throw 'Quality trusted-process evidence drift.'
           }
-          $expectedHarnessLedgerSequence = 'ValidateToolGrant,ValidateToolGrant,ValidateToolGrant,CreateSandbox,WriteOwnerMarker,CreateSyntheticEnvironment,GitInventory,WriteRepositoryInventory,QualityWorkerPowerShell7,ReadWorkerEvidence,QualityWorkerWindowsPowerShell,ReadWorkerEvidence,GitDiffCheck,GitCachedDiffCheck,ScanSandboxArtifacts,CleanupSandbox'
+          $expectedHarnessLedgerSequence = 'ValidateToolGrant,ValidateToolGrant,ValidateToolGrant,CreateSandbox,WriteOwnerMarker,CreateSyntheticEnvironment,GitInventory,WriteRepositoryInventory,QualityStaticPowerShell7,ReadWorkerEvidence,QualityShardPowerShell7C01,ReadWorkerEvidence,QualityShardPowerShell7C02,ReadWorkerEvidence,QualityShardPowerShell7C03,ReadWorkerEvidence,QualityShardPowerShell7C04,ReadWorkerEvidence,QualityShardPowerShell7C05,ReadWorkerEvidence,QualityShardPowerShell7C06,ReadWorkerEvidence,QualityShardPowerShell7C07,ReadWorkerEvidence,QualityShardPowerShell7C08,ReadWorkerEvidence,QualityShardPowerShell7U01,ReadWorkerEvidence,QualityShardPowerShell7U02,ReadWorkerEvidence,QualityShardPowerShell7H01,ReadWorkerEvidence,QualityShardPowerShell7H02,ReadWorkerEvidence,QualityShardPowerShell7H03,ReadWorkerEvidence,QualityStaticWindowsPowerShell,ReadWorkerEvidence,QualityShardWindowsPowerShellC01,ReadWorkerEvidence,QualityShardWindowsPowerShellC02,ReadWorkerEvidence,QualityShardWindowsPowerShellC03,ReadWorkerEvidence,QualityShardWindowsPowerShellC04,ReadWorkerEvidence,QualityShardWindowsPowerShellC05,ReadWorkerEvidence,QualityShardWindowsPowerShellC06,ReadWorkerEvidence,QualityShardWindowsPowerShellC07,ReadWorkerEvidence,QualityShardWindowsPowerShellC08,ReadWorkerEvidence,QualityShardWindowsPowerShellU01,ReadWorkerEvidence,QualityShardWindowsPowerShellU02,ReadWorkerEvidence,QualityShardWindowsPowerShellH01,ReadWorkerEvidence,QualityShardWindowsPowerShellH02,ReadWorkerEvidence,QualityShardWindowsPowerShellH03,ReadWorkerEvidence,GitDiffCheck,GitCachedDiffCheck,ScanSandboxArtifacts,CleanupSandbox'
           $actualHarnessLedgerSequence = @($evidence.HARNESS_LEDGER | ForEach-Object RuleId) -join ','
-          if ($evidence.HARNESS_LEDGER.Count -ne 16 -or
+          if ($evidence.HARNESS_LEDGER.Count -ne 68 -or
               $actualHarnessLedgerSequence -cne $expectedHarnessLedgerSequence) {
             throw 'Quality trusted-harness ledger drift.'
           }

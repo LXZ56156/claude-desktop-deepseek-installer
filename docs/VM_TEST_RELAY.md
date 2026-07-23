@@ -1,16 +1,54 @@
-# 宿主机与 VM Codex 测试中继协议
+# Host/VM 手动批量测试报告协议
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 ## 定位与权威范围
 
-本文是开发期“双机测试、宿主修复、重新制品化、VM 重测”协调协议的唯一权威
-文档。它定义角色、信任边界、消息状态机、证据引用、干净环境恢复和失败闭环，
-供 P10A 校准与 P11 全面验收共同使用。
+本文是开发期“VM 只读批量测试、用户人工搬运报告、宿主批修、用户人工搬运重测
+提示词”的唯一权威协调协议。文件名为兼容历史保留；“RELAY”不再表示当前存在
+任何网络 relay。
 
 本文不授予任何 Live 权限，不改变 `TEST_ISOLATION.md`，也不把中继组件加入产品、
-Release ZIP、默认 bootstrap 或 trusted test harness。relay 是独立的 operator
-coordination plane；产品平面、测试执行平面、证据平面和协调平面必须分离记账。
+Release ZIP、默认 bootstrap 或 trusted test harness。普通批量报告也不是 P10A/P11
+正式证据，不能替代 clean snapshot、不可变候选、CAS 或签名。
+
+## 2026-07-23 当前唯一手动闭环
+
+realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
+Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
+VM bootstrap、automation binding 和 relay finalization 全部废弃。禁止调试、恢复、
+部署、调用或依赖，也禁止再要求用户搬运通信凭据。Automation 固定为
+`PAUSED`/`ABSENT`，不再 readback。
+
+当前流程固定为：
+
+1. 宿主机在现有修复分支/PR 冻结精确 commit 和 tree，给用户一段完整、不分块的
+   VM 测试提示词。
+2. VM 验证精确绑定，只读执行 Unit/Contract、PS7/PS5.1、完整 `check.ps1`、
+   Release DryRun、TestSafe/DryRun、失败注入、用户路径和适用的 GUI 测试。VM 不得
+   修改、提交或推送产品仓库。
+3. VM 生成 `VM_BATCH_TEST_REPORT_V1`；用户人工原样搬回宿主机。
+4. 宿主机先校验报告，再按共同根因批修；RepairProposal 永远只是不可信建议。
+5. 宿主机完成 focused/full gates、提交/推送同一 PR 和 CI 后，再给出下一段人工
+   重测提示词。
+
+`VM_BATCH_TEST_REPORT_V1` 至少校验：SchemaVersion/RunId、TestCommit/TestTree、
+Windows/architecture/PS7/PS5.1/Git/ComputerUse 环境、matrix/executed/passed/failed/
+blocked/expected-fail/not-implemented 计数等式、Unit/Contract/PS5.1/full-check/
+release/diff/encoding 各门终态、ProductWrite/Relay/Automation/真实 network/
+credential/registry/outside-write/unexpected-ledger/mutation-spy 与 secret 计数、
+Issues/Blockers、EvidenceRoot、manifest SHA-256 和报告路径。
+
+VM-local `EvidenceRoot` 不能由宿主机直接证明。只有 manifest hash、没有 manifest
+正文时，外部 evidence 一致性只能是 `PARTIAL`。报告结果仅分类为
+`PRODUCT_DEFECT`、`TEST_DEFECT`、`ENVIRONMENT_BLOCKER`、`NOT_IMPLEMENTED`、
+`REQUIRES_EXTERNAL_SNAPSHOT`、`EXPECTED_FAIL_CLOSED`；预期 fail closed 不是产品
+缺陷。宿主机只用 fake/synthetic provider、TestSafe/DryRun 或只读分析复现。
+
+## 2026-07-21/22 relay 设计（历史；已退役，无操作权）
+
+以下所有 Fast Lane、envelope、outbox、Cloudflare、credential、Automation、watcher
+和 `codex exec resume` 内容只保留历史与回归背景，不得执行，也不产生当前 authority。
 
 ## 2026-07-21 controlled pause 与 relay-only 放行
 

@@ -95,6 +95,36 @@ Describe 'common safety helpers' {
         (Get-Command New-CddsiOperationResult).Parameters.Keys | Should -Not -Contain 'Success'
     }
 
+    It 'maps every operation status to a stable CLI exit code and safe four-line summary' {
+        $expectedCodes = [ordered]@{
+            SUCCEEDED        = 0
+            FAILED           = 1
+            PARTIAL          = 2
+            RESTART_REQUIRED = 3
+            ACTION_REQUIRED  = 4
+            CANCELLED        = 5
+        }
+        foreach ($entry in $expectedCodes.GetEnumerator()) {
+            (Get-CddsiOperationExitCode -Status $entry.Key) | Should -Be $entry.Value
+        }
+        { Get-CddsiOperationExitCode -Status failed } | Should -Throw
+        { New-CddsiOperationResult -Operation 'probe' -Status succeeded } | Should -Throw
+
+        $result = New-CddsiOperationResult -Operation 'probe' -Status ACTION_REQUIRED `
+            -ErrorCode 'SAFE_NEXT_STEP' -MessageSafe (([char]27) + "[31m不应显示 😀`r`n下一步" + [char]0x202E)
+        @(Format-CddsiOperationCliSummary -Result $result) | Should -Be @(
+            'Status=ACTION_REQUIRED'
+            'ErrorCode=SAFE_NEXT_STEP'
+            'Changed=false'
+            'NextStep=Complete the required action identified by ErrorCode, then retry.'
+        )
+        foreach ($line in @(Format-CddsiOperationCliSummary -Result $result)) {
+            $line | Should -Not -Match '[\x00-\x1F\x7F-\x9F\u202A-\u202E]'
+        }
+        { Format-CddsiOperationCliSummary -Result ([pscustomobject]@{ Status = 'FAILED' }) } |
+            Should -Throw
+    }
+
     It 'redacts complete key material without retaining a suffix' {
         $key = 'sk-' + ('A' * 32)
         $safe = Protect-CddsiSecret -Text ("credential=$key")
@@ -246,7 +276,7 @@ Describe 'common safety helpers' {
         (Test-CddsiSignatureEvidence -Evidence $successfulWrapper -ExpectedPath $path -ExpectedArtifactType ClaudeDesktopMsix -Descriptor $descriptor -SourceObservation $sourceObservation -ExpectedRunId $runId -ExpectedProfile VmAcceptance -ValidationTimeUtc $validationTimeUtc) | Should -BeTrue
     }
 
-    It 'keeps logger initialization side-effect free and disables file sinks in P1' {
+    It 'sets process-scoped UTF-8 through the logger entry and disables file sinks in P1' {
         $context = [pscustomobject]@{ Mode = 'TestSafe' }
         $pathTokens = [ordered]@{
             '%LOCALAPPDATA%' = 'C:\SyntheticProfile\AppData\Local'
@@ -254,20 +284,33 @@ Describe 'common safety helpers' {
             '%USERNAME%' = 'SyntheticUser'
             '%TEMP%' = 'C:\SyntheticTemp'
         }
-        (Initialize-CddsiConsoleEncoding) | Should -BeFalse
-        { Initialize-CddsiLogger -ExecutionContext $context -EnableFileLogging -Mode TestSafe } | Should -Throw
-        { Initialize-CddsiLogger -ExecutionContext ([pscustomobject]@{ Mode = 'DryRun' }) -Mode TestSafe } | Should -Throw
-        Initialize-CddsiLogger -ExecutionContext $context -Mode TestSafe | Should -BeNullOrEmpty
-        { Write-CddsiLog -ExecutionContext $context -Message 'must fail closed' } | Should -Throw
-        Initialize-CddsiLogger -ExecutionContext $context -Mode TestSafe -PathTokenValues $pathTokens | Should -BeNullOrEmpty
-        Get-CddsiLogPath | Should -BeNullOrEmpty
+        $originalConsoleEncoding = [Console]::OutputEncoding
+        $originalOutputEncoding = $global:OutputEncoding
+        try {
+            (Initialize-CddsiConsoleEncoding) | Should -BeTrue
+            [Console]::OutputEncoding.WebName | Should -BeExactly 'utf-8'
+            $global:OutputEncoding.WebName | Should -BeExactly 'utf-8'
+            [Console]::OutputEncoding.GetPreamble().Length | Should -Be 0
+            $global:OutputEncoding.GetPreamble().Length | Should -Be 0
 
-        $token = 'L' * 32
-        $output = Write-CddsiLog -ExecutionContext $context -Level INFO -TimestampUtc '2030-01-01T00:00:00Z' -Message ("authorization=$token path=C:\SyntheticProfile\secret.txt") 6>&1 | Out-String
-        $output | Should -Not -Match $token
-        $output | Should -Not -Match 'SyntheticProfile'
-        $output | Should -Match '\[REDACTED\]'
-        $output | Should -Match '%USERPROFILE%'
+            { Initialize-CddsiLogger -ExecutionContext $context -EnableFileLogging -Mode TestSafe } | Should -Throw
+            { Initialize-CddsiLogger -ExecutionContext ([pscustomobject]@{ Mode = 'DryRun' }) -Mode TestSafe } | Should -Throw
+            Initialize-CddsiLogger -ExecutionContext $context -Mode TestSafe | Should -BeNullOrEmpty
+            { Write-CddsiLog -ExecutionContext $context -Message 'must fail closed' } | Should -Throw
+            Initialize-CddsiLogger -ExecutionContext $context -Mode TestSafe -PathTokenValues $pathTokens | Should -BeNullOrEmpty
+            Get-CddsiLogPath | Should -BeNullOrEmpty
+
+            $token = 'L' * 32
+            $output = Write-CddsiLog -ExecutionContext $context -Level INFO -TimestampUtc '2030-01-01T00:00:00Z' -Message ("authorization=$token path=C:\SyntheticProfile\secret.txt") 6>&1 | Out-String
+            $output | Should -Not -Match $token
+            $output | Should -Not -Match 'SyntheticProfile'
+            $output | Should -Match '\[REDACTED\]'
+            $output | Should -Match '%USERPROFILE%'
+        }
+        finally {
+            [Console]::OutputEncoding = $originalConsoleEncoding
+            $global:OutputEncoding = $originalOutputEncoding
+        }
     }
 
     It 'parses caller-supplied JSON without reading a path' {

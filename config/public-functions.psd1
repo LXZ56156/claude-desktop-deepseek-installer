@@ -10,6 +10,8 @@
         'lib/common.ps1' = @(
             'Get-CddsiProjectStage'
             'New-CddsiOperationResult'
+            'Get-CddsiOperationExitCode'
+            'Format-CddsiOperationCliSummary'
             'Resolve-CddsiExecutionMode'
             'Test-CddsiRealMutationAllowed'
             'Assert-CddsiMutationAllowed'
@@ -354,6 +356,8 @@
         'Initialize-CddsiScript' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'Get-CddsiProjectStage' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'New-CddsiOperationResult' = @{ Kind = 'Pure'; Mandatory = @('Operation', 'Status'); Mode = $true }
+        'Get-CddsiOperationExitCode' = @{ Kind = 'Pure'; Mandatory = @('Status'); Mode = $false }
+        'Format-CddsiOperationCliSummary' = @{ Kind = 'Pure'; Mandatory = @('Result'); Mode = $false }
         'Resolve-CddsiExecutionMode' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Test-CddsiRealMutationAllowed' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'Assert-CddsiMutationAllowed' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Operation'); Mode = $true }
@@ -479,7 +483,7 @@
         'Test-CddsiGitInstallerSignature' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $false }
         'Install-CddsiGitForWindows' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'SignatureEvidence', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $true }
         'Invoke-CddsiLiveAdapterOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc'); Mode = $false }
-        'Initialize-CddsiConsoleEncoding' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Initialize-CddsiConsoleEncoding' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
         'Protect-CddsiLogMessage' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Initialize-CddsiLogger' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'Write-CddsiLog' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Message'); Mode = $false }

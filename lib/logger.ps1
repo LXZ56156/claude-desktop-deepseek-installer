@@ -9,9 +9,12 @@ function Initialize-CddsiConsoleEncoding {
     [CmdletBinding()]
     param()
 
-    # P1 does not mutate host console or global encoding. Entrypoint-specific
-    # encoding policy can be added later through an explicitly reviewed sink.
-    return $false
+    # Process-scoped only: do not invoke a console code-page utility or change
+    # the system code page. This is the single reviewed producer contract.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [Console]::OutputEncoding = $utf8
+    $global:OutputEncoding = $utf8
+    return $true
 }
 
 function Protect-CddsiLogMessage {
@@ -76,6 +79,7 @@ function Initialize-CddsiLogger {
         throw 'Logger Mode must match ExecutionContext.Mode.'
     }
 
+    Initialize-CddsiConsoleEncoding | Out-Null
     $script:CddsiFileLoggingEnabled = $false
     $script:CddsiLogFilePath = $null
     $script:CddsiLogPathTokenValues = $PathTokenValues

@@ -36,6 +36,9 @@ function New-CddsiOperationResult {
         [System.Collections.IDictionary]$PathTokenValues
     )
 
+    if (@('SUCCEEDED', 'PARTIAL', 'RESTART_REQUIRED', 'ACTION_REQUIRED', 'CANCELLED', 'FAILED') -cnotcontains $Status) {
+        throw 'Operation result Status must use the canonical uppercase value.'
+    }
     if ($Mode -ne 'Live' -and $Changed) {
         throw 'TestSafe 或 DryRun 结果不得声明 Changed=true。'
     }
@@ -53,6 +56,65 @@ function New-CddsiOperationResult {
         PlannedChanges  = @($PlannedChanges | ForEach-Object { Protect-CddsiReportText -Text $_ -PathTokenValues $PathTokenValues })
         Warnings        = @($Warnings | ForEach-Object { Protect-CddsiReportText -Text $_ -PathTokenValues $PathTokenValues })
     }
+}
+
+function Get-CddsiOperationExitCode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('SUCCEEDED', 'PARTIAL', 'RESTART_REQUIRED', 'ACTION_REQUIRED', 'CANCELLED', 'FAILED')]
+        [string]$Status
+    )
+
+    if (@('SUCCEEDED', 'PARTIAL', 'RESTART_REQUIRED', 'ACTION_REQUIRED', 'CANCELLED', 'FAILED') -cnotcontains $Status) {
+        throw 'CLI exit Status must use the canonical uppercase value.'
+    }
+    return [int]$(switch ($Status) {
+        'SUCCEEDED' { 0; break }
+        'FAILED' { 1; break }
+        'PARTIAL' { 2; break }
+        'RESTART_REQUIRED' { 3; break }
+        'ACTION_REQUIRED' { 4; break }
+        'CANCELLED' { 5; break }
+    })
+}
+
+function Format-CddsiOperationCliSummary {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Result
+    )
+
+    if ($null -eq $Result) { throw 'CLI summary requires an operation result.' }
+    foreach ($name in @('Status', 'ErrorCode', 'Changed', 'MessageSafe')) {
+        if ($null -eq $Result.PSObject.Properties[$name]) {
+            throw "CLI summary result is missing $name."
+        }
+    }
+    $status = [string]$Result.Status
+    $null = Get-CddsiOperationExitCode -Status $status
+    if ($Result.Changed -isnot [bool]) { throw 'CLI summary Changed must be Boolean.' }
+
+    $errorCode = [string]$Result.ErrorCode
+    if ([string]::IsNullOrWhiteSpace($errorCode)) { $errorCode = 'NONE' }
+    if ($errorCode -cnotmatch '^[A-Z0-9_]+$') { throw 'CLI summary ErrorCode is invalid.' }
+
+    $nextStep = [string]$(switch ($status) {
+        'SUCCEEDED' { 'No further action is required.'; break }
+        'FAILED' { 'Review ErrorCode and safe logs before retrying.'; break }
+        'PARTIAL' { 'Complete the remaining action identified by ErrorCode, then retry.'; break }
+        'RESTART_REQUIRED' { 'Restart Windows, then run the command again.'; break }
+        'ACTION_REQUIRED' { 'Complete the required action identified by ErrorCode, then retry.'; break }
+        'CANCELLED' { 'Run the command again when ready.'; break }
+    })
+
+    return [string[]]@(
+        'Status={0}' -f $status
+        'ErrorCode={0}' -f $errorCode
+        'Changed={0}' -f ([string]$Result.Changed).ToLowerInvariant()
+        'NextStep={0}' -f $nextStep
+    )
 }
 
 function Resolve-CddsiExecutionMode {

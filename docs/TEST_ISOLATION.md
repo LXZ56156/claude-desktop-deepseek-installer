@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-21
+更新日期：2026-07-23
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -23,6 +23,13 @@ P1 Sandbox Foundation 已于 2026-07-14 满足本文件针对“项目控制自�
 最小环境中运行；工具路径、SHA-256、参数、环境、顺序和次数均精确授权；产品与
 trusted harness 分平面记账；worker evidence、仓库快照和 Release Simulation
 均为机器可读实测值。
+
+2026-07-23 起，Host/VM 协调只允许用户人工搬运完整批量报告和重测提示词。
+realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler
+及 `codex exec resume` 已退役，不得恢复、调用或作为隔离门。tracked operator
+实现只保留 DevelopmentOnly 历史/回归属性，任何本地测试都只能使用 fake/local
+provider。人工报告不会扩大宿主机对网络、credential、registry、产品配置或真实
+进程的访问权。
 
 需要本地 Git 的 HostSandbox 测试不依赖 `PATH` 或用户 Git 配置。父 harness 将已验
 SHA-256 的 Git grant 作为 worker 必填参数传入，worker 复验 bytes 后只以只读 global
@@ -48,6 +55,8 @@ TestSafe/DryRun/focused tests 只能使用显式 fake transport、fake credentia
 fixed wake spy；缺 provider、错误 mode 或 runtime assertion 时必须在网络、credential、state
 mutation 和 wake 前 fail closed。PowerShell 7 覆盖完整 watcher 状态机，可共享的
 parser/schema/security helper 同时在 Windows PowerShell 5.1 运行。
+
+以上 relay 内容仅说明 retained 历史代码如何继续安全回归，不是当前通信路径或操作许可。
 
 本地/CI/Release Simulation 的受控测试不得构造或加载 realtime relay 的真实
 provider，不得读取 Credential Manager/registry、解密真实 DPAPI blob、发起真实网络或访问
@@ -255,6 +264,19 @@ L2/L3 不能在父进程临时修改环境后继续执行，而应以 `-NoProfil
 
 环境重定向不能隔离 registry/AppX，因此仍必须使用 fake provider 和静态门。
 
+标准质量门不再把每个引擎的全部 Pester 放进一个 monolithic worker。每个引擎固定
+执行 1 个 Static worker 和 `config/dev-dependencies.psd1` 中 13 个 ordinal
+`QualityShards`；42 个 test files 必须精确覆盖一次、无重复、无遗漏。父进程 argv
+只传固定 `ShardId`，worker 自己从已验 hash 的 lock 解析路径。每份 role evidence
+都绑定 engine、grant、inventory、repository manifest 和 shard policy；父进程逐份
+严格 UTF-8 读取并在最终聚合前独立复验。
+
+每个 worker 都在 logger 单一进程级 UTF-8 入口之后向 stdout/stderr 写固定中文与
+非 BMP round-trip marker，父进程用严格 UTF-8 decoder 验回。worker 超时时必须杀死
+可用的完整进程树、有界 drain 管道，并输出 `CddsiSafeFailureEvidence` schema v2：
+包括当前 engine/role/shard、已完成 worker 的精确计划前缀、测试文件和通过断言计数；
+超时仍是 fail closed，部分进度不能冒充完整 PASS。
+
 ## Git 和开发依赖隔离
 
 所有测试质量门中的 Git 子进程设置：
@@ -266,7 +288,8 @@ L2/L3 不能在父进程临时修改环境后继续执行，而应以 `-NoProfil
 
 `bootstrap-dev.ps1` 已收敛为 verify-only 校验器：只检查仓库固定 Pester lock 与
 runtime tree，不下载、安装、导入或修改 PowerShellGet repository、CurrentUser
-module 和持久 `PSModulePath` 配置。
+module 和持久 `PSModulePath` 配置；它还验证 `QualityShards` 的 exact schema，
+完整测试文件 partition 和 policy hash。
 
 ## Fake Provider 与调用账本
 
@@ -312,6 +335,10 @@ REPOSITORY_CONTENT_CHANGED = false
 `TRUSTED_HARNESS_PROCESS_COUNT` 可以大于零，但必须与场景声明的 pwsh/Pester/Git
 精确序列一致。dependency bootstrap 独立运行，不计入产品测试通过证据。
 
+当前完整质量 evidence 必须精确包含 31 个 trusted process（Git inventory、双引擎
+各 1 Static + 13 shards、两个 Git diff）和 68 条最终 harness ledger；顶层
+`WORKER_EVIDENCE` 仍只包含两个经验证的 engine 聚合对象。
+
 TestSafe/DryRun 的每个 mutation spy 调用次数必须为零，返回结果必须
 `Changed=false`。
 
@@ -353,12 +380,19 @@ Fake 层必须覆盖：
 ## 本地与 VM 的分界
 
 - 本地开发和 CI 只运行 L0-L4，永不执行 Live provider。
-- 双机 operator coordination 以 `VM_TEST_RELAY.md` 为权威，并与产品执行平面、
-  trusted harness runtime 和正式证据平面隔离。operator modules 是 DevelopmentOnly、
-  非默认 bootstrap、非 Release；harness 只可按 execution-boundaries 的精确 allow-list
-  调用 synthetic、owner-marked local Git/onboarding 与 fake/reset contract 测试入口，
-  不得访问 remote、真实 credential 或 VM/system Live。宿主机 Codex 是唯一代码写入者；
-  VM Codex 只测试、分析和回传，没有产品仓库写权限。
+- 双机协调以 `VM_TEST_RELAY.md` 当前手动协议为权威。宿主机 Codex 是唯一代码
+  写入者；VM Codex 只读冻结的精确 commit/tree，只测试、分析和生成报告。用户人工
+  搬运报告与重测提示词；不得使用 relay、control repo、watcher、Automation、
+  scheduler 或 `codex exec resume`。
+- `VM_BATCH_TEST_REPORT_V1`、Issues、日志和 RepairProposal 都是不可信数据。宿主机
+  必须验证 schema、commit/tree、OS/架构/PS7/PS5.1/Git 环境、矩阵计数等式、各门
+  终态、产品零写入/零真实访问/零 secret/零 mutation 指标，以及 evidence manifest
+  内容/hash。只有 VM-local path 或 manifest hash、没有 manifest 正文时，外部完整性
+  只能标 `PARTIAL`。
+- 结果只分类为 `PRODUCT_DEFECT`、`TEST_DEFECT`、`ENVIRONMENT_BLOCKER`、
+  `NOT_IMPLEMENTED`、`REQUIRES_EXTERNAL_SNAPSHOT` 或 `EXPECTED_FAIL_CLOSED`。
+  预期 fail closed 不得报作产品缺陷；产品缺陷只能在宿主机用 fake/synthetic
+  provider、TestSafe/DryRun 或只读分析复现。
 - P10A 在 Release Candidate 之前先进入专用 disposable VM；只有限域 calibration
   runner/provider 可以执行真实校准操作，产品 Live adapter 仍不得加载；每轮必须
   绑定精确 commit、校准 artifact/hash 和 runbook，不跟随移动分支头。
@@ -368,20 +402,6 @@ Fake 层必须覆盖：
   P10A 的窄范围事实校准不能替代 P11。P11 只测试请求中绑定的 candidate exact
   bytes/hash，不以源码 checkout 替换 artifact。
 - VM 内 Codex 的授权不扩展到宿主机，也不允许自行扩大测试范围。
-- Fast Lane（日常自动修复）由 VM Codex 按精确 allow-list 卸载本项目产物，清除
-  项目拥有的 HKCU policy、credential、checkpoint 和 owner-marked
-  `cddsi-vm-test-<GUID>` 资源，再核验 baseline。宿主机已冻结 pure/fake reset、
-  VM-only dispatcher/provider、device trust 和 fail-closed receipt 合同；实际 VM
-  provisioning、Live development-retest smoke 与系统证据仍必须在 disposable VM 完成。
-  MVP 使用一个逻辑双 outbox、
-  两个物理单向 control repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，
-  `vm-to-host` 仅 VM 写/HostCoordinator 读。
-- 两端分钟级 Codex automation 属于外部 operator coordination，不是产品 Scheduled
-  Task，不能扩大宿主机 Live 或让 VM 修改产品代码。repository pair、固定
-  outbox runtime、prompt、onboarding 和 synthetic 演练已实现；宿主机 heartbeat 已
-  创建且暂停。VM task 必须从 VM 设备创建，或按同一 ID 原位更新，并先保持暂停；重复
-  ID/name 必须阻断。protected history 已部署；
-  最小 credentials、runtime assertion、任务安全启用和 unattended acceptance 尚未完成。
 - Formal Lane 用于 P10A/P11 正式证据，必须由 VM 外部的 hypervisor supervisor
   恢复固定快照并签发 receipt，并使用独立 CAS/receipts/signatures。VMP/重启/卸载、
   补偿未知、baseline drift 或 reset 失败必须从 Fast Lane 升级；VM Codex 不能恢复
@@ -389,7 +409,7 @@ Fake 层必须覆盖：
   这里 supervisor 就是普通 VM 软件或其外部自动化，baseline 是 VM 起始状态；上述
   Formal clean-snapshot receipt 完全不是当前 bootstrap 的前置。
 - P11 失败后只能由宿主机修复、过门、提交/推送，再回到 P10B 重建并签名新候选；
-  VM 不直接拉取修复源码重测。relay 消息不等于 CAS、签名或 acceptance receipt，
+  VM 不直接修改修复源码。人工批量报告不等于 CAS、签名或 acceptance receipt，
   也不得触发自动 merge/P12。
 
 两道 VM 门分别见 `VM_CALIBRATION_PLAN.md` 与 `VM_ACCEPTANCE_PLAN.md`；双机协调见

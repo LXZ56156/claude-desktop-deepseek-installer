@@ -14,6 +14,11 @@
 4. 不要使用跳过验签、关闭证书检查、`ExecutionPolicy Bypass`、禁用安全软件、
    修改系统代理/证书或编辑包内文件等方式绕过错误。
 
+自动化调用应同时记录固定四字段 `Status/ErrorCode/Changed/NextStep` 和进程退出码。
+退出码 `0/1/2/3/4/5` 分别对应
+`SUCCEEDED/FAILED/PARTIAL/RESTART_REQUIRED/ACTION_REQUIRED/CANCELLED`；非零状态不能
+当作成功，即使没有额外 PowerShell exception。
+
 ## 常见问题
 
 ### 包校验或安全门失败

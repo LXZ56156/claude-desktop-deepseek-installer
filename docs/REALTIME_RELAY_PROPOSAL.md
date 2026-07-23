@@ -1,6 +1,13 @@
 # Realtime Relay 提案
 
-状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
+状态：**RETIRED / ARCHIVED / NO_OPERATION_AUTHORITY / AUTOMATION_PAUSED_OR_ABSENT**
+
+> 2026-07-23：本方案及 D-022/D-024 已由 D-025 撤销。Cloudflare、WebSocket
+> watcher、control-repo 实时消息、Automation、scheduler、`codex exec resume`、
+> foreground canary 和 relay finalization 均不得恢复、调用或作为依赖。本文以下内容
+> 仅保留历史架构与回归背景；当前唯一流程是用户人工搬运 VM 批量报告。
+
+历史状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
 WORKERS_PAID_NOT_LISTED / VM_RELAY_READY / PROVISIONED /
 CROSS_DEVICE_SMOKE_PASSED / FOREGROUND_RUNNER_LOCAL_TESTED /

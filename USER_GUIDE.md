@@ -57,6 +57,11 @@ Git 是固定 Code surface 的必备前置。合格且路径唯一的 Git for Wi
 - `CANCELLED`：用户取消了必要确认，流程未完成。
 - `FAILED`：安全验证、操作或恢复失败；停止继续安装并保留脱敏报告。
 
+中英文 `.cmd` 和非 `-PassThru` PowerShell 入口都会输出固定四行：
+`Status`、`ErrorCode`、`Changed`、`NextStep`。进程退出码固定为
+`SUCCEEDED=0`、`FAILED=1`、`PARTIAL=2`、`RESTART_REQUIRED=3`、
+`ACTION_REQUIRED=4`、`CANCELLED=5`；退出 0 只能表示整体 `SUCCEEDED`。
+
 每个 surface 还会分别报告：
 
 - 能力状态：`READY`、`BLOCKED`、`PENDING_RESTART`、`UNSUPPORTED` 或 `UNKNOWN`。

@@ -148,7 +148,7 @@ Describe 'public function contracts' {
             $script:FunctionAstByName.ContainsKey($name) | Should -BeTrue
             (ConvertTo-CddsiContractSetText -Value @($contract.Keys)) |
                 Should -BeExactly (ConvertTo-CddsiContractSetText -Value @('Kind', 'Mandatory', 'Mode'))
-            @('Pure', 'ContextBound') -ccontains $contract.Kind | Should -BeTrue
+            @('Pure', 'ContextBound', 'ProcessScoped') -ccontains $contract.Kind | Should -BeTrue
             $contract.Mandatory -is [System.Array] | Should -BeTrue
             $contract.Mode -is [bool] | Should -BeTrue
 
@@ -213,6 +213,10 @@ Describe 'public function contracts' {
                 $executionContextMandatory | Should -BeTrue
                 $executionContextAlias | Should -BeTrue
             }
+            if ($contract.Kind -ceq 'ProcessScoped') {
+                $name | Should -BeExactly 'Initialize-CddsiConsoleEncoding'
+                $executionContextMandatory | Should -BeFalse
+            }
             if ($executionContextMandatory) {
                 $contract.Kind | Should -BeExactly 'ContextBound'
             }
@@ -225,5 +229,7 @@ Describe 'public function contracts' {
             $contract.Kind | Should -BeExactly 'ContextBound'
             @($contract.Mandatory) -ccontains 'Context' | Should -BeTrue
         }
+        $script:PublicContract.ParameterContracts['Initialize-CddsiConsoleEncoding'].Kind |
+            Should -BeExactly 'ProcessScoped'
     }
 }

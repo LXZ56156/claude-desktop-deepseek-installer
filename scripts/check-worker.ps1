@@ -36,6 +36,11 @@ param(
 
     [switch]$SkipPester,
 
+    [ValidateSet('Static', 'PesterShard')]
+    [string]$WorkerRole = 'Static',
+
+    [string]$ShardId = '',
+
     [switch]$EvidenceBuilderOnly
 )
 
@@ -55,7 +60,7 @@ $script:SecretFindingCount = $null
 $script:RepositoryContentChanged = $null
 $script:RepositoryParseCache = @{}
 $script:InitialRepositoryHashByPath = @{}
-$script:CddsiWorkerMeasurementRuleVersion = 'cddsi-worker-measurement-rules-v2'
+$script:CddsiWorkerMeasurementRuleVersion = 'cddsi-worker-measurement-rules-v3'
 
 function Get-RepositoryFiles {
     $inventoryFullPath = [System.IO.Path]::GetFullPath($RepositoryInventoryPath)
@@ -472,6 +477,152 @@ function New-CddsiWorkerIsolationEvidenceV2 {
     }
 }
 
+function New-CddsiWorkerStaticEvidenceV1 {
+    param(
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][ValidateSet('PowerShell7', 'WindowsPowerShell')][string]$Engine,
+        [Parameter(Mandatory = $true)][string]$SandboxBindingSha256,
+        [Parameter(Mandatory = $true)]$Measurements,
+        [Parameter(Mandatory = $true)]$Provenance,
+        [Parameter(Mandatory = $true)][string]$ExpectedEngineGrantSha256
+    )
+
+    $measurementNames = @(
+        'AccessLedger', 'AstSyntaxErrorCount', 'LiveAdapterFileCount', 'LiveProviderLoaded',
+        'MutationSpyCounts', 'RepositoryContentChanged', 'SecretFindingCount'
+    )
+    if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Measurements -ExpectedNames $measurementNames)) {
+        throw 'Static worker Measurements does not match the exact schema.'
+    }
+    foreach ($booleanName in @('LiveProviderLoaded', 'RepositoryContentChanged')) {
+        if ($Measurements.$booleanName -isnot [bool]) { throw "Static worker $booleanName must be Boolean." }
+    }
+    foreach ($integerName in @('AstSyntaxErrorCount', 'LiveAdapterFileCount', 'SecretFindingCount')) {
+        Assert-CddsiWorkerNonNegativeInteger -Value $Measurements.$integerName -Name "Static.$integerName"
+    }
+    $ledgerNames = @(
+        'ContextCount', 'DryRunContextCount', 'EntryCount', 'ForbiddenResourceAccessCount',
+        'OutsideSandboxWriteCount', 'ProductLiveProcessSpawnCount', 'ProductNetworkRequestCount',
+        'RealRegistryAccessCount', 'TestSafeContextCount', 'UnexpectedLedgerEntryCount'
+    )
+    if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Measurements.AccessLedger -ExpectedNames $ledgerNames)) {
+        throw 'Static worker AccessLedger does not match the exact schema.'
+    }
+    foreach ($name in $ledgerNames) {
+        Assert-CddsiWorkerNonNegativeInteger -Value $Measurements.AccessLedger.$name -Name "Static.AccessLedger.$name"
+    }
+    $mutationNames = @('AppX', 'Credential', 'Environment', 'Feature', 'FileSystem', 'Network', 'Process', 'Registry', 'Restart', 'Service')
+    if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Measurements.MutationSpyCounts -ExpectedNames $mutationNames)) {
+        throw 'Static worker MutationSpyCounts does not match the exact schema.'
+    }
+    foreach ($name in $mutationNames) {
+        Assert-CddsiWorkerNonNegativeInteger -Value $Measurements.MutationSpyCounts.$name -Name "Static.MutationSpyCounts.$name"
+    }
+
+    $provenanceNames = @(
+        'DependencyManifestSha256', 'EngineGrantSha256', 'ExecutionBoundaryManifestSha256',
+        'FinalRepositoryManifestSha256', 'InitialRepositoryManifestSha256', 'MeasurementRuleVersion',
+        'PesterTreeSha256', 'QualityShardPolicySha256', 'RepositoryInventorySha256'
+    )
+    if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Provenance -ExpectedNames $provenanceNames)) {
+        throw 'Static worker Provenance does not match the exact schema.'
+    }
+    if ([string]$Provenance.MeasurementRuleVersion -cne $script:CddsiWorkerMeasurementRuleVersion) {
+        throw 'Static worker measurement-rule version drift.'
+    }
+    foreach ($name in @($provenanceNames | Where-Object { $_ -ne 'MeasurementRuleVersion' })) {
+        Assert-CddsiWorkerSha256Value -Value ([string]$Provenance.$name) -Name "Static.Provenance.$name"
+    }
+    if ([string]$Provenance.EngineGrantSha256 -cne $ExpectedEngineGrantSha256) {
+        throw 'Static worker engine grant SHA-256 drift.'
+    }
+    if (
+        [bool]$Measurements.RepositoryContentChanged -ne (
+            [string]$Provenance.InitialRepositoryManifestSha256 -cne
+            [string]$Provenance.FinalRepositoryManifestSha256
+        )
+    ) {
+        throw 'Static worker repository-change binding drift.'
+    }
+
+    return [pscustomobject][ordered]@{
+        SchemaVersion         = 1
+        EvidenceType         = 'CddsiWorkerStaticEvidence'
+        RunId                = $RunId
+        Engine               = $Engine
+        SandboxBindingSha256 = $SandboxBindingSha256
+        Measurements         = $Measurements
+        Provenance           = $Provenance
+    }
+}
+
+function New-CddsiWorkerPesterShardEvidenceV1 {
+    param(
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][ValidateSet('PowerShell7', 'WindowsPowerShell')][string]$Engine,
+        [Parameter(Mandatory = $true)][string]$ShardId,
+        [Parameter(Mandatory = $true)][string]$SandboxBindingSha256,
+        [Parameter(Mandatory = $true)][string]$ShardPathsSha256,
+        [Parameter(Mandatory = $true)][string[]]$TestFiles,
+        [Parameter(Mandatory = $true)]$Pester,
+        [AllowEmptyCollection()][object[]]$RequiredSuiteResults = @(),
+        [Parameter(Mandatory = $true)]$Provenance,
+        [Parameter(Mandatory = $true)][string]$ExpectedEngineGrantSha256
+    )
+
+    if ($ShardId -cnotmatch '^[CHU][0-9]{2}$') { throw 'Pester shard id is invalid.' }
+    Assert-CddsiWorkerSha256Value -Value $SandboxBindingSha256 -Name 'Shard.SandboxBindingSha256'
+    Assert-CddsiWorkerSha256Value -Value $ShardPathsSha256 -Name 'Shard.ShardPathsSha256'
+    if ($TestFiles.Count -eq 0 -or (Get-CddsiWorkerSequenceSha256 -Values $TestFiles) -cne $ShardPathsSha256) {
+        throw 'Pester shard test-file binding drift.'
+    }
+    $pesterNames = @('DurationMilliseconds', 'FailedCount', 'InconclusiveCount', 'NotRunCount', 'PassedCount', 'Result', 'SkippedCount')
+    if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Pester -ExpectedNames $pesterNames)) {
+        throw 'Pester shard result does not match the exact schema.'
+    }
+    foreach ($name in @('DurationMilliseconds', 'FailedCount', 'InconclusiveCount', 'NotRunCount', 'PassedCount', 'SkippedCount')) {
+        Assert-CddsiWorkerNonNegativeInteger -Value $Pester.$name -Name "Shard.Pester.$name"
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Pester.Result)) { throw 'Pester shard result is missing.' }
+    foreach ($suite in @($RequiredSuiteResults)) {
+        if (-not (Test-CddsiWorkerExactPropertySet -InputObject $suite -ExpectedNames @('RelativePath', 'Result', 'TestCount'))) {
+            throw 'Pester shard required-suite result schema drift.'
+        }
+        Assert-CddsiWorkerNonNegativeInteger -Value $suite.TestCount -Name 'Shard.RequiredSuite.TestCount'
+    }
+    $provenanceNames = @(
+        'DependencyManifestSha256', 'EngineGrantSha256', 'FinalRepositoryManifestSha256',
+        'InitialRepositoryManifestSha256', 'MeasurementRuleVersion', 'PesterTreeSha256',
+        'QualityShardPolicySha256', 'RepositoryInventorySha256'
+    )
+    if (-not (Test-CddsiWorkerExactPropertySet -InputObject $Provenance -ExpectedNames $provenanceNames)) {
+        throw 'Pester shard Provenance does not match the exact schema.'
+    }
+    if ([string]$Provenance.MeasurementRuleVersion -cne $script:CddsiWorkerMeasurementRuleVersion) {
+        throw 'Pester shard measurement-rule version drift.'
+    }
+    foreach ($name in @($provenanceNames | Where-Object { $_ -ne 'MeasurementRuleVersion' })) {
+        Assert-CddsiWorkerSha256Value -Value ([string]$Provenance.$name) -Name "Shard.Provenance.$name"
+    }
+    if ([string]$Provenance.EngineGrantSha256 -cne $ExpectedEngineGrantSha256) {
+        throw 'Pester shard engine grant SHA-256 drift.'
+    }
+
+    return [pscustomobject][ordered]@{
+        SchemaVersion         = 1
+        EvidenceType         = 'CddsiWorkerPesterShardEvidence'
+        RunId                = $RunId
+        Engine               = $Engine
+        ShardId              = $ShardId
+        SandboxBindingSha256 = $SandboxBindingSha256
+        ShardPathsSha256     = $ShardPathsSha256
+        TestFiles            = $TestFiles
+        Pester               = $Pester
+        RequiredSuiteResults = @($RequiredSuiteResults)
+        Provenance           = $Provenance
+    }
+}
+
 function Measure-CddsiWorkerExecutionContexts {
     param(
         [Parameter(Mandatory = $true)]
@@ -556,11 +707,16 @@ function Assert-CddsiWorkerSandboxBinding {
 }
 
 function Get-CddsiRequiredIsolationSuiteResults {
-    if ($null -eq $script:PesterResult) { throw 'Pester result is unavailable for isolation evidence.' }
+    param(
+        [AllowNull()]$PesterResult = $script:PesterResult,
+        [AllowEmptyCollection()][string[]]$ShardPaths = @()
+    )
+
+    if ($null -eq $PesterResult) { throw 'Pester result is unavailable for isolation evidence.' }
     $dependencyLock = Import-PowerShellDataFile -LiteralPath $DependencyManifestPath
     $suitePolicy = @($dependencyLock.IsolationEvidenceSuites)
     if ($suitePolicy.Count -eq 0) { throw 'Isolation evidence suite policy is empty.' }
-    $pesterTests = @($script:PesterResult.Tests)
+    $pesterTests = @($PesterResult.Tests)
     if ($pesterTests.Count -eq 0) { throw 'Pester did not return test-level evidence.' }
 
     $testRoot = [System.IO.Path]::GetFullPath((Join-Path $script:Root 'tests')).TrimEnd('\')
@@ -583,6 +739,7 @@ function Get-CddsiRequiredIsolationSuiteResults {
     $suiteResults = New-Object System.Collections.Generic.List[object]
     foreach ($suite in $suitePolicy) {
         $relativePath = ([string]$suite.RelativePath).Replace('\', '/')
+        if ($ShardPaths.Count -gt 0 -and $ShardPaths -cnotcontains $relativePath) { continue }
         $expectedCount = [int]$suite.ExpectedTestCount
         if (-not $relativePath.StartsWith('tests/', [StringComparison]::Ordinal) -or $expectedCount -le 0) { throw 'Isolation evidence suite policy is invalid.' }
         $matchingTests = @($pesterTestRecords | Where-Object { $_.RelativePath -ceq $relativePath })
@@ -614,6 +771,52 @@ function Write-CddsiWorkerIsolationEvidence {
         $writer = New-Object System.IO.StreamWriter($stream, $utf8)
         try {
             $writer.Write(($Evidence | ConvertTo-Json -Depth 10) + [Environment]::NewLine)
+            $writer.Flush()
+            $stream.Flush()
+        }
+        finally { $writer.Dispose() }
+    }
+    finally { $stream.Dispose() }
+    return $path
+}
+
+function Get-CddsiWorkerEvidenceLeaf {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('PowerShell7', 'WindowsPowerShell')][string]$Engine,
+        [Parameter(Mandatory = $true)][ValidateSet('Static', 'PesterShard')][string]$Role,
+        [AllowEmptyString()][string]$SelectedShardId = ''
+    )
+
+    $engineToken = if ($Engine -ceq 'PowerShell7') { 'powershell7' } else { 'windows-powershell' }
+    if ($Role -ceq 'Static') {
+        if (-not [string]::IsNullOrEmpty($SelectedShardId)) { throw 'Static worker evidence cannot bind a shard id.' }
+        return "worker-$engineToken-static.json"
+    }
+    if ($SelectedShardId -cnotmatch '^[CHU][0-9]{2}$') { throw 'Pester shard evidence requires a valid shard id.' }
+    return ('worker-{0}-shard-{1}.json' -f $engineToken, $SelectedShardId.ToLowerInvariant())
+}
+
+function Write-CddsiWorkerEvidence {
+    param(
+        [Parameter(Mandatory = $true)]$Evidence,
+        [Parameter(Mandatory = $true)][ValidateSet('Static', 'PesterShard')][string]$Role,
+        [AllowEmptyString()][string]$SelectedShardId = ''
+    )
+
+    $evidenceDirectory = Join-Path $script:SandboxRoot 'evidence'
+    if (-not (Test-Path -LiteralPath $evidenceDirectory -PathType Container)) { throw 'Worker evidence directory is missing.' }
+    $evidenceItem = Get-Item -LiteralPath $evidenceDirectory -Force
+    if (($evidenceItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Worker evidence directory is a reparse point.' }
+    $leaf = Get-CddsiWorkerEvidenceLeaf -Engine $EngineId -Role $Role -SelectedShardId $SelectedShardId
+    $path = Join-Path $evidenceDirectory $leaf
+    if (Test-Path -LiteralPath $path) { throw 'Worker evidence path already exists.' }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $stream = New-Object System.IO.FileStream($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try {
+        $writer = New-Object System.IO.StreamWriter($stream, $utf8)
+        try {
+            $writer.Write(($Evidence | ConvertTo-Json -Depth 12) + [Environment]::NewLine)
             $writer.Flush()
             $stream.Flush()
         }
@@ -667,7 +870,7 @@ function Test-CddsiDevDependencyLock {
     $lock = Import-PowerShellDataFile -LiteralPath $expectedDependencyPath
     if ($lock.SchemaVersion -ne 1 -or $null -eq $lock.Pester) { throw 'Unsupported development dependency lock.' }
     $topLevelNames = @($lock.Keys | Sort-Object)
-    if (($topLevelNames -join ',') -cne 'IsolationEvidenceSuites,Pester,SchemaVersion') { throw 'Development dependency lock top-level schema drift.' }
+    if (($topLevelNames -join ',') -cne 'IsolationEvidenceSuites,Pester,QualityShards,SchemaVersion') { throw 'Development dependency lock top-level schema drift.' }
     $pesterNames = @($lock.Pester.Keys | Sort-Object)
     $expectedPesterNames = @('ExpectedFileCount', 'ExpectedLicenseBytes', 'ExpectedLicenseSha256', 'ExpectedManifestSha256', 'ExpectedTotalBytes', 'ExpectedTreeSha256', 'LicenseRelativePath', 'ManifestRelativePath', 'OfficialGalleryUrl', 'OfficialLicenseUrl', 'OfficialProjectUrl', 'ProvenanceStatus', 'RootRelativePath', 'TreeHashFormat', 'Version')
     if (($pesterNames -join ',') -cne ($expectedPesterNames -join ',')) { throw 'Pester dependency lock schema drift.' }
@@ -728,6 +931,83 @@ function Test-CddsiDevDependencyLock {
     $licenseHash = (Get-FileHash -LiteralPath $licensePath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($licenseHash -cne $lock.Pester.ExpectedLicenseSha256) { throw 'Pinned Pester license SHA-256 drift.' }
     return $manifestPath
+}
+
+function Get-CddsiWorkerQualityShardPolicy {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$RepositoryFiles,
+        [AllowEmptyString()][string]$SelectedShardId = ''
+    )
+
+    $lock = Import-PowerShellDataFile -LiteralPath $DependencyManifestPath
+    $shards = @($lock.QualityShards)
+    if ($shards.Count -eq 0) { throw 'Quality shard policy is empty.' }
+
+    $shardIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    $listedPaths = New-Object System.Collections.Generic.List[string]
+    $normalizedShards = New-Object System.Collections.Generic.List[object]
+    $policyLines = New-Object System.Collections.Generic.List[string]
+    foreach ($shard in $shards) {
+        $names = @($shard.Keys | Sort-Object)
+        if (($names -join ',') -cne 'Paths,ShardId') { throw 'Quality shard entry schema drift.' }
+        $id = [string]$shard.ShardId
+        if ($id -cnotmatch '^[CHU][0-9]{2}$' -or -not $shardIds.Add($id)) {
+            throw 'Quality shard id is invalid or duplicated.'
+        }
+        $paths = [string[]]@($shard.Paths | ForEach-Object { [string]$_ })
+        if ($paths.Count -eq 0) { throw 'Quality shard paths are empty.' }
+        $ordinalPaths = [string[]]$paths.Clone()
+        [Array]::Sort($ordinalPaths, [StringComparer]::Ordinal)
+        if (($paths -join "`n") -cne ($ordinalPaths -join "`n")) {
+            throw 'Quality shard paths are not ordinal sorted.'
+        }
+        $localPaths = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+        foreach ($path in $paths) {
+            if (
+                $path -cnotmatch '^tests/(?:Contract|HostSandbox|Unit)/[^/]+\.Tests\.ps1$' -or
+                [System.IO.Path]::IsPathRooted($path) -or
+                @($path.Split('/') | Where-Object { $_ -eq '..' -or $_ -eq '.' -or $_ -eq '' }).Count -gt 0 -or
+                -not $localPaths.Add($path)
+            ) {
+                throw 'Quality shard path is unsafe or duplicated.'
+            }
+            $listedPaths.Add($path)
+        }
+        $pathsSha256 = Get-CddsiWorkerSequenceSha256 -Values $paths
+        $policyLines.Add($id + [char]0 + $pathsSha256)
+        $normalizedShards.Add([pscustomobject][ordered]@{
+            ShardId       = $id
+            Paths         = $paths
+            PathsSha256   = $pathsSha256
+        })
+    }
+
+    $actualPaths = [string[]]@(
+        $RepositoryFiles |
+            ForEach-Object { [string]$_.RelativePath } |
+            Where-Object { $_ -cmatch '^tests/(?:Contract|HostSandbox|Unit)/[^/]+\.Tests\.ps1$' }
+    )
+    [Array]::Sort($actualPaths, [StringComparer]::Ordinal)
+    $listedArray = [string[]]$listedPaths.ToArray()
+    [Array]::Sort($listedArray, [StringComparer]::Ordinal)
+    if ($listedArray.Count -ne @($listedArray | Select-Object -Unique).Count) {
+        throw 'Quality shard paths are duplicated across shards.'
+    }
+    if (($actualPaths -join "`n") -cne ($listedArray -join "`n")) {
+        throw 'Quality shard policy does not exactly partition the repository tests.'
+    }
+
+    $selected = $null
+    if (-not [string]::IsNullOrEmpty($SelectedShardId)) {
+        $matches = @($normalizedShards | Where-Object { $_.ShardId -ceq $SelectedShardId })
+        if ($matches.Count -ne 1) { throw 'Selected quality shard is not in the policy.' }
+        $selected = $matches[0]
+    }
+    return [pscustomobject][ordered]@{
+        Shards       = $normalizedShards.ToArray()
+        PolicySha256 = Get-CddsiWorkerSequenceSha256 -Values $policyLines.ToArray()
+        Selected     = $selected
+    }
 }
 
 function Get-CddsiCommandName {
@@ -1089,6 +1369,12 @@ function Measure-CddsiWorkerSyntheticIsolationScenarios {
 
 if ($EvidenceBuilderOnly) { return }
 
+. (Join-Path $script:Root 'lib\logger.ps1')
+Initialize-CddsiConsoleEncoding | Out-Null
+$utf8RoundTripMarker = 'CDDSI_UTF8_ROUNDTRIP=质量检查 😀 𠮷'
+Write-Output $utf8RoundTripMarker
+[Console]::Error.WriteLine($utf8RoundTripMarker)
+
 $script:SandboxBindingSha256 = Assert-CddsiWorkerSandboxBinding
 $engineGrantSha256Actual = Assert-CddsiWorkerEngineGrant
 $gitGrantActual = Assert-CddsiWorkerGitGrant
@@ -1103,6 +1389,113 @@ foreach ($manifestEntry in $initialContentManifest) {
 }
 $initialContentManifestSha256 = Get-CddsiWorkerSequenceSha256 -Values $initialContentManifest
 $repositoryInventorySha256 = (Get-FileHash -LiteralPath ([System.IO.Path]::GetFullPath($RepositoryInventoryPath)) -Algorithm SHA256).Hash.ToLowerInvariant()
+
+if ($SkipPester) { throw 'SkipPester is not valid for a quality worker role.' }
+if ($WorkerRole -ceq 'Static' -and -not [string]::IsNullOrEmpty($ShardId)) {
+    throw 'Static quality workers cannot bind a shard id.'
+}
+if ($WorkerRole -ceq 'PesterShard' -and $ShardId -cnotmatch '^[CHU][0-9]{2}$') {
+    throw 'Pester quality workers require a valid shard id.'
+}
+$pesterManifest = Test-CddsiDevDependencyLock
+$qualityShardPolicy = Get-CddsiWorkerQualityShardPolicy `
+    -RepositoryFiles $initialRepositoryFiles `
+    -SelectedShardId $(if ($WorkerRole -ceq 'PesterShard') { $ShardId } else { '' })
+
+if ($WorkerRole -ceq 'PesterShard') {
+    $selectedShard = $qualityShardPolicy.Selected
+    $selectedFullPaths = [string[]]@($selectedShard.Paths | ForEach-Object {
+        [System.IO.Path]::GetFullPath((Join-Path $script:Root $_))
+    })
+    Remove-Module Pester -Force -ErrorAction SilentlyContinue
+    Import-Module $pesterManifest -Force -ErrorAction Stop
+    Set-Variable -Name CddsiTrustedHarnessGitExecutablePath -Scope Global `
+        -Value $gitGrantActual.Path -Option ReadOnly -Force
+    Set-Variable -Name CddsiTrustedHarnessGitGrantSha256 -Scope Global `
+        -Value $gitGrantActual.Sha256 -Option ReadOnly -Force
+
+    $result = Invoke-Pester -Path $selectedFullPaths -Output Normal -PassThru
+    $script:PesterResult = $result
+    $observedFiles = [string[]]@($result.Tests | ForEach-Object {
+        $file = if ($null -ne $_.ScriptBlock) { [string]$_.ScriptBlock.File } else { '' }
+        if ([string]::IsNullOrWhiteSpace($file) -or -not [System.IO.Path]::IsPathRooted($file)) {
+            throw 'Pester shard result is missing an absolute test-file binding.'
+        }
+        $full = [System.IO.Path]::GetFullPath($file)
+        if (-not $full.StartsWith($script:Root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Pester shard result escaped the repository.'
+        }
+        $full.Substring($script:Root.Length + 1).Replace('\', '/')
+    } | Sort-Object -Unique)
+    $ordinalObservedFiles = [string[]]$observedFiles.Clone()
+    [Array]::Sort($ordinalObservedFiles, [StringComparer]::Ordinal)
+    if (($ordinalObservedFiles -join "`n") -cne (@($selectedShard.Paths) -join "`n")) {
+        throw 'Pester shard executed a missing or out-of-shard test file.'
+    }
+
+    $finalInventory = @((Get-RepositoryFiles).RelativePath)
+    if (@(Compare-Object -ReferenceObject $initialInventory -DifferenceObject $finalInventory).Count -gt 0) {
+        throw 'Repository inventory changed during a Pester shard.'
+    }
+    $finalContentManifest = @(Get-RepositoryContentManifest)
+    $finalRepositoryManifestSha256 = Get-CddsiWorkerSequenceSha256 -Values $finalContentManifest
+    $repositoryContentChanged = $initialContentManifestSha256 -cne $finalRepositoryManifestSha256
+    $suiteResults = @(Get-CddsiRequiredIsolationSuiteResults -PesterResult $result -ShardPaths $selectedShard.Paths)
+    $durationMilliseconds = [long]0
+    if ($null -ne $result.Duration) {
+        $durationMilliseconds = [long][Math]::Ceiling(([TimeSpan]$result.Duration).TotalMilliseconds)
+    }
+    $pesterMeasurement = [pscustomobject][ordered]@{
+        Result               = [string]$result.Result
+        PassedCount          = [long]$result.PassedCount
+        FailedCount          = [long]$result.FailedCount
+        SkippedCount         = [long]$result.SkippedCount
+        NotRunCount          = [long]$result.NotRunCount
+        InconclusiveCount    = [long]$result.InconclusiveCount
+        DurationMilliseconds = $durationMilliseconds
+    }
+    $shardProvenance = [pscustomobject][ordered]@{
+        MeasurementRuleVersion          = $script:CddsiWorkerMeasurementRuleVersion
+        RepositoryInventorySha256       = $repositoryInventorySha256
+        InitialRepositoryManifestSha256 = $initialContentManifestSha256
+        FinalRepositoryManifestSha256   = $finalRepositoryManifestSha256
+        DependencyManifestSha256        = $script:DependencyManifestSha256
+        PesterTreeSha256                = $script:PesterTreeSha256
+        EngineGrantSha256               = $engineGrantSha256Actual
+        QualityShardPolicySha256        = $qualityShardPolicy.PolicySha256
+    }
+    $shardEvidence = New-CddsiWorkerPesterShardEvidenceV1 `
+        -RunId $RunId `
+        -Engine $EngineId `
+        -ShardId $ShardId `
+        -SandboxBindingSha256 $script:SandboxBindingSha256 `
+        -ShardPathsSha256 $selectedShard.PathsSha256 `
+        -TestFiles $selectedShard.Paths `
+        -Pester $pesterMeasurement `
+        -RequiredSuiteResults $suiteResults `
+        -Provenance $shardProvenance `
+        -ExpectedEngineGrantSha256 $EngineGrantSha256
+    $shardEvidencePath = Write-CddsiWorkerEvidence `
+        -Evidence $shardEvidence `
+        -Role PesterShard `
+        -SelectedShardId $ShardId
+
+    $clean = (
+        [string]$result.Result -ceq 'Passed' -and
+        [long]$result.PassedCount -gt 0 -and
+        [long]$result.FailedCount -eq 0 -and
+        [long]$result.SkippedCount -eq 0 -and
+        [long]$result.NotRunCount -eq 0 -and
+        [long]$result.InconclusiveCount -eq 0 -and
+        -not $repositoryContentChanged
+    )
+    if (-not $clean) {
+        throw ("Pester shard is not clean: Shard={0}, Result={1}, Failed={2}, Skipped={3}, NotRun={4}, Inconclusive={5}." -f `
+            $ShardId, $result.Result, $result.FailedCount, $result.SkippedCount, $result.NotRunCount, $result.InconclusiveCount)
+    }
+    Write-Host ("[PASS] Pester shard {0} - {1}" -f $ShardId, (Split-Path -Leaf $shardEvidencePath)) -ForegroundColor Green
+    return
+}
 
 Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -Action {
     $expectedBoundaryPath = Join-Path $script:Root 'config\execution-boundaries.psd1'
@@ -2002,7 +2395,7 @@ Invoke-CheckStep -Name 'Public function contracts and side-effect-free module lo
     foreach ($entry in $publicContract.ParameterContracts.GetEnumerator()) {
         $contractNames = @($entry.Value.Keys | Sort-Object)
         if (($contractNames -join ',') -cne 'Kind,Mandatory,Mode') { throw "$($entry.Key) parameter contract schema drift." }
-        if (@('Pure', 'ContextBound') -notcontains [string]$entry.Value.Kind) { throw "$($entry.Key) has an invalid function kind." }
+        if (@('Pure', 'ContextBound', 'ProcessScoped') -notcontains [string]$entry.Value.Kind) { throw "$($entry.Key) has an invalid function kind." }
         if ($entry.Value.Mode -isnot [bool]) { throw "$($entry.Key) Mode contract must be boolean." }
         if ($entry.Value.Mandatory -isnot [System.Collections.IEnumerable] -or $entry.Value.Mandatory -is [string]) { throw "$($entry.Key) Mandatory contract must be an array." }
         if (-not $functionAstByName.ContainsKey([string]$entry.Key)) { throw "$($entry.Key) function AST is missing." }
@@ -2033,6 +2426,11 @@ Invoke-CheckStep -Name 'Public function contracts and side-effect-free module lo
         }
         if ($entry.Value.Kind -ceq 'Pure' -and $contextParameter.Count -gt 0) {
             throw "$($entry.Key) pure contract must not expose Context."
+        }
+        if ($entry.Value.Kind -ceq 'ProcessScoped') {
+            if ([string]$entry.Key -cne 'Initialize-CddsiConsoleEncoding' -or $contextParameter.Count -gt 0) {
+                throw "$($entry.Key) process-scoped contract is not allow-listed."
+            }
         }
         $modeParameter = @($parameters | Where-Object { $_.Name.VariablePath.UserPath -ceq 'Mode' })
         if ([bool]$entry.Value.Mode -ne ($modeParameter.Count -eq 1)) { throw "$($entry.Key) Mode presence contract drift." }
@@ -2091,38 +2489,9 @@ Invoke-CheckStep -Name 'Repository API Key leak scan' -Action {
     }
 }
 
-# Static analysis is complete. Release cached AST references before the much
-# larger Pester run; the cache is never used for dependency or final evidence.
+# Static analysis is complete. Release cached AST references before final
+# evidence; the cache is never used for dependency or final measurements.
 $script:RepositoryParseCache.Clear()
-
-if (-not $SkipPester) {
-    Invoke-CheckStep -Name 'Pester Unit and Contract suites' -Action {
-        $pesterManifest = Test-CddsiDevDependencyLock
-        Remove-Module Pester -Force -ErrorAction SilentlyContinue
-        Import-Module $pesterManifest -Force -ErrorAction Stop
-        Set-Variable -Name CddsiTrustedHarnessGitExecutablePath -Scope Global `
-            -Value $gitGrantActual.Path -Option ReadOnly -Force
-        Set-Variable -Name CddsiTrustedHarnessGitGrantSha256 -Scope Global `
-            -Value $gitGrantActual.Sha256 -Option ReadOnly -Force
-        # PassThru retains the complete per-test evidence. Normal avoids the
-        # cost of rendering every passing test while preserving container and
-        # failure progress for the trusted timeout diagnostic.
-        $result = Invoke-Pester -Path (Join-Path $script:Root 'tests') -Output Normal -PassThru
-        $script:PesterResult = $result
-        if ([string]$result.Result -ne 'Passed' -or $result.FailedCount -gt 0 -or $result.SkippedCount -gt 0 -or $result.NotRunCount -gt 0 -or $result.InconclusiveCount -gt 0) {
-            $failedDetails = @(
-                $result.Tests |
-                    Where-Object { [string]$_.Result -ceq 'Failed' } |
-                    ForEach-Object {
-                        $message = Get-CddsiWorkerErrorRecordMessage -ErrorRecord $_.ErrorRecord
-                        if ($message.Length -gt 300) { $message = $message.Substring(0, 300) }
-                        '{0} [{1}:{2}] {3}' -f $_.ExpandedName, $_.ScriptBlock.File, $_.ScriptBlock.StartPosition.StartLine, $message
-                    }
-            )
-            throw ("Pester result is not clean: Result={0}, Failed={1}, Skipped={2}, NotRun={3}, Inconclusive={4}. FailedTests={5}" -f $result.Result, $result.FailedCount, $result.SkippedCount, $result.NotRunCount, $result.InconclusiveCount, ($failedDetails -join ' | '))
-        }
-    }
-}
 
 Invoke-CheckStep -Name 'Checks did not create repository artifacts' -Action {
     $finalInventory = @((Get-RepositoryFiles).RelativePath)
@@ -2140,18 +2509,13 @@ if ($script:Failures.Count -gt 0) {
     throw "$($script:Failures.Count) quality check(s) failed."
 }
 
-if ($SkipPester) { throw 'Worker isolation evidence requires the pinned Pester suites.' }
-
-# Pester executes test files in transient scopes. Reload only the two pure P1
-# libraries required for the post-test synthetic measurement into the worker
-# script scope so evidence generation cannot depend on leaked test functions.
+# Reload only the two pure P1 libraries required for the synthetic measurement
+# into worker script scope; static validation does not depend on leaked scopes.
 . (Join-Path $script:Root 'lib\execution-context.ps1')
 . (Join-Path $script:Root 'lib\fake-providers.ps1')
 
-$suiteResults = @(Get-CddsiRequiredIsolationSuiteResults)
 $syntheticMeasurements = Measure-CddsiWorkerSyntheticIsolationScenarios
-$requiredSuiteFailureCount = @($suiteResults | Where-Object { [string]$_.Result -cne 'Passed' }).Count
-$measurements = [pscustomobject][ordered]@{
+$staticMeasurements = [pscustomobject][ordered]@{
     AstSyntaxErrorCount      = $script:AstSyntaxErrorCount
     LiveAdapterFileCount     = $script:LiveAdapterFileCount
     SecretFindingCount       = $script:SecretFindingCount
@@ -2159,36 +2523,26 @@ $measurements = [pscustomobject][ordered]@{
     LiveProviderLoaded       = $syntheticMeasurements.LiveProviderLoaded
     AccessLedger             = $syntheticMeasurements.AccessLedger
     MutationSpyCounts        = $syntheticMeasurements.MutationSpyCounts
-    Pester                   = [pscustomobject][ordered]@{
-        Result            = $script:PesterResult.Result
-        PassedCount       = $script:PesterResult.PassedCount
-        FailedCount       = $script:PesterResult.FailedCount
-        SkippedCount      = $script:PesterResult.SkippedCount
-        NotRunCount       = $script:PesterResult.NotRunCount
-        InconclusiveCount = $script:PesterResult.InconclusiveCount
-    }
-    RequiredSuiteResults      = @($suiteResults)
-    RequiredSuiteFailureCount = $requiredSuiteFailureCount
 }
-$provenance = [pscustomobject][ordered]@{
+$staticProvenance = [pscustomobject][ordered]@{
     MeasurementRuleVersion          = $script:CddsiWorkerMeasurementRuleVersion
     RepositoryInventorySha256       = $repositoryInventorySha256
     InitialRepositoryManifestSha256 = $initialContentManifestSha256
     FinalRepositoryManifestSha256   = $script:FinalRepositoryManifestSha256
     ExecutionBoundaryManifestSha256 = $script:ExecutionBoundaryManifestSha256
     DependencyManifestSha256        = $script:DependencyManifestSha256
-    RequiredSuiteSummarySha256      = Get-CddsiWorkerRequiredSuiteSummarySha256 -SuiteResults $suiteResults
     PesterTreeSha256                = $script:PesterTreeSha256
     EngineGrantSha256               = $engineGrantSha256Actual
+    QualityShardPolicySha256        = $qualityShardPolicy.PolicySha256
 }
-$workerEvidence = New-CddsiWorkerIsolationEvidenceV2 `
+$staticEvidence = New-CddsiWorkerStaticEvidenceV1 `
     -RunId $RunId `
     -Engine $EngineId `
     -SandboxBindingSha256 $script:SandboxBindingSha256 `
-    -Measurements $measurements `
-    -Provenance $provenance `
+    -Measurements $staticMeasurements `
+    -Provenance $staticProvenance `
     -ExpectedEngineGrantSha256 $EngineGrantSha256
-$workerEvidencePath = Write-CddsiWorkerIsolationEvidence -Evidence $workerEvidence
-Write-Host ("[PASS] Worker isolation evidence - {0}" -f (Split-Path -Leaf $workerEvidencePath)) -ForegroundColor Green
+$staticEvidencePath = Write-CddsiWorkerEvidence -Evidence $staticEvidence -Role Static
+Write-Host ("[PASS] Static worker evidence - {0}" -f (Split-Path -Leaf $staticEvidencePath)) -ForegroundColor Green
 
-Write-Host "`nAll quality checks passed." -ForegroundColor Green
+Write-Host "`nAll static quality checks passed." -ForegroundColor Green

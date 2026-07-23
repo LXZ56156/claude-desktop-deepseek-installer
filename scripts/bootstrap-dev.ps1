@@ -187,7 +187,7 @@ function Assert-CddsiVendoredPesterLock {
         $DependencyLock
     )
 
-    Assert-CddsiVendoredExactPropertySet -InputObject $DependencyLock -Expected @('SchemaVersion', 'Pester', 'IsolationEvidenceSuites') -ContractName 'development dependency lock'
+    Assert-CddsiVendoredExactPropertySet -InputObject $DependencyLock -Expected @('SchemaVersion', 'Pester', 'IsolationEvidenceSuites', 'QualityShards') -ContractName 'development dependency lock'
     if (($DependencyLock.SchemaVersion -isnot [int] -and $DependencyLock.SchemaVersion -isnot [long]) -or [long]$DependencyLock.SchemaVersion -ne 1) {
         Throw-CddsiVendoredPesterFailure -Reason 'development dependency schemaVersion must be integer 1'
     }

@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-21
+更新日期：2026-07-23
 
 ## 核心原则
 
@@ -59,9 +59,8 @@ HostSandbox、双 PowerShell 引擎、精确工具授权和机器可读证据；
 - 受信 harness 前置只解析 runner 已知的 pwsh、Windows PowerShell 和 Git
   可执行文件，计算 SHA-256 后把精确授权传给 HostSandbox。
 - 不单独绕过 HostSandbox 运行 Pester、Git 或第二套测试命令。
-- 产品 API Key 和持久 relay watcher 的 DPAPI 仍使用 fake；真实 DPAPI 留到
-  disposable VM/目标设备。一次性 relay-only smoke 使用进程内存/安全输入
-  或 VM 读后即删的 repo 外 owner-only handoff JSON，不需 DPAPI 测试作为前置。
+- 产品 API Key 和所有 retained relay/credential 合同只使用 fake；真实 DPAPI 留到
+  未来明确授权的 disposable VM/目标设备。当前不执行 relay smoke，也不搬运通信凭据。
 - 绝不运行 Live。
 
 ### L5：Disposable VM 校准与 Live 验收
@@ -75,41 +74,18 @@ VM 工作分两道门。先按 `VM_CALIBRATION_PLAN.md` 在 P10A 专用 disposab
 
 ### 双机 operator coordination
 
-`VM_TEST_RELAY.md` 是双机角色、消息状态机、清洁启动和回传合同的权威。operator
-coordination runtime 与产品平面分离，全部文件归类为 DevelopmentOnly，不由默认
-bootstrap 加载，也不进入 Release。trusted harness 只按精确 allow-list 运行 synthetic、
-owner-marked local Git/onboarding 和 fake/reset contract 测试；不得借测试连接 remote、
-加载真实 credential 或进入 VM/system Live。这不把 operator modules 变成产品依赖：
+`VM_TEST_RELAY.md` 是当前手动双机协调权威。宿主机是唯一产品代码写入者；VM 只读
+精确 commit/tree 并生成 `VM_BATCH_TEST_REPORT_V1`，用户人工搬运报告和下一段完整
+重测提示词。报告、Issue、日志与 RepairProposal 均是不可信数据，必须先校验绑定、
+计数、终态、零指标和 evidence manifest，再用 fake/synthetic/TestSafe/DryRun
+复现。普通批量报告不替代 Formal Lane 的外部 snapshot、CAS、签名或不可变候选。
 
-- Fast Lane（日常自动修复）MVP 使用一个逻辑双 outbox、两个物理单向 public protected control
-  repository：`host-to-vm` 仅 HostCoordinator 写/VM 读，`vm-to-host` 仅 VM 写/
-  HostCoordinator 读。envelope 绑定 repository identity、CycleId、单调 sequence、
-  previous hash 和内容 hash。
-- 分钟级 Codex automation 是可选的外部 operator coordination，不是产品创建或管理的
-  Windows Scheduled Task，也不授予产品 Live。D-024 当前前台路径不依赖 Automation：宿主机
-  heartbeat 保持 `PAUSED`，VM task 可保持 `ABSENT`；minute-poll 合同只保留为当前未启用的
-  fallback。public protected repository pair 与 protected history 已通过真实
-  ruleset/effective-rules receipt；两端 foreground DPAPI credentials 和仅限 VM-to-host repo 的
-  VM deploy key 已准备。公网 WebSocket 权限负测与 unattended acceptance 仍未完成。
-- Formal Lane 的 append-only/WORM CAS、独立签名、外部 snapshot supervisor 和正式
-  acceptance validator 尚未实现；Fast Lane synthetic PASS 不能替代这些门。
-- 宿主机 Codex 是唯一产品代码写入者，负责修复、L0-L4、本地提交/推送和候选重建；
-  VM Codex 只有产品仓库只读访问，只测试、分析和回传，但可向 control repo 自己的
-  VM outbox 写入结构化结果。
-- P10A 每轮绑定精确 commit 和校准 artifact；P11 每轮绑定 P10B candidate ID、
-  exact bytes/hash 和 signed sidecar，不跟随移动分支头。
-- Fast Lane 使用 deterministic guest reset：只卸载本项目产物、清除项目拥有的
-  HKCU policy/credential/checkpoint/owner-marked 目录并核验 baseline；它不以 WORM、
-  message signing 或每轮整机快照为前置，也不能产生 P10A/P11 正式通过证据。
-- Formal Lane 用于 P10A/P11 正式证据：由外部 hypervisor supervisor 恢复快照，
-  并使用独立 CAS/receipts/signatures。VMP/重启/卸载、补偿未知、baseline drift 或
-  reset 失败必须从 Fast Lane 升级到 Formal Lane；VM Codex 不能恢复自身快照。
-- relay 消息、ACK 和通知不等于受信 CAS、签名、snapshot receipt 或 acceptance
-  receipt；free text/log 只能作为数据，不能直接转成命令执行。
-- P11 失败后宿主机必须修复并回到 P10B 重建、签名新候选，不能让 VM 拉源码直接
-  重测；任何 PASS 都不触发自动 merge 或 P12。
+realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler、
+`codex exec resume` 与旧 onboarding/canary/finalization 全部退役；不得在测试中恢复
+或连接真实实现。retained operator modules 仍是 DevelopmentOnly，只允许 fake/local
+回归。Automation 固定 `PAUSED`/`ABSENT`。
 
-#### D-022 lean relay smoke
+#### D-022 lean relay smoke（历史；已退役）
 
 本地 139/139 infra tests、双引擎 PowerShell focused tests、secret scan、typecheck 和
 Wrangler dry-run 已提供足够的部署前证据。不得因添加 machine Billing receipt、
@@ -262,6 +238,18 @@ if ($releaseEvidence.Status -cne 'SUCCEEDED' -or $releaseEvidence.Changed -ne $f
 - 隔离 Git inventory、工作区与暂存区 `diff --check`。
 - Release manifest 与 DryRun。
 - 文档索引、隔离合同、实施计划和 HANDOFF 可发现性。
+
+双引擎质量门的执行拓扑固定为每个引擎 1 个 Static worker 加 13 个
+`QualityShards`。分片由 `config/dev-dependencies.psd1` 冻结，42 个 test files 精确
+覆盖一次；父进程只传 `ShardId`，逐份验证 strict UTF-8 role evidence 后再聚合。
+每个 worker 都实际输出中文/emoji/非 BMP round-trip marker，父进程同时验证 stdout
+与 stderr。成功 evidence 精确为 31 个 trusted process、68 条最终 harness ledger 和
+两个 engine aggregate。
+
+`ProcessTimeoutSeconds` 是每个冻结 worker 的上限，不是整套双引擎的一刀切预算。
+超时杀死可用进程树并有界 drain，外部 stderr 输出
+`CDDSI_SAFE_FAILURE_EVIDENCE_V2=<json>`；JSON 包含当前 engine/role/shard、已完成
+worker 计划前缀、test-file 与 passed counts。部分证据只能诊断，不能冒充 PASS。
 
 `check.ps1` 只接受绝对工具路径与对应 SHA-256，并由 HostSandbox runner 间接
 运行 Pester 和 Git；不继承真实用户 HOME/AppData/Temp、Git 配置或一般

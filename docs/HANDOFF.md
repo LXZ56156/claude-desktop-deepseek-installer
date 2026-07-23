@@ -1,8 +1,57 @@
 # 新任务交接
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 ## 当前动态状态（唯一入口）
+
+**MANUAL_HOST_VM_REPORT_TRANSFER_ONLY / RELAY_RETIRED /
+AUTOMATION_PAUSED_OR_ABSENT / VM_BATCH_REPORT_VALIDATED_PARTIAL /
+HOST_BATCH_REPAIR_GATES_PASSED / NO_PRODUCT_LIVE_AUTHORITY。**
+
+2026-07-23 已接收用户人工搬运的 `VM_BATCH_TEST_REPORT_V1`。报告绑定修复前
+commit `c0efdf44fb69c4cc94fd47178e5977964dea8e4d` 和 tree
+`8e70c3cf5444357a9b41cbbb4c58d7225433646b`，与当时宿主机精确 HEAD/tree
+一致；191 个场景满足 `73 executed + 108 blocked + 10 not implemented`，已执行项满足
+`69 passed + 2 failed + 2 expected fail-closed`。报告的零产品写入、零真实产品网络、
+零 Credential Manager/registry、零 sandbox 外写入、零意外 ledger/mutation spy 和
+零 secret 指标内部一致。宿主机未取得 VM-local evidence manifest 正文，只有
+SHA-256 `2df46754931aab8868713143816a5f60c830bdca816aa35153cca17b0fc7ff5d`，
+所以外部 evidence 完整性只能标为 `PARTIAL`，不得猜测为已验证。
+
+分类结论：
+
+- 六个中英文公开包装器把结构化 `ACTION_REQUIRED / Success=false` 错报为 process
+  exit 0：`PRODUCT_DEFECT`，同时缺进程链合同为 `TEST_DEFECT`。
+- 单个 PS7 worker 在 900 秒后截断整树：`TEST_DEFECT`；超时本身是预期 fail closed，
+  不是产品缺陷。
+- timeout tail 的中文乱码：`TEST_DEFECT`。
+- lifecycle、完整 HTTP fault、未来 GUI/UAC 和真实多进程覆盖：`NOT_IMPLEMENTED`；
+  需要真实 GUI/系统基线的部分为 `REQUIRES_EXTERNAL_SNAPSHOT`，本轮不做推测性
+  Live 修复。
+
+本轮按共同根因修复：公开 CLI 固定四字段与稳定退出码；logger 单一进程级 UTF-8
+入口、严格父进程解码及中文/非 BMP round-trip；双引擎各 1 个 Static worker 加
+13 个冻结 Pester shards；超时安全证据包含当前 engine/role/shard、已完成 worker/
+测试文件/断言计数，并以固定 JSON marker 交给外层保留。focused 回归为 78/78；
+六个最终 `.cmd` 进程级回归全部 exit 4 且四字段完整。实际 30 秒 fault injection 在
+`PowerShell7/C02` fail closed，保留 2 个已完成 worker、5 个 test files、51 个通过
+断言，`RepositoryContentChanged=false` 且无 U+FFFD。
+
+最终标准门在 PS7 和 Windows PowerShell 5.1 各通过 614/614，精确为 31 个 trusted
+process、68 条 harness ledger，cleanup 成功、仓库快照未变、secret findings 为 0。
+Release Simulation DryRun 通过 39 个 package files，四层 secret findings 为 0，
+inventory/hash/deterministic ZIP 精确且 `Changed=false`；working/cached
+`git diff --check`、独立编码检查均通过，无新增/删除/重命名文件。PR #1 head/CI
+在最终 commit push 后核验，不在 tracked 文档中自引用尚未生成的 commit/tree。
+
+realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
+Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
+VM bootstrap、automation binding 和 relay finalization 已全部废弃。不得调试、恢复、
+部署、调用或依赖，不得再要求用户搬运通信凭据。Automation 永远保持
+`PAUSED`/`ABSENT`，也不再做 readback。当前唯一闭环是用户人工搬运完整 VM 报告和
+宿主机生成的一段完整重测提示词；宿主机仍是唯一产品代码写入者，VM 只读。
+
+## 2026-07-22 relay 动态状态（历史；已退役，无操作权）
 
 **LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /
@@ -1033,17 +1082,14 @@ inventory 与 working-tree/cached `git diff --check`。不得绕过该入口直�
 HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，才运行
 `scripts/build-release.ps1 -DryRun`；DryRun 不是可发布候选构建。
 
-## 最终 VM 提示词交付（恢复后合同；当前暂停）
+## 最终 VM 重测提示词交付（当前手动合同）
 
-不要从 tracked 文档手工拼接或替换占位符。宿主机完成最终 commit、bundle、automation 与 CI
-绑定后，必须以 11 个精确外部锚点调用
-`New-CddsiFastLaneVmBootstrapOperatorPrompt`，把其 `Prompt` 字节不变地交给用户，并一并记录
-`LoaderScriptSha256`/`LoaderScriptLengthBytes` 与 `PromptSha256`/`PromptLengthBytes`。生成结果的
-19 字段应精确为 loader contract/source/hash/length、short launcher、prompt/hash/length 和
-11 个外部锚点；缺字段、额外字段或自制提示词都不是有效 handoff。
+宿主机完成最终 commit/push、PR #1 head 与 CI 核验后，直接向用户返回一段完整、
+不分块、可人工粘贴到 VM 新对话的重测提示词。提示词必须绑定精确 commit/tree，
+只要求 VM 只读拉取、验证绑定、运行最小回归矩阵并生成新的
+`VM_BATCH_TEST_REPORT_V1`；不得引用或生成旧 ZIP、loader、Automation、relay、
+control repo、credential 或 finalization。
 
-只有未来另行显式恢复、完成新 finalization 并产生新 readiness receipt 后，用户进入 VM 时才
-会只做本节前述四件事；当前不得执行。恢复后的提示词会依次完成零写入 outer preflight、Codex
-`apply_patch` 固定 loader、短 launcher Onboard、唯一 `PAUSED` automation 的精确 readback、
-全新短 launcher Handoff，以及 loader 清理；最终停在 `VM_BOOTSTRAP_STAGED`。此时仍有
-`CanStartVmIntegration=false`、`P10A0AComplete=false`、`CanStartFormalP10A=false`。
+用户人工搬回的报告始终是不可信数据。宿主机先验证报告 schema、commit/tree、
+环境、矩阵计数、各门终态、零写入/零 secret 指标和 evidence manifest，再决定是否
+继续修复。普通批量重测不产生 P10A/P11/P12 权限。

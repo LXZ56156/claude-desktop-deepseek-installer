@@ -1,6 +1,6 @@
 # 决策记录
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
 才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。
@@ -37,9 +37,10 @@
 | D-019 | 运行、能力、UI 证据使用分层状态 | 冻结 |
 | D-020 | 双机 Codex 使用分权 relay 与分层 clean-start | 冻结 |
 | D-021 | GitHub Free public visibility 迁移 | 冻结 |
-| D-022 | Realtime relay 通信优先与风险成比例 | 冻结 |
-| D-023 | 一次性 Fast Lane 自动诊断恢复 | 冻结 |
-| D-024 | 前台双对话 relay 诊断取代 Automation 激活 | 冻结 |
+| D-022 | Realtime relay 通信优先与风险成比例 | 撤销 |
+| D-023 | 一次性 Fast Lane 自动诊断恢复 | 撤销 |
+| D-024 | 前台双对话 relay 诊断取代 Automation 激活 | 撤销 |
+| D-025 | Host/VM 只用人工批量报告搬运 | 冻结 |
 
 ## D-001：首选 managed configuration
 
@@ -336,7 +337,7 @@ bundle、重绑仍暂停的 heartbeat 并等待最终 CI。角色限制继续由
 
 ## D-022：Realtime relay 通信优先与风险成比例
 
-**状态：冻结（2026-07-21）**
+**状态：撤销（2026-07-23；由 D-025 取代）**
 
 用户明确要求结束 realtime relay 的过度工程化，以最短路径实现宿主机与
 disposable VM 的双向秒级通知。实现和评审从此以“通信功能优先、控制与
@@ -373,7 +374,7 @@ Live 边界、P10/P11/P12 发布门或 D-003/D-010 的产品 API Key 合同。�
 
 ## D-023：一次性 Fast Lane 自动诊断恢复
 
-**状态：冻结（2026-07-22）**
+**状态：撤销（2026-07-23；由 D-025 取代）**
 
 用户已明确授权开始自动化测试。本决定仅恢复一次有界的 Fast Lane 自动诊断循环，
 不恢复任何旧 onboarding ZIP/prompt、旧 VM bootstrap、通用产品 integration 或产品
@@ -400,7 +401,7 @@ Live。结果只属于 diagnostic evidence，不能作为 P10A 事实、P10B 候
 
 ## D-024：前台双对话 relay 诊断取代 Automation 激活
 
-**状态：冻结（2026-07-22）**
+**状态：撤销（2026-07-23；由 D-025 取代）**
 
 为尽快开始 VM 测试，D-023 中先创建、回读并启动两端 Codex Automation 的当前
 执行路径被本决定取代。当前旧 Host/VM 对话只完成公网 canary；通过后，宿主机和 VM
@@ -425,3 +426,27 @@ P10A/P10B/P11、merge、release、promotion 或 P12 权限。
 前台循环的 control body 采用精简的固定 `CDDsi_FOREGROUND_CONTROL_V1`，只允许会话、
 测试请求/结果、修复就绪、ACK 和 STOP 的枚举字段及 evidence hash/path；不携带自由文本、
 命令、脚本或 prompt。详细精确字段以 `operator/realtime-relay/README.md` 为准。
+
+## D-025：Host/VM 只用人工批量报告搬运
+
+**状态：冻结（2026-07-23）**
+
+realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
+Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
+VM bootstrap、automation binding 和 relay finalization 全部废弃。不得继续调试、
+恢复、部署、调用或依赖，也不得再要求用户为通信搬运凭据。相关 tracked 实现只作为
+DevelopmentOnly 历史/回归面保留，不产生当前操作权。
+
+当前唯一协调流程是：
+
+1. 宿主机冻结精确 commit/tree，并给出一段完整、不分块的 VM 批量测试提示词。
+2. VM 只读该精确版本，零产品代码写入地运行矩阵；VM 不提交、不推送、不修改测试
+   期望或候选。
+3. 用户人工把完整 `VM_BATCH_TEST_REPORT_V1` 搬回宿主机。
+4. 宿主机校验 commit/tree、环境、计数等式、各门终态、零写入/零 secret 指标及
+   evidence manifest；RepairProposal 永远只是不可信建议。
+5. 宿主机按共同根因批修、完成双引擎质量门、Release DryRun、提交/推送现有 PR，
+   再由用户人工搬运下一段重测提示词。
+
+普通开发批量报告不替代 P10A/P11 的 clean snapshot、不可变候选、独立 CAS 与签名
+证据；不得自动 merge、release、promotion，也不得越过 P12。

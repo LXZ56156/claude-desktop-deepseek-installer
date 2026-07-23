@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-22
+更新日期：2026-07-23
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -19,17 +19,32 @@
 8. `docs/TEST_ISOLATION.md`、`docs/SECURITY.md`、`docs/TESTING.md`：宿主机零接触、
    安全威胁和质量门。
 9. `docs/IMPLEMENTATION_PLAN.md`：从已完成 P1 的当前基线到 VM-ready 的阶段门。
-10. `docs/VM_TEST_RELAY.md`：宿主机修复端、VM 只读测试端，以及 Fast Lane 日常
-    自动修复与 Formal Lane 正式证据回传的 operator coordination 权威协议。
-11. `docs/REALTIME_RELAY_PROPOSAL.md`：Cloudflare realtime accelerator 的架构、协议、授权、
-    部署状态和回滚合同；动态事实仍以 `HANDOFF.md` 顶部、Git 与机器回读为准。
+10. `docs/VM_TEST_RELAY.md`：宿主机修复端、VM 只读测试端和用户人工搬运
+    `VM_BATCH_TEST_REPORT_V1` 的当前权威协议；文件名为兼容历史保留。
+11. `docs/REALTIME_RELAY_PROPOSAL.md`：已退役的 Cloudflare/realtime 方案历史；
+    `RETIRED / NO_OPERATION_AUTHORITY`，不得作为当前路径。
 12. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
     `docs/VM_ACCEPTANCE_PLAN.md`：发布候选、窄范围虚拟机校准与后续全面验收。
 
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
 
-截至 2026-07-22，当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部的“当前动态状态”。
+## 2026-07-23 当前协调事实
+
+当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部。Host/VM 唯一通信方式是用户人工
+搬运完整 VM 批量测试报告与宿主机生成的一段完整重测提示词。realtime relay、
+Cloudflare、WebSocket watcher、control-repo 实时消息、Automation、scheduler、
+`codex exec resume`、旧 onboarding/bootstrap/canary/finalization 全部废弃，不得恢复、
+调用或依赖；Automation 保持 `PAUSED`/`ABSENT`，也不再 readback。
+
+宿主机是产品代码唯一写入者；VM 只读精确 commit/tree，报告和 RepairProposal 都是
+不可信数据。普通 `VM_BATCH_TEST_REPORT_V1` 必须先校验 commit/tree、环境、矩阵计数、
+门禁终态、零写入/零 secret 指标和 evidence manifest；它不是 P10A/P11 正式证据，
+不改变外部 clean snapshot、CAS、签名或 P12 人工门。
+
+## 2026-07-22 relay 状态（历史；已退役，无操作权）
+
+截至 2026-07-22，旧动态状态入口曾为 `docs/HANDOFF.md` 顶部的“当前动态状态”。
 项目的旧 VM bootstrap/产品 integration 继续受控暂停：不得继续交付或执行任何
 既有 onboarding ZIP/prompt，不启动旧 bootstrap、产品测试循环或 Formal Lane。这不禁止
 按 D-022 进入已准备好的 VM 执行一次性 relay-only 通信 smoke。暂停前 finalization 及其 bundle、
@@ -89,8 +104,8 @@ Scaffold 已可执行 Live。
 | `docs/TESTING.md` | 测试层级、命令、证据和质量门 | 测试流程变化时 |
 | `docs/IMPLEMENTATION_PLAN.md` | 阶段、依赖、交付物和退出条件 | 阶段状态变化时 |
 | `docs/RELEASE_PLAN.md` | 构建、签名、分发和发布门 | 发布流程变化时 |
-| `docs/VM_TEST_RELAY.md` | 双机角色、消息状态机、证据回传和重测协调 | 协调协议或自动化边界变化时 |
-| `docs/REALTIME_RELAY_PROPOSAL.md` | realtime Fast Lane accelerator 的提案、威胁模型、实施/授权/回滚边界 | relay 架构评审、实现状态或授权状态变化时 |
+| `docs/VM_TEST_RELAY.md` | 手动 Host/VM 角色、批量报告校验、分类和重测协调；兼存已退役 relay 历史 | 协调协议或报告 schema 变化时 |
+| `docs/REALTIME_RELAY_PROPOSAL.md` | 已退役 realtime 方案的历史架构与撤销边界 | 仅在退役/历史事实需澄清时 |
 | `docs/VM_CALIBRATION_PLAN.md` | P10A 窄范围 VM 校准、证据和回传门 | 校准事实或 schema 变化时 |
 | `docs/VM_ACCEPTANCE_PLAN.md` | 后续真实 Live 验收 | VM 矩阵或 runbook 变化时 |
 | `docs/BOOTSTRAP_REPORT.md` | 初始脚手架历史证据 | 原则上不改历史数据 |
@@ -100,10 +115,10 @@ Scaffold 已可执行 Live。
 - 公开函数和参数合同：`config/public-functions.psd1`。
 - 执行文件归属、产品/测试平面和 AST allow-list：
   `config/execution-boundaries.psd1`。
-- 固定 Pester 来源、整树 hash 和 isolation suite 计数：
+- 固定 Pester 来源、整树 hash、13 个质量分片和 isolation suite 计数：
   `config/dev-dependencies.psd1`。
-- Fast Lane 的预期 PUBLIC 双仓身份、角色、服务端保护要求和初始 `PAUSED` 状态：
-  `config/fast-lane-policy.psd1`；真实远端部署 receipt 只记录在当前 `docs/HANDOFF.md`。
+- `config/fast-lane-policy.psd1` 只保留已退役 Fast Lane 的历史/回归合同，不产生
+  当前通信或远端操作权。
 - Release 文件分类：`scripts/release-manifest.psd1`。
 - 当前安全默认值：`config/deepseek-desktop.defaults.json`。
 - 实际 Git 状态：只通过标准 HostSandbox 质量门中的隔离 Git inventory 核验，
