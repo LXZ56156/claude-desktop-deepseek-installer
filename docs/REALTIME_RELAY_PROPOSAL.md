@@ -2,10 +2,12 @@
 
 状态：**RETIRED / ARCHIVED / NO_OPERATION_AUTHORITY / AUTOMATION_PAUSED_OR_ABSENT**
 
-> 2026-07-23：本方案及 D-022/D-024 已由 D-025 撤销。Cloudflare、WebSocket
+> 2026-07-24：本方案及 D-022/D-024 已由 D-025 撤销，D-026 又取代了 D-025 的
+> 开发期角色分配。Cloudflare、WebSocket
 > watcher、control-repo 实时消息、Automation、scheduler、`codex exec resume`、
 > foreground canary 和 relay finalization 均不得恢复、调用或作为依赖。本文以下内容
-> 仅保留历史架构与回归背景；当前唯一流程是用户人工搬运 VM 批量报告。
+> 仅保留历史架构与回归背景；当前流程是宿主 clean handoff 后冻结写入，由
+> disposable VM 在现有分支/PR #1 取得排他 `VmDevelopment` 租约。
 
 历史状态：**LOCAL_GATES_PASSED / EXTERNAL_AUTHORIZED_FREE_ONLY /
 AUTHENTICATED_READ_ONLY / BILLING_DASHBOARD_REVIEWED /

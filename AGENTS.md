@@ -28,8 +28,10 @@
 
 ## 安全边界
 
-- 当前 `Scaffold` 阶段禁止任何真实 MSIX/Git 安装、Windows 功能修改、重启、
-  DeepSeek API 请求、Claude 配置写入以及 Claude 进程关闭或启动。
+- 宿主机、CI、TestSafe、DryRun 和默认 bootstrap 继续处于 `Scaffold`，禁止任何真实
+  MSIX/Git 安装、Windows 功能修改、重启、DeepSeek API 请求、Claude 配置写入以及
+  Claude 进程关闭或启动。D-026 明确授权的 disposable VM Live 开发租约是唯一例外，
+  不得反向扩大宿主机或 CI 权限。
 - 整个宿主机开发期禁止自动化读取、Test-Path、枚举、哈希、监视、备份或修改
   真实 Claude/Claude Code/Git 配置、Claude managed policy、Credential Manager、
   AppX、VMP、服务、任务计划、PATH 和真实进程。真实 Live 首次执行只允许在用户
@@ -50,7 +52,53 @@
 - 可恢复备份与可分享脱敏快照是两个不同合同。脱敏快照永远不得作为恢复源；
   未来跨重启恢复材料必须使用 DPAPI CurrentUser 或经评审的等效保护。
 
-## 当前 Host/VM 手动测试闭环
+## 当前 Disposable VM acceptance-first 开发闭环（D-026）
+
+- 用户已于 2026-07-24 明确结束“VM 永远只读、宿主机逐轮批修”的开发反馈方式。
+  宿主机提交并推送一个 clean handoff commit 后冻结产品写入；从该精确 commit 起，
+  disposable VM Codex 在现有 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1 内取得
+  阶段性唯一代码写入租约，可以修改源码、测试、文档和构建定义，正常 commit 并
+  fast-forward push。不得 force push、改写历史、创建重复 PR；remote 出现非预期提交
+  时必须停止，不能自行覆盖或 rebase。
+- VM 开发租约允许在明确 disposable Windows VM 内安装完成任务所必需、来自官方来源
+  且已核验签名的 PowerShell 7、Git for Windows、GitHub CLI、.NET SDK 等开发工具，
+  并允许实现和执行受控产品 Live：官方安装包获取与验签、AppX/进程、项目拥有的
+  HKCU managed policy、DPAPI CurrentUser credential、VMP/UAC/人工重启/checkpoint、
+  DeepSeek 最小真实请求以及 Claude Desktop 启停。宿主机和 CI 仍永不执行这些动作。
+  每个开发/构建工具必须记录官方 metadata endpoint、精确版本、下载 bytes SHA-256、
+  Authenticode signer/publisher、canonical 安装路径和安装 receipt；Pester 只使用仓库
+  固定树，P10B 仍使用冻结、可复现的完整工具链。
+- 开发期以实际用户路径为第一完成门：不可 promotion 的 development ZIP 必须完成
+  真实安装、配置、重复运行、诊断、修复、恢复，并由 Computer Use 实际验证
+  Claude Desktop 的 Chat、Code、Cowork。进程存在、配置存在或 synthetic PASS 不能
+  代替 GUI PASS；该门只产生 `READY_FOR_FORMAL_P10A`，不是 `RELEASE_READY`。
+- 发布必过门只保留产品行为、供应链、凭据、恢复、Release inventory/secret 和真实
+  用户路径。已退役的 relay/outbox/Automation 传输与旧 evidence-plumbing 回归（包括
+  当前 FastLaneGitOutbox H02 固定时限回归）移入非阻塞历史诊断层；不得伪造其通过，
+  也不得用它阻断用户路径开发。正式候选的 clean snapshot、CAS、签名和 P10A/P11
+  evidence 仍是 P12 前置。若修改测试，必须明确证明它属于退役平面或测试本身错误；
+  不能删除产品断言、把真实产品失败改成 skip 或放宽下载安装验签。
+- 在具名、可审计的 ProductReleaseGate 分层及其 inventory/CI/Release 回归真正落地前，
+  现有完整 `scripts/check.ps1` 仍是阻塞门，不能直接忽略 H02。新分层必须证明每项
+  发布关键测试精确归类且全部执行，历史诊断仍单独运行并诚实报告；禁止用 skip、
+  not-run、扩大 timeout 或删除测试实现“非阻塞”。
+- API Key 无论余额多少都不得进入 Codex 对话、prompt、Git、命令行、环境变量、脚本、
+  fixture、日志、状态、报告、截图、evidence 或 Release。已经贴入对话的 Key 视为已
+  暴露，应轮换；真实验收时只允许用户在 VM 的遮罩输入框/安全终端中本地输入一次，
+  Codex 不读取、不转述、不截图，产品只能通过 DPAPI CurrentUser/owner-only helper
+  使用，临时明文字节使用后清零。
+- 普通 VM 开发循环可以反复修改和真实测试，直到 `READY_FOR_FORMAL_P10A`；随后按
+  `P10A → 冻结事实 → P10B → P11` 构建、签名并只读验收精确候选，只有 P11 正式
+  evidence 通过后才是 `RELEASE_READY`。不得自动 merge、创建正式 GitHub Release、
+  promotion 或越过 P12；候选冻结后任何字节变化都必须返回开发阶段重建。
+- realtime relay、Cloudflare、WebSocket watcher、control repo、Codex Automation、
+  scheduler、`codex exec resume`、旧 onboarding/bootstrap/canary/finalization 继续
+  永久退役；新闭环不恢复也不依赖任何这些组件。
+
+## Host/VM 手动测试闭环（历史；已由 D-026 取代）
+
+以下内容只说明 2026-07-23 至 2026-07-24 的旧批量报告阶段，不再限制当前 VM 写入
+租约或 disposable VM Live 开发：
 
 - realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
   Automation、scheduler 和 `codex exec resume` 已全部废弃，不得调试、恢复、部署、
@@ -66,7 +114,7 @@
 
 ## Realtime relay 交付优先级（历史；已撤销，无操作权）
 
-以下 D-022/D-024 内容只保留历史理由和回归背景。D-025 及上节优先；不得据此执行
+以下 D-022/D-024 内容只保留历史理由和回归背景。D-026 及当前 VM 开发节优先；不得据此执行
 Cloudflare、relay、watcher、control repo、credential 或 automation 操作。
 
 `docs/DECISIONS.md` 的 D-022 是 realtime relay 的当前冻结原则，并优先于
@@ -97,12 +145,13 @@ Cloudflare、relay、watcher、control repo、credential 或 automation 操作�
 ## 双机 VM 测试闭环（历史自动化设计；已由手动闭环取代）
 
 以下自动 outbox、scheduled task、watcher 和 relay envelope 设计不再是当前路径，
-不得恢复或依赖；其中宿主机唯一写权、VM 只读、正式快照/CAS/签名和禁止自动发布等
-安全不变量继续有效。
+不得恢复或依赖。其宿主机唯一写权、VM 永久只读已由 D-026 取代；继续有效的只有
+最终候选只读、正式快照/CAS/签名和禁止自动发布等安全不变量。
 
-- 宿主机 Codex 是唯一代码写入者：只允许它修改源码、runbook 和候选构建定义，
+- 历史角色分配曾规定宿主机 Codex 是唯一代码写入者：只允许它修改源码、runbook 和候选构建定义，
   执行宿主机质量门并提交、推送修复。VM Codex 只允许拉取精确版本、测试、分析
-  和回传，不得编辑或推送产品仓库，也不得修改候选或 runbook。
+  和回传，不得编辑或推送产品仓库，也不得修改候选或 runbook。该句只保留历史，
+  不限制当前 `VmDevelopment` 租约；最终冻结候选仍不得修改。
 - 日常开发重测优先由 VM Codex 按精确 allow-list 执行 guest 内 deterministic
   reset，只卸载有 ownership receipt 的本项目测试安装，清除项目拥有的 HKCU policy、
   credential、checkpoint 和 owner-marked 测试目录，并生成可验证 cleanup receipt；

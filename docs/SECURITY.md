@@ -1,6 +1,6 @@
 # 安全设计
 
-更新日期：2026-07-21
+更新日期：2026-07-24
 
 ## 安全目标
 
@@ -12,7 +12,28 @@
   共享系统资源使用显式补偿矩阵，不承诺整机事务式回滚。
 - 未测试能力不能被报告为成功。
 
-## 风险成比例原则（D-022）
+## 当前 D-026 安全边界
+
+D-026 只改变开发阶段的 writer 和执行地点，不降低产品安全门：
+
+- 宿主机提交 clean handoff 后冻结产品写入；disposable VM 的 `VmDevelopment` stage
+  成为现有分支和 PR #1 的唯一 writer。不得双写、force push、改写历史或创建重复 PR。
+- 宿主机、CI、TestSafe、DryRun 和默认 bootstrap 继续零 Live。真实系统探测、安装、
+  HKCU policy、DPAPI credential、AppX/进程、VMP/UAC/重启和最小 DeepSeek 请求只允许
+  在明确 disposable VM 内由 package-bound Live context/provider 执行。
+- VM 开发可以反复修改和重测；最终候选必须重新冻结 clean commit/ZIP，之后只读验收。
+  失败返回开发 stage 并构建新候选，不能热补丁被测字节。
+- 实际 Release ZIP 的安装、配置、API、恢复和 Computer Use Chat/Code/Cowork 是发布
+  关键门。retired relay/outbox/Automation 传输与旧 evidence-plumbing 回归可保留为
+  非阻塞历史诊断，但不得伪造 PASS，也不得掩盖产品、安全或供应链失败；正式候选的
+  P10A/P11 evidence 仍是 P12 前置。
+- 任何 API Key 即使低余额也不得进入 Codex 对话、prompt、argv、环境变量、Git、测试
+  fixture、日志、状态、报告、截图、evidence 或 Release。已经贴入对话的 Key 视为暴露，
+  应撤销/轮换；新 Key 只由用户在 VM 本地遮罩输入，Codex 不读取、不转述、不截图。
+- `RELEASE_READY` 不等于发布授权。merge、GitHub Release、promotion 和 P12 仍由用户
+  人工决定。
+
+## 风险成比例原则（D-022；历史已撤销）
 
 Realtime relay 是独立 operator notification plane，不是产品安装器 Live。对它的
 控制必须围绕可能导致实际损害的路径，不得将所有理论 hardening 都变成
@@ -20,7 +41,7 @@ Realtime relay 是独立 operator notification plane，不是产品安装器 Liv
 Billing receipt、two-phase ticket、coordinated provisioner/DPAPI receipts、bulk semantics 或
 two-secret staging receipt。现有相关代码可保留作 optional defense-in-depth。
 
-当前不可放宽的直接风险只包括：Cloudflare 出现付费/升级提示；secret
+以下是历史 relay 决策当时不可放宽的直接风险：Cloudflare 出现付费/升级提示；secret
 泄漏到日志、Git、prompt、报告或 evidence；payload/free text 被执行；VM 获得
 产品写权；或 relay 越权发起 merge/release/promotion/P12 动作。Formal Lane 的
 snapshot/CAS/签名仍是正式证据门，不因 lean relay 改变。
@@ -33,19 +54,18 @@ snapshot/CAS/签名仍是正式证据门，不因 lean relay 改变。
 - TestSafe/DryRun 的潜在修改操作必须 `Changed=false`。
 - 环境变量不能单独授权真实操作。
 - Live 需要独立确认、适用 stage、ExecutionContext 和 operation-specific grant。
-- 当前 `Scaffold` 阶段无条件拒绝 Live。
+- 当前 handoff 源码的 `Scaffold` stage 无条件拒绝 Live；VM 必须先实现并测试独立
+  `VmDevelopment` stage，不能把环境变量或命令行开关当授权。
 - 开发机和 CI 即使代码未来实现 Live，也不得加载或执行 live provider。
-- 首次真实系统操作只允许在 `VM_CALIBRATION_PLAN.md` 的 P10A 专用 disposable VM
-  中由限域 calibration runner/provider 执行；它只采集冻结候选前所需事实，不是
-  全面产品 Live，也不得加载宿主机 Live provider。
-- P10A evidence 必须经受信外部 CAS 原子提交并冻结事实，随后才可构建 P10B 双
-  候选；对候选精确字节的首次全面产品 Live 只在 `VM_ACCEPTANCE_PLAN.md` 的 P11
-  disposable VM 执行。
+- D-026 后首次实现与真实系统操作允许在 `VmDevelopment` disposable VM 执行；它必须
+  使用 owner-scoped 资源、独立交互确认、失败补偿和可恢复 snapshot，不得加载到宿主机。
+- 开发循环结束后必须重新冻结候选。需要 P10A 外部事实时仍由限域 calibration
+  runner/provider 和受信 CAS 产生；P11 仍只测试精确 candidate bytes。
 - stage/profile 来自完整性保护的 embedded manifest 与 detached sidecar，不由
   环境变量或普通命令行开关单独授权。VM grant 绑定候选 hash、runId、operation、
   expiry 和交互确认，但不冒充 OS 级 VM 身份证明。
-- `VM_TEST_RELAY.md` 定义的 monitor/control repo 属于独立 operator coordination
-  plane，不扩展产品 Live 权限，也不能用消息、通知或 automation 绕过 grant。
+- `VM_TEST_RELAY.md` 定义当前人工交接和 VM 单写者租约；历史 monitor/control repo
+  不扩展产品 Live 权限，也不能用消息、通知或 automation 绕过 grant。
 - 截至 2026-07-16，`config/fast-lane-policy.psd1`、`lib/vm-test-relay.ps1`、
   `lib/vm-fast-lane-readiness.ps1`、`lib/vm-reset.ps1` 和 `operator/fast-lane/*` 已实现
   DevelopmentOnly 的固定 Git transport、确定性 onboarding、VM-only reset 边界与
@@ -123,9 +143,12 @@ disposable VM 的受信 provider 产生实物 receipt；宿主机 synthetic evid
 ## API Key
 
 - 不接受明文命令行参数、环境变量或配置文件导入。
+- 不接受通过 Codex 对话、prompt、GitHub issue/PR、测试代码或 clipboard 交付；已经
+  出现在这些持久面中的 Key 必须视为泄漏并轮换。
 - 不静默 Trim；拒绝空白、多行、控制字符和非法格式。
 - 使用 SecureString 或不可序列化 credential handle。
-- 明文只在安全输入、DPAPI adapter 和 helper stdout 的最短边界出现。
+- 用户只在 disposable VM 的遮罩输入框或安全终端本地输入；Computer Use 不查看或
+  截图该界面。明文只在安全输入、DPAPI adapter 和 helper stdout 的最短边界出现。
 - 使用 DPAPI CurrentUser 与受限 ACL。
 - Claude 配置只引用 credential helper，不包含 Key。
 - helper 采用签名、固定工具链的最小 .NET EXE，不接受明文参数，不经 shell、不读
@@ -157,7 +180,10 @@ SBOM、PE、签名身份和 VM provider receipt 仍是发布阻断项。
 - 状态只记录 backup ID/hash/target metadata。
 - DPAPI blob 不跨用户、机器或 VM 声称可恢复。
 - owner、expiry 和清理失败必须有稳定错误。
-- Fast Lane 日常开发重测只允许按冻结 allow-list 做 deterministic guest reset：
+- D-026 `VmDevelopment` 首次 Live 前必须确认可由 VM 外部恢复的 snapshot；每个实际
+  支持环境使用独立 clean snapshot/镜像，不用一个已污染 VM 外推多环境结论。日常重测
+  只清理项目拥有、owner/token 精确匹配的资源，未知所有权一律停止。
+- Fast Lane 历史日常开发重测只允许按冻结 allow-list 做 deterministic guest reset：
   卸载本项目产物，清除项目拥有的 HKCU policy、credential、checkpoint 和
   owner-marked 目录，再核验 baseline。该 lane 不以 WORM、message signing 或每轮
   snapshot 为前置，结果只用于诊断。
@@ -215,7 +241,10 @@ hash”的矛盾要求。
 不修改 Claude MSIX/Electron 资源，不跳过应用完整性，不集成社区汉化补丁。
 中文体验仅由安装器、提示、报告和文档提供。
 
-## 双机 relay 威胁与防护
+## 双机 relay 威胁与防护（历史；无当前操作权）
+
+以下内容只保留 D-020 至 D-024 的威胁模型和回归背景。D-026 不部署、不调用也不依赖
+这些 transport、credential、watcher 或 Automation。
 
 Fast Lane 的逻辑 control plane 与产品仓库分离。GitHub deploy key 是
 repository-scoped、不是 path-scoped；因此 GitHub transport 不能用同一 repository
@@ -328,7 +357,7 @@ harness runtime。
 - 把 relay ACK/`TEST_RESULT` 当作 CAS、签名、snapshot 或 P11 acceptance receipt；
 - PASS 自动 merge、自动发布或越过 P12 人工门。
 
-对应控制为：产品仓库 VM credential 必须只读，两个物理 control repository 分别
+历史对应控制为：产品仓库 VM credential 必须只读，两个物理 control repository 分别
 发放最小单向写权限；Fast Lane 消息至少绑定 CycleId、单调 sequence、前序 hash、
 物理 repository/outbox identity、精确 commit/candidate 与内容 hash；free text 永远
 只作为数据，runner 只执行冻结 allow-list；所有消息与附件先脱敏和 secret scan；
@@ -339,7 +368,7 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
 
 ## 安全验证
 
-每个真实操作未来都必须先覆盖：
+每个真实操作在 VM 实现和正式候选冻结前都必须覆盖：
 
 - TestSafe、DryRun、Live 许可门。
 - fake provider 和 access ledger。
@@ -349,7 +378,7 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
 - Release 白名单。
 - disposable VM Live 验收。
 
-## 当前阻断风险
+## 当前实现与发布阻断风险
 
 - P1 已证明项目控制的本地自动化满足零接触合同，但 HostSandbox 不是 OS 权限边界；
   真实 adapter 和不受信任代码仍只能在 disposable VM 首次执行。
@@ -361,35 +390,25 @@ baseline 不一致即升级 Formal Lane。宿主机不得执行 product Live，V
   调用者可重算的 SHA 摘要不能证明提交或授权。
 - detached sidecar 必须验证真实签名字节和外部固定信任身份；P11 receipt 不存在时
   P12 promotion 必须保持 fail closed。
-- Fast Lane 本地 policy、relay/reset pure/fake contract、固定 prompt 和 synthetic
-  rehearsal，以及固定 outbox/onboarding/VM-only reset 边界已实现。最终 post-commit
-  commit/tree/hash 不写回 tracked 文档，而由同一暂停 automation、PR CI、实际 Git/remote
-  与 immutable bundle 的外部机器事实共同核验；全部匹配时只派生 bootstrap-only 的
-  `CanStartVmBootstrap=true`，且 bootstrap 本身不足以宣称 P10A-0A 完成。
-- GitHub Free public 迁移不是单纯配置切换：visibility/protection receipt、policy、
-  readiness、outbox/onboarding、prompt/runbook 和测试合同已先升版；三仓随后一并公开，
-  并以 ruleset/effective-rules receipt 验证服务端历史保护。产品 ruleset 为 `19068339`，
-  host-to-VM 为 `19068292`，VM-to-host 为 `19068313`，均无 bypass actor。交互式 bootstrap
-  admin 仍不得交给 automation。
-- 用户已设置 `PrivacyDecision=ACCEPTED`、`HistoryRewrite=NO`、
-  `ResidualPrivacyAudit=NOT_PERFORMED_ACCEPTED_RISK`。这些选择只接受存量个人/运营信息
-  暴露，不放松 credential、Authorization、API key、未脱敏日志或配置进入 public outbox
-  的禁令；不能依赖“仓库不易发现”保护 secret。
-- 两个方向的最小角色凭据、VM 产品 remote 只读负向验证、real guest reset 证据、VM
-  automation、安全启用两端 paused tasks、无人值守执行和外部 hypervisor receipt 流程
-  仍未完成；这些证据完成前 integration 与双机自动闭环保持阻断。
-- protection receipt 轮换必须 fail closed：先暂停消费者，由外部 provisioner 生成下一
-  authority assertion 并把其 hash/token 写入固定 task binding，再允许恢复；自动化不得
-  从新 receipt、relay payload 或旧本地 state 学习新的信任值。
 - 首次 P10A、P10A 事实冻结轮、正式 P11 PASS 和发布里程碑必须由 VM 外部 supervisor
   恢复 clean snapshot 并签发 receipt，且 Formal Lane 使用独立 CAS 与签名。guest
   reset、Fast Lane PASS 或 control-repo commit 均不能替代。
 - `disableDeploymentModeChooser`、Standard/Offline MSIX 的 VM 行为未验证。
-- Realtime relay 的 DPAPI CurrentUser credential provider、ACL/no-reparse 与原子状态合同
-  已实现并通过 fake/local 测试；一次性 smoke 的 Cloudflare runtime secret bindings 已 provision。
-  Host 明文 frame 已在 DPAPI CurrentUser round-trip 后删除，只保留仓库外 owner-only blob；VM 未安装
-  持久 secret/watcher，unattended watcher 仍未启用。产品其余可恢复敏感材料的完整生命周期、
-  实际 ACL/provider receipt 仍未完成，不能用 realtime 合同替代。
+- 产品 credential helper、可恢复敏感材料、HKCU policy、lifecycle 和实际补偿的完整
+  生命周期及 ACL/DPAPI/provider receipts 仍未完成。
 - LICENSE copyright holder 尚未确定。
 
-这些风险未关闭前，Live 和正式发布保持阻断。
+以上产品、Formal 和法律风险是 D-026 `VmDevelopment` 必须在 disposable VM 内逐项
+关闭的工作清单；它们继续阻断 `READY_FOR_FORMAL_P10A`、`RELEASE_READY` 或正式
+发布，但不阻断 VM 为关闭这些风险而实现和测试受控 Live。P12 始终保持人工、
+fail closed。
+
+### 已退役 operator 缺口（历史；不阻断 D-026）
+
+Fast Lane policy、relay/reset、outbox/onboarding、双向 credential、paused Automation、
+watcher、unattended runner、旧 bootstrap readiness 和 protection-receipt 轮换均只保留
+历史回归背景。它们不需要补齐，也不得恢复为 `VmDevelopment`、P10A/P11 或发布前置。
+三仓既有 public visibility、禁止删除/非快进、线性历史与无 bypass 规则仍保护当前
+repair branch；历史 privacy 接受决定不放松 credential、Authorization、API Key 或
+未脱敏数据禁令。Realtime relay 的旧 DPAPI/Cloudflare 状态不能替代产品 credential、
+Formal evidence 或任何当前验收门。

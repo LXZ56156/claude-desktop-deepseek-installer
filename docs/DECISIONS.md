@@ -1,9 +1,11 @@
 # 决策记录
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
-才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。
+才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。“部分撤销”
+表示该决定的特定 authority/角色已被后续决定取代，但该节明确列出的其余安全不变量
+继续冻结。
 
 ## 状态
 
@@ -35,12 +37,13 @@
 | D-017 | Git 是产品必备前置，合格复用、否则安装/升级 | 冻结 |
 | D-018 | 每个 Release 冻结单一 MSIX 部署范围 | 冻结 |
 | D-019 | 运行、能力、UI 证据使用分层状态 | 冻结 |
-| D-020 | 双机 Codex 使用分权 relay 与分层 clean-start | 冻结 |
+| D-020 | 双机 Codex 使用分权 relay 与分层 clean-start | 部分撤销 |
 | D-021 | GitHub Free public visibility 迁移 | 冻结 |
 | D-022 | Realtime relay 通信优先与风险成比例 | 撤销 |
 | D-023 | 一次性 Fast Lane 自动诊断恢复 | 撤销 |
 | D-024 | 前台双对话 relay 诊断取代 Automation 激活 | 撤销 |
-| D-025 | Host/VM 只用人工批量报告搬运 | 冻结 |
+| D-025 | Host/VM 只用人工批量报告搬运 | 撤销 |
+| D-026 | Disposable VM acceptance-first 开发租约 | 冻结 |
 
 ## D-001：首选 managed configuration
 
@@ -282,23 +285,24 @@ compensation；分层状态不能掩盖部分系统修改。
 
 ## D-020：双机 Codex 测试闭环
 
-**状态：冻结（2026-07-15）**
+**状态：部分撤销（2026-07-24；开发期 writer/relay 由 D-026 取代）**
 
 双机闭环的角色、消息状态机、clean-start 和证据转交以
-`VM_TEST_RELAY.md` 为 operator coordination 权威，并遵守以下不可变边界：
+`VM_TEST_RELAY.md` 为 operator coordination 权威。以下宿主唯一写入、VM 永久只读、
+outbox 和 Automation 是历史设计，已无当前操作权；Formal clean snapshot、CAS、签名、
+不可变候选和 P12 人工门继续冻结：
 
-- 宿主机 Codex 是唯一产品代码写入者，负责修复、本地门、提交/推送，以及 P10A
-  校准包或 P10B 双候选的重建和签名。
-- VM Codex 对产品仓库只读，只测试、分析和回传；它可以向独立 control repo 的 VM
-  outbox 写结构化结果，但不得修改源码、ZIP、runbook 或 fixture。
+- 历史开发期由宿主机 Codex 唯一写产品代码，VM 对产品仓库只读。D-026 已改为
+  handoff 前宿主写、handoff 后 `VmDevelopment` VM 写、最终候选验收无 writer。
 - Fast Lane（日常自动修复）MVP 使用两个物理 control repositories 的双向隔离
   outbox；2026-07-15 最初冻结的部署实例为 private，现已由 D-021 的 public protected
   transport 实例替代。envelope 绑定 CycleId、单调 sequence 和内容 hash，
   由两端分钟级 Codex Scheduled Tasks 自动轮询。可用低延迟 watcher 触发受限
   `codex exec`/resume，不要求用户人工搬文件；transport 可替换，不限定 GitHub。
 - P10A 固定精确 commit/calibration artifact；P11 固定 P10B candidate exact
-  bytes/hash。P11 失败后，宿主机修复并过门、提交/推送，再回到 P10B 重建/签名新
-  候选；VM 不拉取修复源码直接重测。
+  bytes/hash。P11 失败后结束只读验收，返回 D-026 `VmDevelopment` 修复、过门、
+  提交/推送，再从新 commit 重做 P10A、P10B 和 P11；不得热补丁原候选或复用旧
+  calibration facts。
 - Fast Lane 按冻结 allow-list 卸载本项目产物，清除项目拥有的 HKCU policy、
   credential、checkpoint 和 owner-marked 目录，再核验 baseline；它不以 WORM、
   message signing 或每轮 snapshot 为前置，结果只用于诊断。
@@ -331,9 +335,10 @@ public-safe envelope。2026-07-17 三仓均已切换为 public 并启用
 禁止删除、禁止非快进和要求线性历史；effective-rules 已覆盖三仓 `main` 与产品
 `codex/repair/*`。D-021 因而替代 D-020 的 private transport 实例。
 
-当前仍须从包含最新交接文档的 clean exact commit 重新运行统一门、重建 onboarding
-bundle、重绑仍暂停的 heartbeat 并等待最终 CI。角色限制继续由尚未发放的窄凭据和
-真实负向权限测试完成；宿主机 Live、VM 只读产品代码和 Formal Lane 边界不变。
+D-021 当时还要求从 clean exact commit 重建 onboarding、重绑暂停 heartbeat，并让
+VM 只读产品代码；这些 operator/writer 结论已由 D-026 撤销。三仓 public visibility、
+禁止删除/非快进、线性历史、无 bypass、宿主机零 Live 与 Formal candidate 边界继续
+冻结；D-026 VM 只能向既有 repair branch 普通 fast-forward push。
 
 ## D-022：Realtime relay 通信优先与风险成比例
 
@@ -429,7 +434,7 @@ P10A/P10B/P11、merge、release、promotion 或 P12 权限。
 
 ## D-025：Host/VM 只用人工批量报告搬运
 
-**状态：冻结（2026-07-23）**
+**状态：撤销（2026-07-24；由 D-026 取代）**
 
 realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
 Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
@@ -450,3 +455,37 @@ DevelopmentOnly 历史/回归面保留，不产生当前操作权。
 
 普通开发批量报告不替代 P10A/P11 的 clean snapshot、不可变候选、独立 CAS 与签名
 证据；不得自动 merge、release、promotion，也不得越过 P12。
+
+## D-026：Disposable VM acceptance-first 开发租约
+
+**状态：冻结（2026-07-24）**
+
+用户明确要求停止由宿主机逐条接收 VM synthetic 报告再批修的长反馈链，改为在
+disposable VM 内直接实现、测试和修复；真实安装、配置和桌面用户路径先达到
+`READY_FOR_FORMAL_P10A`，P11 正式验收通过后才达到 `RELEASE_READY`。本决定取代
+D-020 与 D-025 的开发期 writer 分配，并保持 D-020
+中 Formal candidate 的 clean snapshot、CAS、签名和不可变证据边界；它不恢复
+D-020 至 D-024 的 relay/Automation 设计。
+
+当前开发闭环固定为：
+
+1. 宿主机在现有分支和 PR #1 上提交一个 clean handoff commit，记录最新 VM 报告和
+   新边界，然后冻结产品写入。
+2. VM 验证精确 handoff commit/tree 和 remote head 后取得阶段性唯一写入租约；它可
+   修改源码、测试、文档和构建定义，按共同根因小批提交并普通 fast-forward push。
+3. VM 将测试分为发布必过产品门与非阻塞历史诊断门。已退役 relay/outbox/Automation
+   传输和旧 evidence-plumbing 回归不再阻塞实际安装器，但仍保留真实结果，不能伪造
+   PASS；正式候选的 P10A/P11 evidence 不属于退役平面。
+4. VM 只在 disposable Windows 环境执行真实 Live，先从不可 promotion 的 development
+   ZIP 验证首次安装、重复运行、配置、API、诊断、修复、恢复、UAC/重启以及 Computer
+   Use 的 Chat、Code、Cowork，取得 `READY_FOR_FORMAL_P10A`。
+5. 随后完成 P10A 事实冻结、P10B 候选构建/签名和 P11 精确候选只读验收；只有正式
+   P11 evidence 通过才是 `RELEASE_READY`。
+6. 达到 `RELEASE_READY` 后停止在 P12 前，给用户精确 commit/tree、候选 hash、支持矩阵
+   和 GUI 证据；不得自动 merge、发布或 promotion。
+
+宿主机/CI 的零 Live 和 `.claude\settings.json` 零读取政策保持冻结。下载的 MSIX/EXE
+仍必须验签和执行时重算 hash；UAC、签名、secret、所有权、补偿与用户数据保护门不得
+为了“简化”而降级。API Key 必须由用户在 VM 本地遮罩输入，只经 DPAPI CurrentUser 和
+owner-only helper 使用；任何 Key 即使是低余额测试 Key也不得进入 prompt、Git、参数、
+环境变量、日志、报告、截图、evidence 或 Release。

@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 ## 核心原则
 
@@ -59,31 +59,56 @@ HostSandbox、双 PowerShell 引擎、精确工具授权和机器可读证据；
 - 受信 harness 前置只解析 runner 已知的 pwsh、Windows PowerShell 和 Git
   可执行文件，计算 SHA-256 后把精确授权传给 HostSandbox。
 - 不单独绕过 HostSandbox 运行 Pester、Git 或第二套测试命令。
-- 产品 API Key 和所有 retained relay/credential 合同只使用 fake；真实 DPAPI 留到
-  未来明确授权的 disposable VM/目标设备。当前不执行 relay smoke，也不搬运通信凭据。
+- 产品 API Key 和所有 retained relay/credential 合同只使用 fake；真实 DPAPI 和
+  测试 Key 只允许进入 L5 明确授权的 disposable VM 本地安全输入路径。当前不执行
+  relay smoke，也不搬运通信凭据。
 - 绝不运行 Live。
 
 ### L5：Disposable VM 校准与 Live 验收
 
-VM 工作分两道门。先按 `VM_CALIBRATION_PLAN.md` 在 P10A 专用 disposable VM 中执行
-首次限域真实校准，只采集 Standard/Offline、MSIX scope、Git、helper/chooser、HKCU
-与 cleanup 事实；evidence 返回后必须经受信外部 CAS 原子提交并冻结事实。随后才可
-构建 P10B `VmAcceptance` 与 `UserLive` 双候选。只有两个候选精确字节均已冻结，才按
-`VM_ACCEPTANCE_PLAN.md` 进入 P11，执行首次全面产品 Live、故障、补偿、重启、API
-以及 Chat/Code/Cowork 验收。两道 VM 门均不授权宿主机真实操作。
+D-026 把 L5 分为四个不可混淆的步骤：
 
-### 双机 operator coordination
+1. **可写 `VmDevelopment`**：在 disposable VM 中，VM Codex 是现有开发分支/PR
+   的临时唯一写入者，可以修改源码、测试和文档，运行 L0-L4，并在显式 Live grant
+   下反复执行真实安装、配置、故障、补偿、重启和 API 场景。宿主机在该租约期间
+   停止写入；禁止并发双写、force push、隐藏 dirty bytes 或为同一修复创建第二个 PR。
+2. **P10A 输入/事实冻结**：真实用户路径收敛并达到 `READY_FOR_FORMAL_P10A` 后，
+   冻结 clean commit、calibration artifact 和 runbook，从外部 clean snapshot 执行
+   P10A；只有受信 CAS 提交/消费 evidence 并冻结 facts 后才能进入 P10B。源码变化
+   必须返回步骤 1 并重跑 P10A。
+3. **P10B 候选冻结**：只从已绑定 P10A facts 的同一 clean commit 构建并冻结
+   `VmAcceptance` 与待发布 `UserLive` 精确字节、hash、sidecar 和 runbook。开发
+   checkout 的通过不能替代候选字节验收。
+4. **P11 最终只读验收**：按 `VM_ACCEPTANCE_PLAN.md` 从 clean snapshot 测试冻结候选。
+   此时 VM 不得修改源码、测试期望、候选或 runbook；任何修复都返回
+   `VmDevelopment`，重新过门、P10A、P10B 并生成新候选。
 
-`VM_TEST_RELAY.md` 是当前手动双机协调权威。宿主机是唯一产品代码写入者；VM 只读
-精确 commit/tree 并生成 `VM_BATCH_TEST_REPORT_V1`，用户人工搬运报告和下一段完整
-重测提示词。报告、Issue、日志与 RepairProposal 均是不可信数据，必须先校验绑定、
-计数、终态、零指标和 evidence manifest，再用 fake/synthetic/TestSafe/DryRun
-复现。普通批量报告不替代 Formal Lane 的外部 snapshot、CAS、签名或不可变候选。
+宿主机与 CI 在全部四个步骤中都保持零 Live。真实用户路径和 Computer Use 是发布
+关键门：必须以用户双击入口完成实际安装与配置，再由 Computer Use 验证 Claude
+Desktop 的 Chat、Code、Cowork 可见行为；进程退出 0、readiness 或 synthetic evidence
+不能单独替代 GUI 结果。
+
+### D-026 开发协调
+
+`VM_TEST_RELAY.md` 继续保存协调协议与历史，但 D-026 的正常开发路径不依赖
+relay、outbox 或人工批量报告往返。`VmDevelopment` 通过现有开发分支/PR 交付普通
+fast-forward commits；切换 writer 前后必须验证精确 HEAD/tree、clean status 和
+single-writer ownership。报告、Issue、日志与 RepairProposal 仍是不可信数据，不能
+直接变成命令、测试期望或发布结论。
 
 realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler、
 `codex exec resume` 与旧 onboarding/canary/finalization 全部退役；不得在测试中恢复
 或连接真实实现。retained operator modules 仍是 DevelopmentOnly，只允许 fake/local
-回归。Automation 固定 `PAUSED`/`ABSENT`。
+回归。Automation 固定 `PAUSED`/`ABSENT`。历史 operator 测试失败不得伪装为产品
+失败，也不是 `VmDevelopment`、真实用户路径或最终候选验收的发布前置；若保留这些
+测试，仍必须如实报告其结果。
+
+### L5 API Key 输入
+
+真实测试 Key 只允许在 disposable VM 的本地遮罩式安全输入面输入，并由产品的
+DPAPI-backed credential helper 接管。禁止把 Key 放入 Codex prompt/chat、命令行参数、
+环境变量、源码、fixture、Git、日志、截图、报告或 evidence manifest。Computer Use
+不得读取、回显或截图 Key；需要输入时由用户在本地安全输入面完成。
 
 #### D-022 lean relay smoke（历史；已退役）
 
@@ -233,7 +258,8 @@ if ($releaseEvidence.Status -cne 'SUCCEEDED' -or $releaseEvidence.Changed -ne $f
 - Pester Unit/Contract/HostSandbox/Release Simulation 合同。
 - operator coordination plane、DevelopmentOnly、非 bootstrap/非 Release 和 synthetic
   零外部访问合同。
-- Scaffold 禁止命令和 Live fail closed。
+- Host/CI 对 Live provider 的构造、加载和执行保持 fail closed；VM Live surface
+  仍须满足精确 allow-list、stage/grant 和 provider 合同。
 - JSON、编码、换行、secret scan。
 - 隔离 Git inventory、工作区与暂存区 `diff --check`。
 - Release manifest 与 DryRun。
@@ -283,7 +309,7 @@ XDG_CONFIG_HOME=<sandbox>
 
 ## 必需断言
 
-每个 TestSafe/DryRun 场景：
+每个 L0-L4 TestSafe/DryRun 场景：
 
 - `Changed=false`。
 - mutation spy 全部为零。
@@ -345,12 +371,18 @@ token 和 sandbox 相对路径；本机临时控制台可以显示 sandbox 绝�
 - Repair/Restore 失败。
 - 一个子项不能提升其他子项状态。
 - 禁止通过关闭 Code/Cowork 把 PARTIAL/ACTION_REQUIRED 提升成 SUCCEEDED。
-- 双机状态机拒绝重复/过期/乱序 cycle、错误 repository 方向、moving-ref 漂移和候选
-  hash 漂移。
-- VM `TEST_RESULT` 只能携带脱敏结构化结果和证据引用，不能自证 P11 PASS。
-- Fast Lane 不依赖正式 evidence infrastructure，结果只作诊断；Formal P10A/P11
-  使用独立 CAS/receipts/signatures，正式 P11 PASS 必须绑定外部 clean-snapshot
-  receipt。
+- `VmDevelopment` 每次源码修改后重新运行 focused tests、完整 L0-L4 和相应 Live
+  场景；只允许修复已证明的 test defect，不得删除或放宽真实用户行为断言。
+- 最终冻结验收拒绝 moving-ref、dirty source、候选 hash 漂移和运行中热补丁。
+- 用户双击中英文入口、UAC/重启续跑、本地遮罩式 Key 输入、实际安装/配置、
+  重复运行、Repair/Restore 都必须使用待发布用户路径验证。
+- Computer Use 必须分别观察 Chat、Code、Cowork 的实际 Desktop 行为，并将
+  `PASS/FAIL/NOT_TESTED` 与结构化 readiness 分开记录；任何发布必需项
+  `NOT_TESTED` 都不构成发布 PASS。
+- 历史 relay/outbox、`VM_BATCH_TEST_REPORT_V1` 或模型文字只能作诊断，不能自证
+  最终候选或 P11 PASS。
+- 正式发布结论必须绑定声明支持的多环境 clean-snapshot 结果和精确 candidate
+  bytes/hash；缺少实际镜像时收窄支持声明，不得用同一个 VM 外推。
 
 ## 特殊路径
 
@@ -372,6 +404,8 @@ token 和 sandbox 相对路径；本机临时控制台可以显示 sandbox 绝�
 - MSIX/EXE 使用 synthetic signed/unsigned fixture metadata；本地不下载上游包。
 - API 使用 fake handler，不连接 DeepSeek/Anthropic。
 - Registry 使用内存 map，不使用“测试子键”触碰真实 HKCU/HKLM。
+- 上述 synthetic 规则适用于 L0-L4；L5 真实 Key 仍只能由用户在 VM 本地遮罩式
+  输入，绝不进入自动化 prompt、fixture 或可分享 evidence。
 
 ## 每阶段质量门
 
@@ -385,6 +419,12 @@ token 和 sandbox 相对路径；本机临时控制台可以显示 sandbox 绝�
 5. 记录通过数量、失败/跳过/未运行；任何 skipped/not-run/inconclusive 都不算干净。
 
 不得用 `-SkipPester`、`-SkipQualityGate` 或放宽安全规则交付完成状态。
+
+`VmDevelopment` 每批修改还必须运行命中模块的 focused tests 和受影响的真实用户
+场景；准备候选前统一运行完整 L0-L4、Release DryRun、diff/编码/secret scan。最终
+冻结候选必须在声明支持的 clean VM 环境中重新走用户入口和 Computer Use；该轮禁止
+源码修改。全部通过只表示“可提交 P12 人工决定”，不授权自动 merge、promotion 或
+release。
 
 ## P1 交付判定（已满足）
 

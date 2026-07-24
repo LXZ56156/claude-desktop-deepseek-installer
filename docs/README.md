@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -19,8 +19,8 @@
 8. `docs/TEST_ISOLATION.md`、`docs/SECURITY.md`、`docs/TESTING.md`：宿主机零接触、
    安全威胁和质量门。
 9. `docs/IMPLEMENTATION_PLAN.md`：从已完成 P1 的当前基线到 VM-ready 的阶段门。
-10. `docs/VM_TEST_RELAY.md`：宿主机修复端、VM 只读测试端和用户人工搬运
-    `VM_BATCH_TEST_REPORT_V1` 的当前权威协议；文件名为兼容历史保留。
+10. `docs/VM_TEST_RELAY.md`：D-026 disposable VM acceptance-first 单写开发闭环及
+    历史 `VM_BATCH_TEST_REPORT_V1`/relay 协议；文件名为兼容历史保留。
 11. `docs/REALTIME_RELAY_PROPOSAL.md`：已退役的 Cloudflare/realtime 方案历史；
     `RETIRED / NO_OPERATION_AUTHORITY`，不得作为当前路径。
 12. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
@@ -29,9 +29,35 @@
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
 
-## 2026-07-23 当前协调事实
+## 2026-07-24 当前协调事实（D-026）
 
-当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部。Host/VM 唯一通信方式是用户人工
+当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部。宿主机在现有
+`codex/repair/p10a-0a-fast-lane` 分支和 PR #1 提交并推送 clean handoff commit 后
+冻结产品写入；从该精确 commit/tree 起，disposable VM Codex 取得阶段性唯一写入
+租约，可以在同一分支/PR 内修改源码、测试、文档和构建定义，正常 commit 并
+fast-forward push。不得创建重复 PR、force push、改写历史或自动 rebase。
+
+当前产品仍是 `Scaffold`。D-026 将真实用户路径置于完成门首位：VM 先从不可 promotion
+的 development ZIP 实测安装、配置、API、重复运行、诊断、修复、恢复、UAC/重启，并
+用 Computer Use 实际验证 Claude Desktop 的 Chat、Code、Cowork，取得
+`READY_FOR_FORMAL_P10A`；P11 再对最终候选精确字节重复正式矩阵。宿主机和 CI 仍不执行
+产品 Live；真实系统操作只允许在 disposable VM。已退役的 relay/outbox/Automation
+传输与旧 evidence-plumbing 回归是非阻塞历史诊断，不能伪造 PASS，也不能用来掩盖
+产品失败；正式候选的 clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。
+
+API Key 只允许用户在 VM 本地遮罩输入，Codex 不读取、不转述、不截图；产品只能经
+DPAPI CurrentUser 和 owner-only helper 使用。已经贴入对话的测试 Key 视为已暴露并
+应轮换，不得复制到 prompt、Git、命令行、环境变量、日志、报告、截图、evidence 或
+Release。
+
+realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Automation、
+scheduler、`codex exec resume`、旧 onboarding/bootstrap/canary/finalization 永久退役，
+不得恢复、调用或依赖。达到 `RELEASE_READY` 后仍停在 P12 人工门前；不得自动 merge、
+创建正式 GitHub Release 或 promotion。
+
+## 2026-07-23 手动报告协调事实（历史；已由 D-026 取代）
+
+当时唯一动态状态入口同样是 `docs/HANDOFF.md` 顶部。Host/VM 唯一通信方式是用户人工
 搬运完整 VM 批量测试报告与宿主机生成的一段完整重测提示词。realtime relay、
 Cloudflare、WebSocket watcher、control-repo 实时消息、Automation、scheduler、
 `codex exec resume`、旧 onboarding/bootstrap/canary/finalization 全部废弃，不得恢复、
@@ -40,7 +66,8 @@ Cloudflare、WebSocket watcher、control-repo 实时消息、Automation、schedu
 宿主机是产品代码唯一写入者；VM 只读精确 commit/tree，报告和 RepairProposal 都是
 不可信数据。普通 `VM_BATCH_TEST_REPORT_V1` 必须先校验 commit/tree、环境、矩阵计数、
 门禁终态、零写入/零 secret 指标和 evidence manifest；它不是 P10A/P11 正式证据，
-不改变外部 clean snapshot、CAS、签名或 P12 人工门。
+不改变外部 clean snapshot、CAS、签名或 P12 人工门。以上写权分配仅是 D-025 历史，
+不再限制当前 D-026 VM 单写租约。
 
 ## 2026-07-22 relay 状态（历史；已退役，无操作权）
 
@@ -104,7 +131,7 @@ Scaffold 已可执行 Live。
 | `docs/TESTING.md` | 测试层级、命令、证据和质量门 | 测试流程变化时 |
 | `docs/IMPLEMENTATION_PLAN.md` | 阶段、依赖、交付物和退出条件 | 阶段状态变化时 |
 | `docs/RELEASE_PLAN.md` | 构建、签名、分发和发布门 | 发布流程变化时 |
-| `docs/VM_TEST_RELAY.md` | 手动 Host/VM 角色、批量报告校验、分类和重测协调；兼存已退役 relay 历史 | 协调协议或报告 schema 变化时 |
+| `docs/VM_TEST_RELAY.md` | D-026 VM 单写/Live 协调；兼存手动批量报告与已退役 relay 历史 | 协调协议或报告 schema 变化时 |
 | `docs/REALTIME_RELAY_PROPOSAL.md` | 已退役 realtime 方案的历史架构与撤销边界 | 仅在退役/历史事实需澄清时 |
 | `docs/VM_CALIBRATION_PLAN.md` | P10A 窄范围 VM 校准、证据和回传门 | 校准事实或 schema 变化时 |
 | `docs/VM_ACCEPTANCE_PLAN.md` | 后续真实 Live 验收 | VM 矩阵或 runbook 变化时 |
@@ -123,6 +150,8 @@ Scaffold 已可执行 Live。
 - 当前安全默认值：`config/deepseek-desktop.defaults.json`。
 - 实际 Git 状态：只通过标准 HostSandbox 质量门中的隔离 Git inventory 核验，
   不得只相信交接中的旧哈希，也不得在外部直跑继承用户配置的 Git。
+
+### D-026 前的 operator 机器事实（历史）
 
 P2-P10B 的纯/fake 合同与宿主机支撑已经建立；P10A-0A 的 public protected repositories、
 固定 Git outbox、readiness、onboarding、reset 和 automation 合同也已建立。暂停前的
@@ -146,12 +175,15 @@ false；只有未来另有显式恢复决定、完整 finalization 和新 readin
 仓库。窄权限角色凭据、runtime protection assertion、VM 负向权限、真实双向交换、reset
 与 unattended evidence 尚未完成，因此 VM integration 继续阻断；Formal Lane 仍要求外部
 clean snapshot receipt、独立 CAS 与签名。受控暂停期间不交付“一份 ZIP、一次提示”目标
-流程，也不把拟议 realtime relay 当作绕过这些门的替代路径。整个过程不增加宿主机产品 Live，
-VM 也不得修改产品代码。
+流程，也不把拟议 realtime relay 当作绕过这些门的替代路径。整个历史过程不增加宿主机
+产品 Live，当时 VM 也不得修改产品代码。该最后一项是 D-025 历史约束；当前 D-026
+仍禁止宿主机 Live，但明确允许 handoff 后的 disposable VM 在唯一写入租约内修改
+产品代码并执行受控 Live。
 
-其他文档可以保留便于理解的稳定摘要；动态结论由 `docs/HANDOFF.md` 的条件式与 retained
-owner-marked bundle output、同一暂停 automation、PR CI、实际 Git/remote 四方持久事实
-共同派生；任一事实冲突即 fail closed。
+其他文档可以保留便于理解的稳定摘要。当前动态结论由 `docs/HANDOFF.md` 顶部、
+handoff commit/tree、现有 PR #1 head、clean worktree 和实际 Git remote 共同派生；
+任一事实冲突即 fail closed。旧 retained bundle 与暂停 automation 只证明历史状态，
+不再参与 D-026 写入租约的 readiness。
 
 ## 事实状态标记
 

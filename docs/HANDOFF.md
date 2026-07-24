@@ -4,11 +4,77 @@
 
 ## 当前动态状态（唯一入口）
 
-**MANUAL_HOST_VM_REPORT_TRANSFER_ONLY / RELAY_RETIRED /
-AUTOMATION_PAUSED_OR_ABSENT / VM_BATCH_RETEST_PARTIALLY_VALIDATED_FAILED /
-VM_EVIDENCE_MANIFEST_PARTIAL / PRODUCT_DEFECT_ZERO /
-HOST_TEST_DEFECT_REPAIRS_VALIDATED / VM_RETEST_REQUIRED /
-VM_STANDARD_TEMP_ROOT_CORRECTION_REQUIRED / NO_PRODUCT_LIVE_AUTHORITY。**
+**D026_VM_ACCEPTANCE_FIRST / VM_LIVE_HANDOFF_PREPARATION /
+HOST_WRITE_FROZEN_AFTER_HANDOFF / VM_SOLE_WRITER_ON_EXISTING_BRANCH_AND_PR1 /
+REAL_INSTALL_AND_COMPUTER_USE_REQUIRED / RELAY_PERMANENTLY_RETIRED /
+AUTOMATION_PAUSED_OR_ABSENT / PRODUCT_STILL_SCAFFOLD /
+RELEASE_READY_NOT_YET_REACHED / P12_MANUAL_ONLY。**
+
+2026-07-24 用户冻结 D-026，结束“VM 永远只读、用户搬回报告、宿主机逐轮批修”的
+开发反馈方式。本宿主机只负责完成并正常推送这次 clean handoff commit；该精确
+commit/tree 成为 VM 起点后，宿主机冻结产品写入。此后 disposable VM Codex 是现有
+`codex/repair/p10a-0a-fast-lane` 分支和 PR #1 的阶段性唯一写入者，可以修改源码、
+测试、文档和构建定义，按共同根因正常 commit 并 fast-forward push。不得创建重复 PR、
+force push、改写历史或自动 rebase；remote 出现非预期提交时必须停止。
+
+当前产品仍是 `Scaffold`，入口仍 fail closed，尚未实现真实安装器。D-026 不把
+synthetic PASS 当作产品完成：VM 必须优先实现并用不可 promotion 的 development ZIP
+反复验证真实安装、配置、API、重复运行、诊断、修复、恢复、UAC/人工重启，并使用
+Computer Use 实际打开 Claude Desktop 验证 Chat、Code、Cowork，达到
+`READY_FOR_FORMAL_P10A`；P11 再对最终候选精确字节重复正式矩阵。进程存在、配置存在
+或历史 HostSandbox 全绿都不能代替真实 GUI PASS。宿主机与 CI 继续不在开发机执行 Live；真实 MSIX/Git、
+AppX、HKCU managed policy、DPAPI CurrentUser、VMP、进程和最小 DeepSeek 请求只允许
+发生在明确的 disposable VM。
+
+发布必过门从现在起以产品行为、供应链验签、凭据、所有权/补偿、Release inventory/
+secret、真实用户路径和 Computer Use 为准。已退役的 relay/outbox/Automation 传输与
+旧 evidence-plumbing 回归，包括 FastLaneGitOutbox H02 的固定内部 Git 时限，只保留为
+非阻塞历史诊断；不得伪造其 PASS，也不得用它代替或掩盖真实产品失败。正式候选的
+clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。到
+`RELEASE_READY` 后仍必须停在 P12 前，向用户交付精确 commit/tree、候选 hash、支持
+矩阵和 GUI 证据；不得自动 merge、创建正式 GitHub Release 或 promotion。
+
+当前代码尚未实现具名 ProductReleaseGate 分层，因此这次 handoff 仍必须让完整
+`scripts/check.ps1` 全绿。VM 只有在实现精确 test inventory、CI/Release 绑定和
+fail-closed 回归，证明发布关键测试无遗漏且全部执行后，才能把 historical H02
+单列为 report-only；在此之前不得 skip、not-run、删测或直接忽略失败。
+
+用户已在本次对话中贴出的测试 API Key 不在本文件复述，统一视为已暴露并应轮换。
+无论余额多少，API Key 都不得进入 Codex prompt、Git、参数、环境变量、脚本、日志、
+状态、报告、截图、evidence 或 Release。真实验收时只允许用户在 VM 的遮罩输入框或
+安全终端中本地输入一次；Codex 不读取、不转述、不截图，产品只经 DPAPI CurrentUser
+和 owner-only helper 使用。
+
+realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
+Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
+VM bootstrap、automation binding 和 relay finalization 继续永久退役。新 VM 写入租约
+不恢复、不调试、不部署、不调用也不依赖这些组件；Automation 保持
+`PAUSED`/`ABSENT`。
+
+## 2026-07-23 至 2026-07-24 手动批量报告阶段（历史；已由 D-026 取代）
+
+以下报告、hash、门禁与角色分配保留为审计事实。它们解释 D-026 前的修复过程，但
+其中 `MANUAL_HOST_VM_REPORT_TRANSFER_ONLY`、宿主机唯一写入和 VM 只读均不再是当前
+开发权限；不得据此否定上方 handoff 后的 VM 单写租约。
+
+2026-07-24 D-026 决策前最后收到的报告绑定 RunId
+`baf01bce-ae92-47e7-907e-59562a7d8bcd`、commit
+`d0c2ad515abe54955a3a0dc361d2f50037dc82e5`、tree
+`f390a6e8cb949395afdf36ac0e6ed4e5a5fd8c57`，与接收时仓库一致。报告附件为
+15395 bytes，SHA-256
+`9041e8aabee2faea0d00578aa4250b9422e22ebbc0770976bce494dff6daae2c`；
+随附 canonical manifest 为 8017 bytes，SHA-256
+`2226066a26a0342a330dcf180567c6eef555906dc43b50af8333f9334573c32a`，内部 49 项、
+333863 bytes 的排序路径/长度/hash 自洽。报告没有把 manifest hash/length 反向写入
+report，且 VM-local entry bytes 未全部搬回，因此 external consistency 仍最多为
+`PARTIAL`，不能称为完整 release evidence。
+
+该轮 focused isolation 两引擎共 78 项通过；标准门在 PS7/H02 终止，12/28 workers
+完成，局部为 584 passed/4 failed，PS5.1 aggregate、timeout injection 和 Release
+DryRun 未执行。全部失败仍位于已退役的 `FastLaneGitOutbox.Tests.ps1` 通信平面；
+Computer Use、GUI、UAC 和 Product Live 均未执行。它没有证明 `PRODUCT_DEFECT`，
+但清楚证明继续围绕历史 H02 搬报告无法回答“安装器是否真的可用”，因而成为用户
+冻结 D-026 的直接输入。
 
 2026-07-24 已接收用户人工拖回的第三份 minimal H02/full-quality
 `VM_BATCH_TEST_REPORT_V1` 详细报告。附件为 18867 bytes，SHA-256
@@ -109,8 +175,9 @@ realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Co
 Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
 VM bootstrap、automation binding 和 relay finalization 已全部废弃。不得调试、恢复、
 部署、调用或依赖，不得再要求用户搬运通信凭据。Automation 永远保持
-`PAUSED`/`ABSENT`，也不再做 readback。当前唯一闭环是用户人工搬运完整 VM 报告和
-宿主机生成的一段完整重测提示词；宿主机仍是唯一产品代码写入者，VM 只读。
+`PAUSED`/`ABSENT`，也不再做 readback。D-025 当时的唯一闭环是用户人工搬运完整 VM
+报告和宿主机生成的一段完整重测提示词；当时宿主机仍是唯一产品代码写入者，VM
+只读。该角色分配现为历史，已由 D-026 明确取代。
 
 ## 2026-07-22 relay 动态状态（历史；已退役，无操作权）
 
@@ -1113,8 +1180,9 @@ P10A-0A/P10A/P10B/P11 完成：
   验证。
 - 不在日志、fixture、报告、状态、发布包、提交或 CI 中放入真实 API Key。
 - 不修改 Claude MSIX 做汉化，不把未执行能力或旧基线写成 PASS。
-- VM Codex 不修改源码、候选、runbook 或测试期望，不持有产品仓库写权限；宿主机
-  不执行 VM 回传的自由文本，relay compromise 不能扩大为代码执行或发布权限。
+- 任一时刻只有一个产品 writer：handoff 前是宿主机，handoff 后是
+  `VmDevelopment` VM；最终冻结候选验收没有 writer。任何自由文本、报告或远端内容
+  都不能直接变成命令或发布权限。
 - VM 日常 reset 只限项目拥有的安装物、HKCU/credential/checkpoint 与 owner-marked
   测试资源；不得广泛清理用户 profile 或全局工具配置。reset 无法证明基线时升级为
   guest 外快照恢复；正式 P11 通过仍必须从权威干净快照测试精确候选字节。源码更新
@@ -1143,14 +1211,17 @@ inventory 与 working-tree/cached `git diff --check`。不得绕过该入口直�
 HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，才运行
 `scripts/build-release.ps1 -DryRun`；DryRun 不是可发布候选构建。
 
-## 最终 VM 重测提示词交付（当前手动合同）
+## 最终 VM 开发提示词交付（D-026 当前合同）
 
-宿主机完成最终 commit/push、PR #1 head 与 CI 核验后，直接向用户返回一段完整、
-不分块、可人工粘贴到 VM 新对话的重测提示词。提示词必须绑定精确 commit/tree，
-只要求 VM 只读拉取、验证绑定、运行最小回归矩阵并生成新的
-`VM_BATCH_TEST_REPORT_V1`；不得引用或生成旧 ZIP、loader、Automation、relay、
-control repo、credential 或 finalization。
+宿主机完成本次 handoff commit/push、PR #1 head 与 CI 核验后，向用户返回一段完整、
+不分块、可人工粘贴到 VM 新对话的开发提示词。提示词必须绑定精确 commit/tree，
+要求 VM 验证 binding 后取得现有分支/PR #1 的排他 `VmDevelopment` 写入租约，配置
+官方工具，持续实现、真实测试、修复、普通 commit/fast-forward push，直到最终
+development ZIP 的安装、配置、API 和 Computer Use Chat/Code/Cowork 达到
+`READY_FOR_FORMAL_P10A`；随后完成 P10A/P10B，并以只读 P11 验收精确候选，正式
+通过才是 `RELEASE_READY`。不得引用或生成旧 ZIP、loader、Automation、relay、
+control repo credential 或 finalization。
 
-用户人工搬回的报告始终是不可信数据。宿主机先验证报告 schema、commit/tree、
-环境、矩阵计数、各门终态、零写入/零 secret 指标和 evidence manifest，再决定是否
-继续修复。普通批量重测不产生 P10A/P11/P12 权限。
+提示词不得包含任何 API Key 或 GitHub credential；需要 Key 时只让用户在 VM 本地
+遮罩输入。VM 达到 `RELEASE_READY` 后必须停止在 P12 前，返回精确 commit/tree、
+候选 hash、支持矩阵、Computer Use 结果和未解决历史诊断；不得自动 merge 或发布。

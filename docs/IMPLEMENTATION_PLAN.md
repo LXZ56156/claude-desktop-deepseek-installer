@@ -1,21 +1,50 @@
 # 实现计划
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
-## 总目标
+## D-026 当前唯一开发策略
 
-在当前 Windows 宿主机完成纯合同、fake 测试、故障注入和 deterministic Release
-Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程或系统动作。真实
-工作分两道 VM 门：先在 disposable Windows VM 执行 P10A 窄范围校准并冻结事实，
-再构建 P10B 双候选，最后由另一轮 disposable VM 与 VM 内 Codex 执行 P11 全面验收。
-当前开发反馈只通过用户人工搬运 `VM_BATCH_TEST_REPORT_V1`；realtime/Fast Lane
-已退役，不再是 P10A/P11 前置。该手动协调不属于产品或 trusted test harness，也不
-增加任何 Live authority。
+D-026 已取代 D-025 的开发期角色分配。当前不再采用“VM 只读测试、宿主逐批修复、
+再人工搬运下一轮报告”的长反馈链，而是在 disposable Windows VM 内授予一个显式、
+阶段性且排他的 `VmDevelopment` 写入租约，直接实现、测试和修复。development ZIP
+的真实安装、配置和桌面用户路径收敛只产生 `READY_FOR_FORMAL_P10A`；完成
+P10A/P10B 后对精确候选执行 P11，正式通过才产生 `RELEASE_READY`。
 
-产品流程和完成定义见 `PRODUCT_SPEC.md`；宿主机安全门见
-`TEST_ISOLATION.md`；双机职责与消息协议见 `VM_TEST_RELAY.md`。
+当前闭环固定为：
 
-## 阶段总览
+1. 宿主机只在现有 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1 上提交 clean handoff
+   commit，记录最新 VM 结果和 D-026 边界，然后冻结产品写入。
+2. VM 精确验证 handoff commit/tree、remote branch head 和 clean worktree 后取得本阶段
+   唯一 `VmDevelopment` 写入租约。租约内允许修改源码、测试、文档和构建定义，按共同
+   根因小批提交，并只做普通 fast-forward push；不得 force push、创建重复 PR 或与宿主
+   并行写同一产品分支。
+3. VM 将门禁分成“发布必过产品门”和“非阻塞历史诊断门”。已退役 relay/outbox/
+   Automation 传输与旧 evidence-plumbing 回归继续保留真实失败结果，但不再阻塞实际
+   安装器；尤其 historical H02/FastLane 运行时间失败不得伪造为 PASS，也不得单独
+   否决 `RELEASE_READY`。正式 P10A/P11 candidate evidence 不属于退役平面。
+4. 真实 Live 只在 disposable VM、先从不可 promotion 的 development ZIP 执行；循环覆盖首次安装、重复
+   运行、配置、API、诊断、修复、恢复、UAC/重启，并用 Computer Use 验证 Chat、Code、
+   Cowork 的真实桌面行为。发现产品缺陷后由同一租约持有者修复、重建 ZIP 并重跑相关
+   focused tests 与完整产品矩阵，直到 `READY_FOR_FORMAL_P10A`。
+5. 冻结精确源和校准输入，完成 P10A 事实、P10B 候选构建/签名后结束 writer 租约；
+   P11 在 clean snapshot 只读测试精确 `VmAcceptance`/`UserLive` 字节。失败返回
+   `VmDevelopment` 并重建，正式通过才进入 `RELEASE_READY`。
+6. 达到 `RELEASE_READY` 后停止在 P12 前，交付精确 commit/tree、候选 SHA-256、支持
+   矩阵、真实 GUI evidence 和仍未解决的非阻塞历史诊断结果；不得自动 merge、release
+   或 promotion。
+
+realtime relay、Cloudflare、WebSocket watcher、control repo、Codex Automation、
+scheduler、`codex exec resume`、旧 onboarding/bootstrap/canary/finalization 永久退役，
+不得恢复为通信、测试或发布依赖。宿主机与 CI 的零 Live、宿主机
+`.claude\settings.json` 零读取政策保持不变。用户提供的测试 API Key 只能在 VM 本地
+遮罩输入，经 DPAPI CurrentUser 与 owner-only helper 使用；即使是低余额 Key，也不得进入
+prompt、Git、命令参数、环境变量、日志、报告、截图、evidence 或 Release。
+
+产品流程和完成定义见 `PRODUCT_SPEC.md`；宿主机与 VM 的安全边界见
+`TEST_ISOLATION.md`；D-026 写入租约、Live/GUI 循环与历史协议边界见
+`VM_TEST_RELAY.md`。
+
+## 当前阶段总览
 
 | 阶段 | 名称 | 当前状态 | 关键退出门 |
 |---|---|---|---|
@@ -29,33 +58,43 @@ Candidate 组装能力，但不执行任何 Live 安装、配置、API、进程�
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
 | P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
-| P10A-0A | 旧双机 Fast Lane MVP 前置门 | **RETIRED / SUPERSEDED** | 不恢复旧 bundle/bootstrap/automation/relay；当前只人工搬运批量报告 |
+| VmDevelopment | Disposable VM acceptance-first 开发租约 | **当前开发路径** | development ZIP 的真实 Live/GUI 用户矩阵达到 `READY_FOR_FORMAL_P10A` |
+| P10A-0A | 旧双机 Fast Lane MVP 前置门 | **RETIRED / SUPERSEDED** | 仅保留历史回归字节；不恢复旧 bundle/bootstrap/automation/relay，也不再作为当前开发门 |
 | R0 | Realtime Fast Lane accelerator（历史 operator 工作流） | **RETIRED / NO_OPERATION_AUTHORITY / AUTOMATION_PAUSED_OR_ABSENT** | 保留 DevelopmentOnly 回归字节；禁止 Cloudflare/relay/watcher/control repo/automation 操作 |
 | P10A | 窄 VM 校准与事实冻结 | evidence/consumption 合同已完成；VM 未执行 | 真实 VM evidence 提交并冻结 |
 | P10B | 双 Release Candidate | 宿主机支撑合同已通过门；真实双候选受外部输入阻断 | L0-L4、签名、SBOM 和双候选冻结 |
-| P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过 |
+| P11 | VM Codex 全面 Live 验收 | 后置 | 两个候选的必需 VM 矩阵通过并产生 `RELEASE_READY` |
 | P12 | 不可变晋升与正式发布 | 后置 | 发布 P11 已测试的精确字节 |
 
-依赖硬约束：
+当前依赖硬约束：
 
-- P1 基线必须持续全绿；不得增加产品 live adapter 或 sandbox 外 I/O。P1 trusted
-  harness 仅可管理自有 sandbox 和精确 allow-list 的测试工具。
-- 没有验签证据，不得进入安装步骤。
-- 没有 credential helper，不得持久化 3P 配置。
-- 没有可恢复备份，不得写 policy；configLibrary 首版没有 writer。
-- 没有 checkpoint，不得启用 VMP。
-- P10A 只允许在专用 disposable VM、专用 runbook 和窄 operation allow-list 下执行；
-  其授权不扩展到宿主机，也不等于 P11 全面 Live 授权。
-- P10A-0A Fast Lane 必须先证明宿主机为唯一代码写入方、VM 代码 remote 为只读、
-  relay 消息可去重且不会被当作命令或正式 evidence。Formal Lane 另行证明独立 evidence
-  存储和外部 supervisor 可以恢复权威干净快照。
-- VM Codex 不得修改源码、候选、runbook 或测试期望；P11 失败后必须由宿主机修复
-  并回到 P10B 重建/签名新候选，不能让 VM 拉源码后继续使用旧候选结论。
-- 没有已提交并消费的 P10A evidence，不得冻结 release facts 或开始 P10B 双候选。
-- P10B 未完成，不得开始 P11 全面 VM Live。
-- P11 未通过，不得宣称产品完成或进入 P12。
+- 任一时刻只能有一个产品写入者。`VmDevelopment` 租约生效后宿主冻结产品写入；租约
+  结束、失效或 handoff binding 漂移后，VM 必须停止修改和 push。
+- 宿主机与 CI 仍只运行 fake/synthetic、TestSafe/DryRun 和 trusted harness；不得因 VM
+  获得 Live/写入租约而取得任何宿主 Live 权限。
+- 没有验签证据不得安装；执行安装前必须重算 artifact hash。不得跳过或降级 MSIX/EXE
+  签名验证。
+- 没有 owner-only credential helper 不得持久化 3P 配置；没有可恢复备份不得写 policy；
+  没有 checkpoint 不得启用 VMP。configLibrary 首版仍没有 writer。
+- API Key 不得进入 prompt、Git、参数、环境变量、日志、报告、截图、evidence 或 Release；
+  VM 只能在本地遮罩输入并使用 DPAPI CurrentUser/owner-only helper。
+- 发布必过产品门必须覆盖最终 Release ZIP 的构建完整性、secret scan、TestSafe/DryRun、
+  双引擎适用合同、真实 Live 安装/配置/API/诊断/修复/恢复和 Computer Use GUI 矩阵。
+- 已退役 relay/outbox/Automation 传输与旧 evidence-plumbing 回归只作非阻塞历史诊断；
+  必须如实记录失败，不能通过删除断言或伪造 PASS 使其“变绿”。正式候选的
+  clean-snapshot/CAS/signature/acceptance evidence 仍是 P12 前置。
+- 在具名 ProductReleaseGate、精确 test inventory、CI 和 Release 回归落地前，完整
+  `scripts/check.ps1` 仍是阻塞门。历史测试只有在经测试证明的分层入口中才可非阻塞；
+  不得直接跳过现有 shard、降低断言或把 not-run 算通过。
+- Formal 里程碑仍保持 `P10A → 冻结事实 → P10B → P11` 的候选与 evidence 绑定；
+  D-026 的开发租约不把开发测试结果自动变成 P11 acceptance receipt。
+- 未达到 `READY_FOR_FORMAL_P10A` 不得冻结输入，未完成 P11 正式验收不得声称
+  `RELEASE_READY`；达到后也只能停在 P12 前，不得自动 merge、
+  release 或 promotion。
 
-## 2026-07-23 手动 VM 批量报告工作流
+## 2026-07-23 手动 VM 批量报告工作流（历史；已由 D-026 取代）
+
+本节只记录 D-025 时期的修复事实和报告绑定，不再规定当前写入者或开发循环。
 
 首份 `VM_BATCH_TEST_REPORT_V1` 精确绑定修复前 commit/tree，已完成公开 wrapper、
 UTF-8、分片和 timeout evidence 批修。随后收到的最小重测报告精确绑定
@@ -783,9 +822,11 @@ Codex 能接收脱敏测试结果、修复并推送，使 VM Codex 能获知精�
 严格按 `VM_ACCEPTANCE_PLAN.md`。用户准备 VM 与 Codex；Key 在 VM 本地输入。
 覆盖安装、UAC、Git、VMP、重启、3P 直达、Chat、Code、Cowork、失败、资源级
 补偿、重复运行和泄露扫描。最终还必须测试待发布 UserLive artifact 的精确字节。
-VM Codex 只执行冻结 runbook、分析和回传，不修改代码、候选或测试期望。失败后由
-宿主机修复并通过质量门；随后回到 P10B 构建、签名和冻结新的双候选，再由外部
-supervisor 恢复快照后重测。拉取更新源码不能替代候选重建或精确字节验收。
+VM Codex 在 P11 只执行冻结 runbook、分析和回传，不修改代码、候选或测试期望。
+失败后结束 P11，返回可写 `VmDevelopment` 修复并通过质量门；随后为新 commit
+重新冻结 P10A 输入、重做 P10A 事实校准，再由 P10B 构建、签名和冻结新的双候选，
+最后由外部 supervisor 恢复快照后重测。拉取更新源码不能替代 P10A、候选重建或
+精确字节验收。
 
 ### 退出条件
 
@@ -814,7 +855,7 @@ CHANGELOG、文件名内容或 ZIP metadata。
 - 正式版本只指向该不可变 artifact。
 - 若任何字节改变，返回 P10B/P11 生成新版本并重测。
 
-## 当前停点与下一工作包
+## 2026-07-23 停点与下一工作包（历史；由 D-026 取代）
 
 2026-07-23 当前停点是宿主机批量修复收口：VM 报告已校验为 `PARTIAL`，可安全
 复现的 wrapper/timeout/encoding 根因已批修；下一步固定为完整双引擎质量门、
@@ -879,12 +920,13 @@ finalization、bundle 生成与 automation paused readback，并由新的 readin
 进程控制或重启。`lib/live-adapters.ps1` 继续保持精确 allow-list 下的 fail-closed
 隔离入口，不能写成可工作 Live adapter。
 
-## 当前外部阻塞与紧接下一步
+## 当前外部阻塞与紧接下一步（D-026）
 
-当前普通开发重测只需用户人工把宿主机给出的完整提示词带到 VM，再把完整
-`VM_BATCH_TEST_REPORT_V1` 带回；不存在 relay credential、Cloudflare、control repo、
-Automation 或 scheduler 前置。正式 P10A/P11 仍受外部 snapshot/CAS/signing 与不可变
-候选约束，P3 缺口中需要真实 GUI/UAC/系统基线的部分也仍需外部快照。
+当前下一步是宿主机推送 clean handoff 后冻结写入，由 disposable VM 在现有分支/
+PR #1 取得排他 `VmDevelopment` 租约，直接实现 Live 并反复运行真实安装、配置、
+API、UAC/重启和 Computer Use 矩阵。不存在 relay credential、Cloudflare、control
+repo、Automation 或 scheduler 前置。正式 P10A/P11 仍受外部 snapshot/CAS/signing
+与不可变候选约束；需要多个环境的支持声明必须有相应 clean snapshot，否则收窄范围。
 
 以下 2026-07-22 relay/credential/automation 清单仅为历史，不是当前 blocker 或下一步：
 

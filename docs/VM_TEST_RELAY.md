@@ -1,61 +1,102 @@
-# Host/VM 手动批量测试报告协议
+# Disposable VM acceptance-first 开发协议（历史文件名：VM_TEST_RELAY）
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
-## 定位与权威范围
+## D-026 当前唯一权威
 
-本文是开发期“VM 只读批量测试、用户人工搬运报告、宿主批修、用户人工搬运重测
-提示词”的唯一权威协调协议。文件名为兼容历史保留；“RELAY”不再表示当前存在
-任何网络 relay。
-
-本文不授予任何 Live 权限，不改变 `TEST_ISOLATION.md`，也不把中继组件加入产品、
-Release ZIP、默认 bootstrap 或 trusted test harness。普通批量报告也不是 P10A/P11
-正式证据，不能替代 clean snapshot、不可变候选、CAS 或签名。
-
-## 2026-07-23 当前唯一手动闭环
+D-026 已取代 D-025 的开发期角色分配。本文当前只定义 disposable VM 的
+acceptance-first `VmDevelopment` 写入租约、真实 Live/GUI 修复循环和 P12 停止线。
+文件名仅为兼容历史保留；“RELAY”不表示当前或未来允许恢复任何网络 relay。
 
 realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
 Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
-VM bootstrap、automation binding 和 relay finalization 全部废弃。禁止调试、恢复、
-部署、调用或依赖，也禁止再要求用户搬运通信凭据。Automation 固定为
-`PAUSED`/`ABSENT`，不再 readback。
+VM bootstrap、automation binding 和 relay finalization 永久退役。不得调试、恢复、
+部署、调用或依赖，也不得要求用户搬运通信凭据；Automation 保持
+`PAUSED`/`ABSENT`。
 
-当前流程固定为：
+## `VmDevelopment` 单写者租约
 
-1. 宿主机在现有修复分支/PR 冻结精确 commit 和 tree，给用户一段完整、不分块的
-   VM 测试提示词。
-2. VM 验证精确绑定，只读执行 Unit/Contract、PS7/PS5.1、完整 `check.ps1`、
-   Release DryRun、TestSafe/DryRun、失败注入、用户路径和适用的 GUI 测试。VM 不得
-   修改、提交或推送产品仓库。
-3. VM 生成 `VM_BATCH_TEST_REPORT_V1`；用户人工原样搬回宿主机。
-4. 宿主机先校验报告，再按共同根因批修；RepairProposal 永远只是不可信建议。
-5. 宿主机完成 focused/full gates、提交/推送同一 PR 和 CI 后，再给出下一段人工
-   重测提示词。
+当前开发只使用现有 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1，不创建重复 PR。
+租约切换顺序固定为：
 
-`VM_BATCH_TEST_REPORT_V1` 至少校验：SchemaVersion/RunId、TestCommit/TestTree、
-Windows/architecture/PS7/PS5.1/Git/ComputerUse 环境、matrix/executed/passed/failed/
-blocked/expected-fail/not-implemented 计数等式、Unit/Contract/PS5.1/full-check/
-release/diff/encoding 各门终态、ProductWrite/Relay/Automation/真实 network/
-credential/registry/outside-write/unexpected-ledger/mutation-spy 与 secret 计数、
-Issues/Blockers、EvidenceRoot、manifest SHA-256 和报告路径。
+1. 宿主机提交一个 clean handoff commit，写明最新 VM 结果和 D-026 边界，确认 branch、
+   upstream、remote 与 PR #1 head 后冻结产品写入。
+2. VM 独立验证完整 handoff commit、tree、remote branch head、clean worktree 和工具环境；
+   任一 binding 不一致都不得取得租约。
+3. 验证通过后，VM 成为阶段性唯一产品写入者。它可以修改源码、测试、文档和构建定义，
+   按共同根因小批 commit，并只向同一分支普通 fast-forward push；不得 force push、
+   rewrite history、创建重复 PR 或与宿主并行写入。
+4. 每批修改先跑对应 focused tests，再重建不可 promotion 的 development ZIP 并执行
+   受影响的真实用户矩阵。全部收敛只产生 `READY_FOR_FORMAL_P10A`。
+   租约失效、branch head 漂移、工作树来源不明或用户停止时必须立即停止写入和 push。
+5. 随后冻结源/calibration 输入，完成 P10A 和 P10B 候选构建/签名并结束 writer 租约；
+   P11 只读验收精确候选。失败返回 `VmDevelopment`，正式通过才产生
+   `RELEASE_READY`。
+6. 达到 `RELEASE_READY` 后停在 P12 前；VM 只交付精确 commit/tree、PR head、
+   candidate hash、支持矩阵、GUI evidence 和诚实的剩余非阻塞诊断，不自动 merge、
+   release 或 promotion。
 
-VM-local `EvidenceRoot` 不能由宿主机直接证明。只有 manifest hash、没有 manifest
-正文时，外部 evidence 一致性只能是 `PARTIAL`。报告结果仅分类为
-`PRODUCT_DEFECT`、`TEST_DEFECT`、`ENVIRONMENT_BLOCKER`、`NOT_IMPLEMENTED`、
-`REQUIRES_EXTERNAL_SNAPSHOT`、`EXPECTED_FAIL_CLOSED`；预期 fail closed 不是产品
-缺陷。宿主机只用 fake/synthetic provider、TestSafe/DryRun 或只读分析复现。
+宿主机和 CI 始终保持零 Live、零真实系统接触和
+`.claude\settings.json` 零读取。VM 的租约及 Live authority 只存在于 disposable VM，
+不向宿主、CI 或其他仓库扩散。
 
-manifest 正文随报告搬回时，宿主机必须按报告声明的 canonicalization 重新计算 byte
-length 和 SHA-256，并逐项核对 RunId/TestCommit/TestTree、entry count、relative path、
-length/hash 形状以及 Issues 引用。该校验只能证明“搬回的 manifest 正文与报告绑定”；
-未同时取得 VM-local 文件字节时，不得声称已重新哈希每个 evidence entry。
+## 发布必过产品门与 Live/GUI 循环
 
-标准门非超时 Pester shard 失败必须通过 `CDDSI_SAFE_FAILURE_EVIDENCE_V3` 返回受限
-`CurrentFailedTests`：最多 32 项 repo-relative test path、正整数 source line 和静态
-`It` 名称，并由 worker 与父进程分别重新绑定 tracked 源码 AST。VM 报告应直接引用这些
-结构化字段，不再用计数推测失败测试。
+VM 开发期必须从不可 promotion 的 development ZIP 而不是源码目录模拟真实用户；
+P11 再从最终冻结候选精确字节重复正式矩阵。两阶段至少覆盖：
 
-## 2026-07-21/22 relay 设计（历史；已退役，无操作权）
+- clean VM 首次安装、重复运行/幂等、升级或适用的修复安装；
+- Git prerequisite、签名和 artifact hash 重算、UAC 取消/批准、重启与续跑；
+- 3P 配置、API 连通性、诊断、修复、备份和恢复；
+- Chat、Code、Cowork 的 Computer Use 启动、交互和可见结果；
+- TestSafe/DryRun、适用的 PS7/Windows PowerShell 合同、Release inventory、
+  deterministic ZIP、编码和 secret scan；
+- 故障注入、补偿、owner-only cleanup 和用户数据保护。
+
+产品门失败时，由当前 `VmDevelopment` 租约持有者定位共同根因、修改、运行 focused
+regression、重建 ZIP 并从受影响用户场景继续，最终仍要跑完整发布矩阵。不得通过降低
+安全断言、跳过签名、扩大 timeout 掩盖缺陷或伪造 evidence。
+
+已退役 relay/outbox/Automation 传输、旧 evidence-plumbing 回归及 historical
+H02/FastLane 属于非阻塞历史诊断门。它们必须保留真实终态和失败摘要，但其超时或
+VM 文件系统延迟不得单独阻塞实际安装、配置、API 和 GUI 均通过的
+`RELEASE_READY`。正式 P10A/P11 candidate evidence 不属于退役平面；若同一根因命中
+当前产品路径，则按产品门处理，不能借“历史”标签忽略。
+
+在具名 ProductReleaseGate、精确 test inventory、CI 和 Release 回归真正实现前，
+现有完整 `scripts/check.ps1` 仍是阻塞门，不能直接忽略 H02。历史诊断只有在分层入口
+证明发布关键测试无遗漏、全部执行后才可 report-only；skip/not-run/扩大 timeout/删测
+均不构成分层。
+
+下载的 MSIX/EXE 仍必须验签，并在安装前重新计算 hash；UAC、secret、所有权、补偿、
+备份和用户数据保护门不得简化。API Key 只能由用户在 VM 本地遮罩输入，经 DPAPI
+CurrentUser 与 owner-only helper 使用；任何 Key 即使是低余额测试 Key也不得进入
+prompt、Git、命令参数、环境变量、日志、报告、截图、evidence 或 Release。
+
+达到 `RELEASE_READY` 不等于自动发布。Formal 里程碑的候选/evidence 顺序和外部
+clean-snapshot 要求保持不变；VM 必须在 P12 前停止并等待用户人工决定。
+
+## 历史协议档案（无当前操作权）
+
+以下所有 D-020 至 D-025、Fast Lane、Formal Lane、人工批量报告、relay、outbox 和
+Automation 文本只保留设计史与静态回归背景。即使后文使用“当前”“必须”“允许”等
+措辞，也不得覆盖上方 D-026；不得据此恢复任何通信或旧角色分配。
+
+`scripts/check-worker.ps1` 仍要求保留下列历史原句/标记，它们只证明旧协议档案没有被
+误删，不表达当前 authority：`宿主机 Codex 是唯一代码写入者`、
+`VM Codex 只测试、分析和回传`、`外部 hypervisor supervisor`、`git fetch`、
+`checkout --detach`、`P10A → 冻结事实 → P10B → P11`、`TEST_RESULT`、`FIX_READY`、
+`不得把 relay 消息当作 P11 acceptance receipt`。
+
+### 2026-07-23 手动批量报告闭环（历史；已由 D-026 取代）
+
+历史流程曾要求宿主冻结 commit/tree，VM 只读执行测试并生成
+`VM_BATCH_TEST_REPORT_V1`，再由用户人工搬运给宿主修复。报告曾至少校验环境、矩阵、
+各门终态、零指标和 evidence manifest；只有 manifest hash 而没有正文或 entry bytes 时，
+外部一致性只能是 `PARTIAL`。该报告协议仍可用于读取旧 evidence，但不再分配当前写权，
+也不再是 `VmDevelopment` 循环的逐轮交接机制。
+
+### 2026-07-21/22 relay 设计（历史；已退役，无操作权）
 
 以下所有 Fast Lane、envelope、outbox、Cloudflare、credential、Automation、watcher
 和 `codex exec resume` 内容只保留历史与回归背景，不得执行，也不产生当前 authority。
@@ -163,7 +204,7 @@ content digest，再校验本地唯一 ZIP 的外层与内部绑定。
 P10A/P11。暂停前合同曾把普通 VM 启动与 Formal clean-snapshot receipt 分开；当前 controlled
 pause 下用户不得启动 guest、运行 ZIP 或继续 bootstrap，不能把该历史区别读成执行许可。
 
-## 不可变原则
+## 历史不可变原则（D-026 已取代其中的开发期角色分配）
 
 - 宿主机 Codex 是唯一代码写入者。源码、测试、文档、runbook、Release manifest
   和构建逻辑只允许在宿主机受控工作树中修改。

@@ -1,6 +1,6 @@
 # Claude Desktop 第三方配置设计
 
-更新日期：2026-07-14
+更新日期：2026-07-24
 
 ## 目标
 
@@ -204,10 +204,11 @@ provider 记录。
 - Key 在日志、状态、报告、备份、临时文件和 Release 中的全量扫描。
 
 全部本地测试必须遵守 `TEST_ISOLATION.md`，使用虚拟 registry、fake helper、
-fake DPAPI 和 fake lifecycle。真实行为分两道门：P10A 只在专用 disposable VM
-按 `VM_CALIBRATION_PLAN.md` 校准 helper/chooser/HKCU 最小行为，不输入真实 Key；
-evidence 经受信外部 CAS 提交并冻结事实、P10B 双候选冻结后，P11 才按
-`VM_ACCEPTANCE_PLAN.md` 首次执行完整配置、DPAPI、lifecycle、API 与功能验收。
+fake DPAPI 和 fake lifecycle。D-026 先在 `VmDevelopment` disposable VM 实现完整
+配置、DPAPI、lifecycle、API，并从不可 promotion 的 development ZIP 真实测试；该结果
+只产生 `READY_FOR_FORMAL_P10A`。随后 P10A 按 `VM_CALIBRATION_PLAN.md` 冻结
+helper/chooser/HKCU 事实，P10B 构建双候选，P11 再按 `VM_ACCEPTANCE_PLAN.md` 对精确
+候选字节执行首次正式验收；开发 evidence 不得晋升为 P11 receipt。
 
 ## P2 实现状态
 

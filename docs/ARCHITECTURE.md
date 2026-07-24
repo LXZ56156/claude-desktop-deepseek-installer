@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 ## 定位
 
@@ -8,10 +8,28 @@
 Anthropic 官方 Third-Party managed configuration 连接 DeepSeek，固定以 Chat、
 内置 Code 和 Cowork 三项全部可用为产品目标。
 
-产品工作流仍为 `Scaffold`，领域模块的 Live 动作无条件失败。P1 已实现
+宿主机交接版本仍为 `Scaffold`，领域模块的 Live 动作无条件失败；D-026 授权
+disposable VM 在独立 `VmDevelopment` 通道内完成这些实现，而不是把当前脚手架
+误称为可用产品。P1 已实现
 ExecutionContext、十类 provider contract、default-deny fake provider、
 AccessLedger、state-store provider 边界和 trusted HostSandbox；没有 live adapter
 进入默认 bootstrap 或本地执行图。
+
+当前架构采用两段式单写者模型：
+
+~~~text
+Host preparation (current exact commit/tree)
+  -> Host pushes one clean handoff commit and freezes writes
+     -> VmDevelopment sole writer on the existing branch / PR #1
+        -> implement Live + focused synthetic tests + real user-path iteration
+           -> build a clean immutable candidate
+              -> read-only multi-environment and Computer Use acceptance
+                 -> P12 manual publish decision
+~~~
+
+VM 开发期允许源代码变化；最终候选验收期不允许现场热修。任何验收失败都返回
+`VmDevelopment`，提交新代码并重建候选。两段都不恢复 relay、Cloudflare、
+control repo、Automation、scheduler 或 `codex exec resume`。
 
 ## 分层
 
@@ -25,10 +43,10 @@ Entrypoints
               -> Live adapters (VM/UserLive only)
 
 OperatorCoordination (separate development plane)
-  -> Host freezes exact commit/tree + complete retest prompt
-     -> user manually transfers prompt/report
-        -> VM read-only batch tests
-           -> Host validates untrusted report and batch-fixes common roots
+  -> Host freezes exact handoff commit/tree and its own writes
+     -> user manually transfers one complete development prompt
+        -> VM is the sole writer during VmDevelopment
+           -> final candidate is frozen again for read-only acceptance
 ~~~
 
 ### Entrypoints
@@ -90,14 +108,29 @@ Feature、Service、Credential、Clock。
 
 - fake/sandbox provider 是本地和 CI 唯一可加载实现。
 - live adapter 使用精确文件 allow-list，不能由默认 bootstrap 加载。
-- live adapter 首次真实执行只在后续 disposable VM。
+- D-026 下 live adapter 的实现和首次真实执行只在 disposable VM 的
+  `VmDevelopment` stage；最终 acceptance 只消费重新冻结的候选。
 - trusted test harness 使用另一份精确 allow-list，只能创建自有 sandbox、启动
   pwsh/Pester/Git 质量门并单独记账，不属于产品 provider。
 
-### Operator coordination plane
+### 当前 VmDevelopment coordination plane
+
+D-026 的权威协调合同见 `VM_TEST_RELAY.md`。宿主机提交 clean handoff 后停止产品写入，
+VM 在现有 `codex/repair/p10a-0a-fast-lane` 和 PR #1 上取得唯一写入租约，按共同根因
+实现、测试、普通 commit 并 fast-forward push。认证只在 VM 内通过官方交互登录完成，
+任何 token、API Key 或其他 credential 都不进入 prompt。
+
+发布必过门覆盖产品 Unit/Contract、安装、配置、签名、凭据、补偿、恢复、Release
+inventory/secret scan 和实际用户路径；已退役 relay/outbox/Automation 传输与旧
+evidence-plumbing 回归只作为非阻塞历史诊断，正式 P10A/P11 candidate evidence 永不
+退役。development ZIP 先由 Computer Use 验证 Chat、Code、Cowork，达到
+`READY_FOR_FORMAL_P10A` 后才进入事实冻结、候选构建和 P11；P11 正式通过才产生
+`RELEASE_READY` 并进入 P12 人工决定，不自动 merge 或发布。
+
+### Operator coordination plane（历史；由 D-026 取代）
 
 双机测试闭环属于独立 OperatorCoordination development plane，权威合同见
-`VM_TEST_RELAY.md`。当前只通过用户人工搬运完整提示词和
+`VM_TEST_RELAY.md`。以下只描述 D-025 及更早设计：当时只通过用户人工搬运完整提示词和
 `VM_BATCH_TEST_REPORT_V1`；Host 唯一写代码，VM 只读。报告先按 commit/tree、矩阵、
 零指标与 evidence manifest 校验，再按共同根因批修。该平面不进入产品 bootstrap、
 ProductCore、Release 或 trusted harness runtime，也不充当正式证据验证器。
@@ -334,14 +367,22 @@ hash、重验并安装，避免“验证后换包”的调用间 TOCTOU；编排
 ~~~text
 Scaffold
   -> Development
-     -> P10A test exact commit/calibration artifact in disposable VM
-        -> trusted CAS consume evidence and freeze facts
-           -> P10B build/sign VmAcceptance + unpublished UserLive candidates
-              -> P11 test exact candidate bytes in disposable VM
-                 -> P12 publish the exact tested UserLive bytes
+     -> VmDevelopment in disposable VM (mutable, VM is sole writer)
+        -> development ZIP + real user paths -> READY_FOR_FORMAL_P10A
+           -> freeze exact source/calibration input
+              -> P10A calibration + trusted facts
+                 -> P10B build/sign VmAcceptance + unpublished UserLive candidates
+                    -> end writer lease
+                       -> P11 read-only exact-candidate acceptance -> RELEASE_READY
+                          -> P12 publish the exact tested UserLive bytes
 ~~~
 
 - stage/profile 不由环境变量或 `-Mode Live` 单独决定。
+- `VmDevelopment` 必须由 package-bound manifest、disposable-VM preflight、独立交互
+  确认和 operation-specific grant 共同授权；它不授权宿主机/CI Live。
+- `VmDevelopment` 可以改代码和重建 development ZIP；P10A 先消费冻结的源/
+  calibration 输入并冻结事实，P10B 才能生成最终候选。从 P10B 候选冻结开始，P11
+  不允许修改源码、测试或 ZIP。失败后回到开发 stage，而不是热补丁被测字节。
 - embedded manifest v2 绑定版本、commit、profile、排除自身的 content digest，
   以及来自 sidecar 外部的 signer 证书/public-key 指纹、request ID、nonce 和最大
   签名年龄。
@@ -354,8 +395,9 @@ Scaffold
 - P12 不重建 ZIP，只发布 P11 已测试的 UserLive 原字节。
 - P11 exact acceptance receipt 与 promotion CAS 未实现前，P12 promotion 构造始终
   fail closed。
-- P11 失败后宿主机修复、过门、提交/推送，再回到 P10B 重建和签名新候选；VM 不
-  拉源码直接重测。relay PASS 不自动 merge，也不自动进入 P12。
+- P11 失败后返回 VM 的 `VmDevelopment` 单写者循环，修复、过门、提交/推送，再从
+  新 commit 的 P10A 输入/事实冻结开始，重做 P10B 和 P11；relay PASS 不自动 merge，
+  也不自动进入 P12。
 
 ## 状态与重启
 
@@ -404,7 +446,8 @@ VM 可以在 VM 自身范围建立基线，但不授权宿主机读取。
 - 子能力分别验收。
 - VM Live 先于正式发布。
 - 正式发布字节必须与 VM 测试字节相同。
-- 宿主机 Codex 是唯一代码写入者；VM Codex 只测试、分析和回传。
+- D-026 每一时刻只有一个 writer：handoff 前是宿主机，handoff 后是
+  `VmDevelopment` VM；最终候选验收阶段没有代码 writer。
 - OperatorCoordination 本地合同不得隐式获得 Git transport、真实系统 adapter、
   product Live 或无人值守执行权限；prompt 和自由文本不得携带凭据或被直接执行。
 - clean-start tier 必须与风险匹配；正式 P11 PASS 必须由外部 hypervisor 的 clean

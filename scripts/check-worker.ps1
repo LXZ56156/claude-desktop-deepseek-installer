@@ -2272,6 +2272,23 @@ Invoke-CheckStep -Name 'Documentation system is complete and discoverable' -Acti
 
     $relay = Read-CddsiStrictUtf8Text -Path (Join-Path $script:Root 'docs\VM_TEST_RELAY.md') -DisplayPath 'docs/VM_TEST_RELAY.md'
     foreach ($marker in @(
+        'D-026 当前唯一权威',
+        '`VmDevelopment` 单写者租约',
+        '宿主机提交一个 clean handoff commit',
+        'VM 成为阶段性唯一产品写入者',
+        '现有 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1',
+        'development ZIP',
+        '`READY_FOR_FORMAL_P10A`',
+        'Computer Use',
+        '永久退役',
+        'API Key 只能由用户在 VM 本地遮罩输入',
+        'ProductReleaseGate',
+        '正式 P10A/P11 candidate evidence 不属于退役平面',
+        '达到 `RELEASE_READY` 不等于自动发布'
+    )) {
+        if (-not $relay.Contains($marker)) { throw "VM development contract is missing current D-026 marker: $marker" }
+    }
+    foreach ($marker in @(
         '宿主机 Codex 是唯一代码写入者',
         'VM Codex 只测试、分析和回传',
         '外部 hypervisor supervisor',
@@ -2282,7 +2299,7 @@ Invoke-CheckStep -Name 'Documentation system is complete and discoverable' -Acti
         'FIX_READY',
         '不得把 relay 消息当作 P11 acceptance receipt'
     )) {
-        if (-not $relay.Contains($marker)) { throw "VM test relay contract is missing marker: $marker" }
+        if (-not $relay.Contains($marker)) { throw "VM test relay historical archive is missing marker: $marker" }
     }
 
     $contracts = Read-CddsiStrictUtf8Text -Path (Join-Path $script:Root 'docs\EXTERNAL_CONTRACTS.md') -DisplayPath 'docs/EXTERNAL_CONTRACTS.md'

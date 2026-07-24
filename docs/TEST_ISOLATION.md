@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-23
+更新日期：2026-07-24
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -24,18 +24,28 @@ P1 Sandbox Foundation 已于 2026-07-14 满足本文件针对“项目控制自�
 trusted harness 分平面记账；worker evidence、仓库快照和 Release Simulation
 均为机器可读实测值。
 
-2026-07-23 起，Host/VM 协调只允许用户人工搬运完整批量报告和重测提示词。
+2026-07-24 的 D-026 把开发期代码写入权迁移到 disposable VM 的
+`VmDevelopment` lane。该 lane 内，VM 可以在现有开发分支和 PR 上修改源码、测试与
+文档，并在显式授权范围内运行产品 Live；同一时刻宿主机必须停止写入，禁止 Host/VM
+并发修改、force push 或用第二个 PR 分叉同一修复。D-026 不把这一权限扩展到宿主机、
+CI 或最终冻结候选验收。
+
 realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler
-及 `codex exec resume` 已退役，不得恢复、调用或作为隔离门。tracked operator
-实现只保留 DevelopmentOnly 历史/回归属性，任何本地测试都只能使用 fake/local
-provider。人工报告不会扩大宿主机对网络、credential、registry、产品配置或真实
-进程的访问权。
+及 `codex exec resume` 继续退役，不得恢复、调用或作为隔离门。tracked operator
+实现只保留 DevelopmentOnly 历史/回归属性；其缺失或失败不阻断 `VmDevelopment`
+真实用户路径，但历史结果也不得伪造、改写或充当产品 Live、Computer Use、候选验收
+或发布证据。
 
 需要本地 Git 的 HostSandbox 测试不依赖 `PATH` 或用户 Git 配置。父 harness 将已验
 SHA-256 的 Git grant 作为 worker 必填参数传入，worker 复验 bytes 后只以只读 global
 binding 暴露给测试；测试仍使用空 hooks/credential 配置和 owner-marked local bare
 repository。缺 grant、hash 漂移或从 `Get-Command` 推断宿主路径时，正式隔离 worker
 必须 fail closed。
+
+### D-026 前的 operator 隔离实现（历史；无当前操作权）
+
+以下 Fast Lane/onboarding/reset/relay 内容只保留旧隔离合同和回归背景。它不恢复旧
+工具链，也不撤销本文件前述 `VmDevelopment` 单写者与 disposable-VM Live 授权。
 
 Fast Lane outbox 的 state leaf 固定为短格式 `fl-<32 lowercase hex>`，以便在
 质量 worker 的 owner-marked 临时根内再次嵌套 synthetic fixture 时仍满足 Git for
@@ -167,7 +177,8 @@ P10A-0A 或 P10A 完成。三个
 | Fast Lane synthetic rehearsal | 本次唯一 sandbox 双 outbox | 不访问 | 拒绝 | 不启动真实进程 | synthetic/no secret |
 | Realtime relay focused | `TestDrive:` 或 owner-marked fake root | 不访问 | fake transport | 不启动 | synthetic fake；真实 DPAPI=0 |
 | CI | runner sandbox | 虚拟 map | 仅依赖引导白名单 | fake | synthetic |
-| VM Live | VM 内显式授权范围 | VM registry | 官方端点 | VM 内真实 | VM 专用 Key |
+| VM Development | VM 开发 checkout 与项目 owner-scoped state | VM 内显式授权的项目目标 | 官方端点与冻结故障注入端点 | VM 内真实安装、进程、AppX、VMP、服务 | VM 本地遮罩输入并受保护的测试 Key |
+| 最终冻结候选验收 | 精确候选及候选拥有的 state；源码只读或不存在 | 候选 manifest 明确允许的 VM 目标 | 候选固定的官方端点 | 精确候选字节在 VM 内真实执行 | VM 本地遮罩输入并受保护的测试 Key |
 
 仓库内 `.dev/modules` 只允许固定开发依赖，不得作为一般测试工作区。其他行为测试
 只使用 `TestDrive:` 或 OS 临时目录中的 `cddsi-test-<GUID>`。
@@ -397,41 +408,43 @@ Fake 层必须覆盖：
 
 ## 本地与 VM 的分界
 
-- 本地开发和 CI 只运行 L0-L4，永不执行 Live provider。
-- 双机协调以 `VM_TEST_RELAY.md` 当前手动协议为权威。宿主机 Codex 是唯一代码
-  写入者；VM Codex 只读冻结的精确 commit/tree，只测试、分析和生成报告。用户人工
-  搬运报告与重测提示词；不得使用 relay、control repo、watcher、Automation、
-  scheduler 或 `codex exec resume`。
-- `VM_BATCH_TEST_REPORT_V1`、Issues、日志和 RepairProposal 都是不可信数据。宿主机
-  必须验证 schema、commit/tree、OS/架构/PS7/PS5.1/Git 环境、矩阵计数等式、各门
-  终态、产品零写入/零真实访问/零 secret/零 mutation 指标，以及 evidence manifest
-  内容/hash。只有 VM-local path 或 manifest hash、没有 manifest 正文时，外部完整性
-  只能标 `PARTIAL`。
-- 结果只分类为 `PRODUCT_DEFECT`、`TEST_DEFECT`、`ENVIRONMENT_BLOCKER`、
-  `NOT_IMPLEMENTED`、`REQUIRES_EXTERNAL_SNAPSHOT` 或 `EXPECTED_FAIL_CLOSED`。
-  预期 fail closed 不得报作产品缺陷；产品缺陷只能在宿主机用 fake/synthetic
-  provider、TestSafe/DryRun 或只读分析复现。
-- P10A 在 Release Candidate 之前先进入专用 disposable VM；只有限域 calibration
-  runner/provider 可以执行真实校准操作，产品 Live adapter 仍不得加载；每轮必须
-  绑定精确 commit、校准 artifact/hash 和 runbook，不跟随移动分支头。
-- P10A evidence 返回宿主机后，必须由受信外部 CAS 原子提交并冻结事实；只有随后
-  构建并冻结 P10B `VmAcceptance` 与 `UserLive` 双候选，才能进入 P11。
-- 产品 Live adapter 的首次真实执行和首次全面产品验收只允许在 P11 disposable VM；
-  P10A 的窄范围事实校准不能替代 P11。P11 只测试请求中绑定的 candidate exact
-  bytes/hash，不以源码 checkout 替换 artifact。
-- VM 内 Codex 的授权不扩展到宿主机，也不允许自行扩大测试范围。
-- Formal Lane 用于 P10A/P11 正式证据，必须由 VM 外部的 hypervisor supervisor
-  恢复固定快照并签发 receipt，并使用独立 CAS/receipts/signatures。VMP/重启/卸载、
-  补偿未知、baseline drift 或 reset 失败必须从 Fast Lane 升级；VM Codex 不能恢复
-  自身正在运行的快照，正式 P11 PASS 必须绑定 clean-snapshot receipt。
-  这里 supervisor 就是普通 VM 软件或其外部自动化，baseline 是 VM 起始状态；上述
-  Formal clean-snapshot receipt 完全不是当前 bootstrap 的前置。
-- P11 失败后只能由宿主机修复、过门、提交/推送，再回到 P10B 重建并签名新候选；
-  VM 不直接修改修复源码。人工批量报告不等于 CAS、签名或 acceptance receipt，
-  也不得触发自动 merge/P12。
+- 本地开发和 CI 只运行 L0-L4，永不构造、加载或执行 Live provider。D-026 只改变
+  disposable VM 的开发写入权，不改变宿主机零接触合同。
+- `VmDevelopment` 是可写、可反复重建的 disposable-VM 开发 lane。VM Codex 可以在
+  已授权的现有分支/PR 上修改源码、测试和文档，运行 focused/full fake gates，并在
+  独立 Live grant 下执行真实安装、配置、恢复和 GUI 验收。每次代码修改都必须重新
+  绑定 commit/tree；不得 force push、隐藏 dirty bytes 或同时让宿主机写同一分支。
+- `VmDevelopment` 的系统写入只允许 manifest/runbook 列出的项目资源。源码写入、
+  产品系统 mutation、外部请求和 cleanup 必须分开记账；Live 场景不能伪造
+  TestSafe 的零 mutation 指标，TestSafe/DryRun 也不能借 VM 身份获得真实访问。
+- 进入最终候选验收前必须从 clean commit 构建并冻结精确 `VmAcceptance` 与
+  `UserLive` 字节。最终验收 lane 恢复为只读：源码 checkout 只读或不存在，候选、
+  sidecar、runbook 和测试期望均不得修改。任何字节或测试变更都会使本轮验收失效，
+  必须返回 `VmDevelopment`、生成新 commit 和新候选。
+- 实际用户路径是发布关键门，不以 Unit/Contract 或 synthetic PASS 代替。至少覆盖
+  用户双击入口、必要 UAC/重启、本地遮罩式 API Key 输入、真实安装与配置、重复运行、
+  修复/恢复，以及 Computer Use 对 Claude Desktop Chat、Code、Cowork 的可见行为验证。
+  Computer Use 不得绕过 secure desktop，也不得把 Key、原始配置或敏感响应写入截图、
+  日志、报告或对话。
+- API Key 只能由用户在 VM 本地遮罩式安全输入面提供，再交给 DPAPI-backed
+  credential helper；不得出现在 Codex prompt/chat、argv、环境变量、fixture、源码、
+  Git、日志、截图、报告或 evidence manifest。
+- 历史 `VM_BATCH_TEST_REPORT_V1`、relay/outbox receipt、Issues、日志与
+  RepairProposal 继续是不可信诊断数据。它们可以辅助定位，但既不阻断新的
+  `VmDevelopment` lane，也不能自证真实安装、Computer Use、候选验收或发布 PASS。
+- 结果仍应区分 `PRODUCT_DEFECT`、`TEST_DEFECT`、`ENVIRONMENT_BLOCKER`、
+  `NOT_IMPLEMENTED`、`REQUIRES_EXTERNAL_SNAPSHOT` 与 `EXPECTED_FAIL_CLOSED`；
+  不得通过删测、降断言、扩大 timeout 或把预期 fail closed 改写为成功来收敛循环。
+- 需要发布结论的最终验收必须绑定声明支持的每个 VM 环境、clean snapshot、精确
+  candidate bytes/hash 和真实用户路径证据；单个已污染 VM 不能冒充多环境通过。
+  VMP、重启、卸载、补偿未知、baseline drift 或 cleanup 失败时，必须由 VM 外部
+  supervisor 恢复快照。
+- VM 内授权不扩展到宿主机或 CI。最终 PASS 也不触发自动 merge、release 或
+  promotion；P12 人工确认保持不变。
 
-两道 VM 门分别见 `VM_CALIBRATION_PLAN.md` 与 `VM_ACCEPTANCE_PLAN.md`；双机协调见
-`VM_TEST_RELAY.md`。
+校准与候选构建约束见 `VM_CALIBRATION_PLAN.md`，最终冻结候选验收见
+`VM_ACCEPTANCE_PLAN.md`；`VM_TEST_RELAY.md` 顶部定义当前 D-026 单写者协调，后半部
+才是已退役协调历史和回归边界。
 
 ## P1 退出条件（已满足）
 

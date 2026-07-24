@@ -1,6 +1,6 @@
 # 产品规格
 
-更新日期：2026-07-14
+更新日期：2026-07-24
 
 ## 产品定位
 
@@ -135,8 +135,10 @@ Anthropic 提供稳定机器接口并经过决策后，才考虑内置 E2E。
 | UI 证据 | `PASS/FAIL/NOT_TESTED` | 真实 Desktop 交互是否已经验证 |
 
 `Success=true` 只允许用于 `SUCCEEDED`，它要求三项配置与 readiness 全部为
-`READY`。真实 UI E2E 在产品报告中仍可为 `NOT_TESTED`，直到 P11 VM Codex 提供
-外部证据。用户取消必要确认使用 `CANCELLED`，不能伪装成技术失败或成功。
+`READY`。开发报告中的真实 UI E2E 可以由 D-026 `VmDevelopment` Computer Use 变为
+`PASS/FAIL`，但只产生 development evidence；P11 VM Codex 对精确候选字节提供正式
+外部证据后才可支持 `RELEASE_READY`。用户取消必要确认使用 `CANCELLED`，不能伪装
+成技术失败或成功。
 
 每个非成功状态必须给出稳定错误码、下一步和是否可以安全续跑。报告还必须说明
 必要的 UAC、重启、BIOS 或权限动作，不能把未测试能力写成成功。

@@ -1,27 +1,27 @@
 # 后续虚拟机 Codex 验收计划
 
-更新日期：2026-07-17
+更新日期：2026-07-24
 
 ## 状态
 
-本计划只定义 P11 全面产品 Live 验收，当前不执行。进入本计划前，必须先按
-`VM_CALIBRATION_PLAN.md` 在专用 disposable VM 完成 P10A 窄范围真实校准，将
-evidence 交由受信外部 CAS 原子提交并冻结事实，再构建和冻结 P10B 两套候选。用户
-随后另行准备 Windows VM，并在 VM 内安装 Codex 自动化验收。
+本计划只定义最终冻结候选的全面产品 Live 验收。D-026 在它之前增加可写的
+`VmDevelopment` lane：VM Codex 可以在 disposable VM 中修改现有开发分支的源码、
+测试和文档，反复执行真实安装、配置和 GUI 场景，直到用户路径收敛。该开发结果
+本身不是最终验收；进入本计划前，必须从 clean commit 构建并冻结 P10B 两套候选。
 
-P10A 已对部分 MSIX、Git、helper/chooser 和 HKCU 行为做过限域实物校准，但它不
-使用真实 Key，也不执行完整产品流程。本计划才首次对两个候选的精确字节执行全面
-产品 Live，包括 VMP、重启、API、Claude 配置、Desktop 进程和 Chat/Code/Cowork；
-任何真实操作都不得发生在当前开发机。
+本计划对两个候选的精确字节执行全面产品 Live，包括 VMP、重启、API、Claude
+配置、Desktop 进程和 Chat/Code/Cowork。正式验收 lane 恢复为只读：源码 checkout
+只读或不存在，VM 不得编辑源码、测试期望、ZIP、sidecar 或 runbook。任何失败都
+回到 `VmDevelopment` 修复，并从新 commit 重建新候选；任何真实操作都不得发生在
+宿主机或 CI。
 
-双机协作以 `VM_TEST_RELAY.md` 为 operator coordination 权威。宿主机 Codex 是唯一
-代码写入者，负责修复、本地门、提交、推送和 P10B 候选重建；VM Codex 只测试、
-分析和回传，不能修改源码、ZIP、runbook 或 fixture。
+`VmDevelopment` 期间，VM Codex 是现有开发分支/PR 的临时唯一写入者，宿主机停止
+写入；只允许普通 fast-forward commits，不得 force push 或创建重复 PR。候选冻结后
+该写入租约结束，最终验收只消费精确 artifact bytes/hash。
 
-日常缺陷复现和修复反馈走 Fast Lane：public protected control repo 双 outbox、
-CycleId/sequence/hash、两端分钟级 Codex Scheduled Tasks 与 deterministic guest
-reset；它不要求每轮 WORM/message signing/整机快照，也不能产生 P11 PASS。本计划
-定义的是 Formal Lane，正式证据使用独立 CAS/receipt/signature 和外部 clean snapshot。
+历史 Fast Lane、relay、outbox、Automation、scheduler 和旧 onboarding 不再是当前
+开发或验收前置，不得恢复。其 retained evidence 只能作历史诊断，既不阻断本计划，
+也不能伪造为真实用户路径、Computer Use、clean snapshot 或候选 PASS。
 
 ## 进入条件
 
@@ -29,31 +29,39 @@ P11 VM 阶段只有在以下条件全部满足后开始：
 
 - `IMPLEMENTATION_PLAN.md` P0-P10B 完成。
 - 完整 L0-L4 质量门通过。
+- `VmDevelopment` 已在每个声明支持的环境或可验证等价 clean snapshot 上走通真实
+  用户入口：安装、配置、重复运行、必要重启、Repair/Restore 和三项 surface。
 - P10A evidence 已由受信外部 CAS 提交，消费与事实冻结 receipt 均可验证。
 - P10B 已冻结 `VmAcceptance` 与待发布 `UserLive` 两套 ZIP；各自的 SHA-256、内容
   摘要、版本、commit 和 detached signed sidecar 均已生成。
 - live adapter 在宿主机从未执行。
-- relay cycle 已绑定两个候选的精确字节、SHA-256、sidecar、runbook 和固定 VM
-  snapshot receipt；relay 本身不充当 CAS、签名服务或 acceptance receipt。
+- 最终验收请求已绑定两个候选的精确字节、SHA-256、sidecar、runbook 和固定 VM
+  snapshot receipt；不得通过移动分支头、历史 relay 消息或开发 checkout 替换。
 - VM runbook、预置故障注入 fixture、允许变更清单、停止线、资源级补偿矩阵和
   有效期有限的 `VmAcceptance` operation grant 已经冻结。
-- 用户准备专用、可撤销、限额的 DeepSeek 测试 Key，并只在 VM 本地输入。
+- 用户准备专用、可撤销、限额的 DeepSeek 测试 Key，并只在 VM 本地遮罩式安全
+  输入面输入；Key 不得进入 Codex prompt/chat、argv、环境变量、fixture 或 evidence。
+- Computer Use 可用，并已冻结 Chat、Code、Cowork 的可见成功判据、允许的专属
+  测试目录和截图脱敏规则。
 
 ## VM 隔离
 
 - 每个正式 P11/里程碑场景由 VM 外部的 hypervisor supervisor 恢复固定 Windows
   快照并签发 receipt；VM Codex 不能恢复自身正在运行的整机快照，也不能自证
   “已干净”。VMP/重启/卸载、补偿未知、baseline drift 或 guest reset 失败也必须
-  从 Fast Lane 升级为该流程。
+  返回由外部 supervisor 恢复快照的正式流程。
 - 使用独立测试用户，不复用宿主 Microsoft/Anthropic/Git 凭据。
 - 默认关闭共享剪贴板、共享用户目录、浏览器资料、自动登录和可写映射盘。
 - Release ZIP 通过一次性 ISO、只读共享或经 hash 校验的受控传输进入 VM。
-- 不把 API Key 放入 Codex 对话、脚本参数、文件 fixture 或宿主剪贴板。
+- 不把 API Key 放入 Codex 对话、脚本参数、环境变量、文件 fixture、宿主剪贴板、
+  截图或报告。需要 Key 时，由用户直接在 VM 本地遮罩式输入面完成。
 - 非正式的日常修复重测可按冻结 runbook 做 deterministic guest reset：只卸载本项目
   产物，清除项目拥有的 HKCU policy、credential、checkpoint 和 ownership
   marker/token 匹配的 `cddsi-vm-test-<GUID>` 目录，再核验 baseline。该结果不能替代
   正式 P11 的 clean-snapshot 证据。
 - 每个正式场景结束后导出脱敏证据并由外部 supervisor 恢复快照。
+- 最终验收 VM 不得拥有产品 branch write workflow；即使本机还留有开发凭据，也
+  不得在该轮 commit、push 或修改任何候选输入。
 
 ## 首版矩阵
 
@@ -96,6 +104,9 @@ Arm64 在具备真实设备或可靠环境后加入，不阻断首个 x64 Releas
 - helper 超时、非法输出、损坏 DPAPI blob。
 - 固定 `RequestedSurfaces=Chat,Code,Cowork`，没有功能选择页。
 - Chat、Code、Cowork 的 readiness 与 UI 证据分别成功/失败/NOT_TESTED。
+- Computer Use 真实打开 Claude Desktop，分别验证 Chat 回复、Code 在专属目录
+  创建预期文件、Cowork 在专属目录完成预期任务；单纯进程启动或 readiness
+  `READY` 不能替代 UI PASS。
 - 修复、恢复和中途失败的资源级补偿。
 - 中文、空格和特殊字符安装器路径。
 
@@ -125,7 +136,8 @@ VM 验收不得把“恢复”解释为整机事务回滚：
 - VMP、硬件虚拟化、相关服务状态。
 - Git 版本、PATH 摘要和全局配置 hash。
 - 允许目录清单。
-- `.claude` 目录的 VM 专用完整性证据。
+- `.claude\settings.json` 零访问证据：不定位、不 `Test-Path`、不枚举、不哈希，
+  只由 provider/ledger 和静态门证明没有访问。
 - Claude 进程和安装器状态。
 
 该基线政策只适用于 disposable VM，不能反向授权宿主机读取同类资源。
@@ -142,11 +154,13 @@ VM 验收不得把“恢复”解释为整机事务回滚：
 3. 记录基线和本场景允许变更清单。
 4. 仅对故障矩阵使用 `VmAcceptance` ZIP，以真实用户方式双击中文入口。
 5. 只处理 runbook 明确允许的 UAC 和重启。
-6. API Key 由用户在 VM 本地安全输入。
+6. API Key 由用户在 VM 本地遮罩式安全输入面输入；VM Codex 和 Computer Use
+   不读取、回显、截图或复制该值。
 7. 验证首次启动跳过 Anthropic 登录和 Developer Mode。
-8. Chat 返回唯一 `CHAT_OK_<runId>`。
-9. Code 只在专属目录创建 `CODE_OK_<runId>.txt`。
-10. Cowork 只在专属目录创建 `COWORK_OK_<runId>.txt`。
+8. 使用 Computer Use 观察 Chat 返回唯一 `CHAT_OK_<runId>`。
+9. 使用 Computer Use 观察 Code 只在专属目录创建 `CODE_OK_<runId>.txt`。
+10. 使用 Computer Use 观察 Cowork 只在专属目录创建
+    `COWORK_OK_<runId>.txt`。
 11. 扫描日志、状态、报告、截图和临时目录中的 secret。
 12. 对比基线，只允许 manifest 声明的变化。
 13. 执行修复/恢复，并逐资源验证补偿状态。
@@ -161,7 +175,7 @@ VM 验收不得把“恢复”解释为整机事务回滚：
 每个场景产生：
 
 - 场景 ID、runId、Windows/Desktop/installer 版本。
-- relay cycle/message ID 和外部 snapshot receipt 的 hash/引用。
+- acceptance request/candidate ID 和外部 snapshot receipt 的 hash/引用。
 - artifact profile、ZIP hash、embedded content digest 和 sidecar 验证结果。
 - 固定 RequestedSurfaces、派生 EffectiveSurfaces、MSIX scope 和 Git ensure 结果。
 - 运行/能力/UI 证据三层状态。
@@ -169,13 +183,14 @@ VM 验收不得把“恢复”解释为整机事务回滚：
 - MSIX/Git 签名和绑定证据摘要。
 - checkpoint/restart 结果。
 - Chat/Code/Cowork 的独立状态。
+- Computer Use 的逐 surface 判定、可见状态摘要和已脱敏截图引用。
 - 每项资源的 compensation/restore 状态。
 - secret scan 计数。
 - 脱敏截图或日志引用。
 
 只导出脱敏摘要；不导出 Key、DPAPI blob、原始 policy 值、用户资料或 VM 磁盘。
-relay 中的 `TEST_RESULT` 只传输结构化状态、最小脱敏摘录和证据 hash/URI；正式通过
-仍必须由受信 validator 消费 CAS/签名/receipt，不能以 relay 消息自证。
+历史 relay/`TEST_RESULT` 即使仍存在，也只能作不可信诊断引用；正式通过必须由受信
+validator 消费精确候选、CAS、签名与 snapshot/acceptance receipt，不能由消息自证。
 
 ## 停止线
 
@@ -187,6 +202,8 @@ VM Codex 遇到以下情况立即停止当前场景，不自行扩大权限或�
 - 发现宿主共享目录可写或 Key 可能离开 VM。
 - 需要关闭宿主进程、修改宿主配置或访问宿主凭据。
 - 需要编辑源码、ZIP、runbook、fixture，或跟随移动分支头替换本轮候选。
+- 需要把正式验收切回可写 `VmDevelopment` checkout，或发现候选测试期间发生
+  任何源码/测试/候选字节变化。
 - 资源级补偿证据不足。
 - operation grant 或 sidecar 缺失、过期、范围不符。
 - UI 与固定版本预期显著不同。
@@ -198,22 +215,24 @@ VM Codex 遇到以下情况立即停止当前场景，不自行扩大权限或�
   为 PASS，预期阻断场景必须命中指定非成功状态。
 - 首次启动无需 Developer Mode 或 Anthropic 登录。
 - happy path 没有功能选择页，Git ready，Chat、Code、Cowork readiness 全部 READY，
-  UI 证据分别 PASS。
+  Computer Use UI 证据分别 PASS。
 - 阻断/取消场景返回预期 `PARTIAL/ACTION_REQUIRED/CANCELLED/FAILED`，绝不静默
   关闭 Code/Cowork 后报告成功。
 - 重启续跑、重复运行、失败补偿和恢复按资源矩阵通过。
 - 未授权资源变更为零。
 - secret findings 为零。
-- 从干净快照可重复得到相同结果。
+- 每个对外声明支持的固定环境都从干净快照可重复得到相同结果；没有对应镜像时
+  必须收窄支持声明，不得用单一 VM 外推。
 - 待发布 `UserLive` ZIP 的精确 SHA-256 与最终 smoke 证据一致。
 - 外部 snapshot receipt、受信 CAS、签名与 exact acceptance receipt 均有效；relay
   ACK 或 `TEST_RESULT` 不计为上述任一证据。
 - 正式 P11 PASS 必须绑定 clean-snapshot receipt；日常 guest-reset 重测只能产生
   诊断结果，不能提升为正式通过。
 
-VM 失败经 relay 返回宿主机；宿主机修复、运行完整本地门、提交并推送后，必须回到
-P10B 重建并签名新的 `VmAcceptance` 与 `UserLive` 候选，再以新 candidate ID/hash
-发起下一轮 Formal P11。其间可用 Fast Lane 快速复现和诊断，但结果不能晋升为正式
-通过。P11 不得直接拉取修复后的源码重测，也不得在 VM 内临时修改 ZIP 后继续
-把原版本标成通过。P11 通过后，P12 只能发布证据中已经测试过的 `UserLive` 原字节；
-不得自动 merge 或自动进入 P12，任何版本或字节变化都必须返回 P10B/P11。
+VM 失败后必须结束本轮只读验收，返回可写 `VmDevelopment` 修复、运行完整门并
+提交；随后为新 commit 重新冻结 P10A 输入/事实，再由 P10B 重建并签名新的
+`VmAcceptance` 与 `UserLive` 候选，以新 candidate ID/hash 发起下一轮验收。开发
+lane 的 PASS 不能晋升为正式通过；验收 lane 也不得
+临时修改 ZIP 或源码后继续把原版本标成通过。最终通过只说明候选可以提交 P12
+人工决定；P12 只能发布证据中已经测试过的 `UserLive` 原字节，不得自动 merge、
+promotion 或 release。

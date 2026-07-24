@@ -2,8 +2,8 @@
 
 最后核验：2026-07-22
 
-项目影响更新：2026-07-22（同步 Cloudflare realtime relay 的 Free-only 外部合同、
-D-022 lean provisioning 决定、VM readiness 与已部署但未激活边界）
+项目影响更新：2026-07-24（D-026 将真实 Live 实现移入 disposable VM 的可写
+`VmDevelopment` 通道；历史 relay/Automation 外部事实不再产生操作权）
 
 本文件是 Anthropic、DeepSeek、Windows、Git、Cloudflare 和 OpenAI Codex 外部事实的
 唯一项目内来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和
@@ -334,11 +334,13 @@ P2 已在 `config/deepseek-desktop.defaults.json`、
 
 这只证明纯合同，不证明真实 registry、helper、Desktop UI 或 DeepSeek 请求。当前
 Key 格式函数已经移除固定前缀假设，只拒绝空值、空白/控制字符、非可打印内容和不
-合理长度。HKCU writer 仍未实现：P10A 只在专用 disposable VM 校准 helper/chooser/
-HKCU 最小行为，不输入真实 Key；evidence 经受信外部 CAS 提交并冻结事实、P10B 双
-候选冻结后，真实配置写入、DPAPI、API 与完整功能流程才在 P11 disposable VM 验收。
+合理长度。handoff 时 HKCU writer 仍未实现：D-026 要求先在 `VmDevelopment`
+disposable VM 实现，并用不可 promotion 的 development ZIP 真实测试配置、DPAPI、
+API 和完整功能流程；收敛后再由 P10A 冻结 helper/chooser/HKCU 事实、P10B 构建
+候选，最终由 P11 对精确候选字节重复全面验收。
 
-本地 operator coordination 合同与 Free-only relay 部署现已存在，但不等于产品激活：
+以下本地 operator coordination 合同与 Free-only relay 部署只保留历史背景，不等于
+产品激活，也不再是当前开发依赖：
 
 - `config/fast-lane-policy.psd1` 冻结产品 remote、两个物理单向 control repository、
   两端角色、分钟级轮询、guest reset 和禁止 promotion 的策略；
@@ -377,11 +379,16 @@ VM 的 device provisioning、Live mutation、idempotence 或 clean-receipt evide
 在宿主机/CI 执行，也不进入产品包。自由文本只是不受信数据，固定 prompt 不包含 deploy
 key、token 或其他凭据。
 
-protected history 已部署并验证；两个方向的最小角色凭据、runtime protection assertion、
+历史设计中 protected history 已部署并验证；两个方向的最小角色凭据、runtime protection assertion、
 VM 产品 remote 只读负向验证、real guest reset、VM automation、安全启用当前暂停的 host
 heartbeat 与两端无人值守闭环仍是外部阻断项。宿主机不得执行 product Live，VM 不得
 编辑、提交或推送产品代码。在这些证据完成前不得宣称 P10A-0A 完成。relay 仍只传输
 状态与诊断引用；正式判断消费独立 CAS、签名和 receipt。
+
+D-026 当前开发协调不使用上述 relay 或 Automation。宿主机 clean handoff 后冻结写入，
+disposable VM 通过官方交互认证取得现有开发分支/PR 的阶段性唯一写入租约，并在 VM 内
+实现和验证 Live。最终候选重新冻结后仍按 Formal P10A/P11 的独立 snapshot、CAS、签名
+和只读验收合同处理。
 
 ## 历史实测的正确使用
 

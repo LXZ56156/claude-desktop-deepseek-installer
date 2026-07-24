@@ -1,11 +1,18 @@
 # Release 计划
 
-更新日期：2026-07-14
+更新日期：2026-07-24
 
 ## 当前状态
 
 项目还没有可发布安装器。`build-release.ps1 -DryRun` 只验证白名单和安全合同，
-不生成对外 Release。P10 构建候选，P11 验证精确字节，P12 才允许发布。
+不生成对外 Release。D-026 先在 disposable VM 的可写 `VmDevelopment` lane
+实现和反复验证真实用户路径；收敛后冻结精确 commit/calibration 输入并完成 P10A，
+只有受信事实冻结后才由 P10B 构建候选。P11 最终验收只测试精确冻结字节，P12 才
+允许人工决定发布。
+
+宿主机与 CI 始终零 Live。历史 relay、outbox、Automation、旧 onboarding 和批量
+报告不是构建或发布前置，不得恢复；其缺失或失败不阻断真实用户路径，但也不得
+把历史 PASS 伪造为候选、Computer Use 或发布证据。
 
 ## 分发原则
 
@@ -17,28 +24,42 @@
 
 ## 构建阶段
 
-1. **源树冻结**
+1. **VmDevelopment 收敛**
+   - VM Codex 是现有开发分支/PR 的临时唯一写入者；宿主机同期停止写入。
+   - 真实用户入口已完成安装、配置、重复运行、必要重启、Repair/Restore。
+   - Computer Use 已分别验证 Claude Desktop Chat、Code、Cowork 的实际可见行为。
+   - API Key 只由用户在 VM 本地遮罩式安全输入面提供，未进入 prompt、argv、
+     环境变量、源码、Git、日志、截图、报告或 evidence。
+2. **P10A 输入冻结与事实校准**
    - 工作树和 submodule 状态明确。
+   - 生成绑定 clean commit/tree 的 calibration artifact、sidecar 和 runbook。
+   - 暂停开发写入租约，从外部 clean snapshot 执行 P10A，并由受信 CAS 提交/
+     消费 evidence、冻结 release facts。
+   - P10A 失败或任何源码变化都返回 `VmDevelopment`，生成新 development ZIP 和
+     新 P10A 输入；不得复用旧 facts。
+3. **P10B 源树与候选定义冻结**
+   - commit/tree 必须与已消费 P10A facts 的输入精确一致。
    - VERSION、CHANGELOG、许可证和决策状态一致。
    - 公开函数、defaults、fixtures 与文档同步。
-2. **源树扫描**
+   - 从此结束 VM 开发写入租约；后续候选构建/验收不得热补丁。
+4. **源树扫描**
    - 严格 UTF-8/编码与换行。
    - secret、private key、Authorization、真实路径和运行产物扫描。
    - 二进制文件只允许来自精确 manifest。
-3. **白名单复制**
+5. **白名单复制**
    - 仅复制 PackageFiles。
    - staging 位于构建器拥有的唯一临时目录。
    - 每个文件 hash 与源树绑定。
-4. **Staging 二次扫描**
+6. **Staging 二次扫描**
    - 重复 secret、编码、禁止路径和二进制策略检查。
    - 不允许 development-only 文件。
-5. **ZIP 构建**
+7. **ZIP 构建**
    - 固定条目名和可复现时间/排序策略。
    - ZIP 条目集合与 manifest 精确相等。
-6. **解压仿真**
+8. **解压仿真**
    - 解压到包含中文、空格、`&`、`!` 和括号的路径。
    - 只运行 TestSafe/HostSandbox。
-7. **产物证据**
+9. **产物证据**
    - ZIP SHA-256。
    - 文件清单、版本、commit、构建环境和质量门摘要。
    - SBOM 或脚本依赖清单。
@@ -53,6 +74,10 @@ P10 构建两个冻结产物：
 
 - `VmAcceptance`：用于 VM 故障矩阵，要求一次性 operation grant，不对外发布。
 - 待发布 `UserLive`：带最终版本号但保持未发布；P11 在干净 VM 测试其精确字节。
+
+候选冻结后，VM 只能读取和执行请求绑定的 artifact、sidecar 与 runbook；不得修改
+源码、测试期望、ZIP 或候选元数据。任何修复都必须返回 `VmDevelopment`，产生新
+commit 和 development ZIP，重新完成 P10A、P10B 候选构建和完整 P11 验收。
 
 ## 上游 artifact 策略
 
@@ -98,11 +123,21 @@ Credential helper 已由 D-010 冻结为签名的 .NET EXE：
 - Git ensure、三项 readiness、分层状态和“禁止静默降级”矩阵通过。
 - 本 Release 的唯一 MSIX scope 已由固定版本 VM 证据冻结，无运行时 fallback。
 - 形成 VM 专用 runbook 和候选 ZIP。
+- 在每个对外声明支持的 clean VM 环境中，通过中英文用户入口完成实际安装、
+  配置、重复运行、必要 UAC/重启、Repair/Restore；缺少实际镜像时必须收窄支持
+  声明，不能用单一 VM 外推。
+- 使用待发布候选的精确字节，由 Computer Use 分别验证 Claude Desktop Chat、
+  Code、Cowork 的实际 UI 行为为 PASS；进程 exit 0、readiness READY 或 synthetic
+  evidence 不能替代。
+- 测试 Key 只在 VM 本地遮罩式输入并进入受保护 credential helper；prompt/chat、
+  argv、环境变量、fixture、源码、Git、日志、截图、报告、ZIP 和 evidence 的
+  secret findings 均为零。
+- 最终验收期间源码 checkout 只读或不存在，候选与测试期望没有变化。
 - 生成随包 `USER_GUIDE.md`、`TROUBLESHOOTING.md`、`PRIVACY.md` 或等效用户
   文档，并加入 PackageFiles。
 
 候选版本仍不是正式发布。P11 必须同时验证 VmAcceptance 与待发布 UserLive 的
-精确 hash；P12 只上传已测试的 UserLive 原字节。
+精确 hash 和上述真实用户/Computer Use 结果；P12 只上传已测试的 UserLive 原字节。
 
 ## 版本和变更
 
@@ -123,10 +158,10 @@ Credential helper 已由 D-010 冻结为签名的 .NET EXE：
 - 中文 Release Notes。
 - 支持矩阵和已知限制。
 - 上游下载与信任策略说明。
-- 脱敏的 VM 验收摘要。
+- 脱敏的 VM 用户路径与 Computer Use 验收摘要。
 - 修复、恢复和卸载说明。
 
-不得发布真实测试 Key、VM 磁盘、用户截图、原始日志或可恢复凭据备份。
+不得发布真实测试 Key、VM 磁盘、未脱敏用户截图、原始日志或可恢复凭据备份。
 
 ## 回滚与支持
 
@@ -153,6 +188,11 @@ P12 不是重建步骤：
 
 1. 从 P11 evidence 读取待发布 UserLive ZIP SHA-256。
 2. 本地文件、detached sidecar 和上传后下载文件必须完全匹配。
-3. 发布 Release Notes、checksum、支持矩阵和脱敏验收摘要。
-4. 不修改 ZIP、VERSION、CHANGELOG 或内含文件。
-5. 任何字节变化都生成新版本并返回 P10/P11。
+3. 复核声明支持的每个环境均有 clean-snapshot 用户路径与 Computer Use PASS，
+   且 secret findings 为零。
+4. 发布 Release Notes、checksum、支持矩阵和脱敏验收摘要。
+5. 不修改 ZIP、VERSION、CHANGELOG 或内含文件。
+6. 任何字节变化都返回 `VmDevelopment`，生成新版本并重走构建与最终验收。
+
+P12 始终是人工决定。测试全绿不得自动 merge、promotion、创建 Release 或上传
+产物。

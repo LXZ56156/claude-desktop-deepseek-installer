@@ -1,6 +1,6 @@
 # P10A disposable VM 窄校准计划
 
-更新日期：2026-07-17
+更新日期：2026-07-24
 
 ## 定位
 
@@ -8,16 +8,22 @@ P10A 只解决无法在开发宿主机 synthetic 证明、但冻结 P10B 最终�
 少量实物事实。它不是 P11 全面验收，不产生发布通过结论，也不能替代
 `VM_ACCEPTANCE_PLAN.md`。
 
+D-026 在 P10A 之前新增可写的 `VmDevelopment` 通道：宿主机交接后冻结写入，VM
+可以在 disposable 环境内实现 Live、提交和重建 development ZIP。进入本文件的
+Formal P10A 时，
+开发租约暂停，commit/artifact/runbook 全部重新冻结为只读；任何失败返回
+`VmDevelopment` 并生成新的源提交/development ZIP/P10A 输入，不在校准轮现场修改。本文件后文的“宿主机唯一写入、
+VM 只读”只描述旧流程或 Formal 轮内的不可变性，不撤销 D-026 的前置开发租约。
+
 证据 readiness 只有 `COMPLETE`、`INCOMPLETE` 和 `FAILED`。三种状态的
 `ComprehensiveAcceptance` 均固定为 `false`。`COMPLETE` 也不直接包含
 `CanFreezeP10B`；冻结判断只能由宿主机使用外部终态会话调用
 `Resolve-CddsiVmCalibrationConsumption` 后取得。
 
 双机角色、消息状态机、清洁启动和证据转交以 `VM_TEST_RELAY.md` 为 operator
-coordination 权威。宿主机 Codex 是唯一代码写入者，负责本地门、提交、推送和候选
-重建；VM Codex 只测试、分析和回传，不得修改源码、ZIP、runbook 或 fixture。
-日常预检/缺陷复现走 Fast Lane：public protected control repo 双 outbox、CycleId/sequence/hash、
-两端分钟级 Codex Scheduled Tasks 和 deterministic guest reset；其结果只用于诊断。
+coordination 权威。Formal P10A 开始后没有活动代码 writer：VM 只测试冻结对象，
+不得修改源码、ZIP、runbook 或 fixture。旧 Fast Lane 的 public protected control repo、
+双 outbox、Scheduled Tasks 和 deterministic guest reset 已退役，只保留历史诊断背景。
 本文件产生可消费 P10A evidence 的运行属于 Formal Lane，必须使用独立 CAS/receipt/
 signature 和外部 clean snapshot。
 
@@ -38,9 +44,9 @@ signature 和外部 clean snapshot。
 ~~~
 
 不得在校准 VM 内修改 ZIP 后直接进入 P11，也不得把 P10A artifact 晋升为
-UserLive。发现代码缺陷时必须经 relay 返回宿主机修复、通过本地门、提交和推送，
-再生成绑定新 commit 的校准包并重新授权。可先用 Fast Lane 的 deterministic reset
-做高频诊断；但它不能生成可消费 evidence。重新进入 Formal P10A 时仍须由外部
+UserLive。发现代码缺陷时必须结束 Formal 轮，返回可写 `VmDevelopment` 修复、通过
+产品门、提交和推送，再生成绑定新 commit 的校准包并重新授权。重新进入 Formal P10A
+时仍须由外部
 hypervisor supervisor 恢复干净快照。
 
 ## 进入条件
@@ -57,8 +63,8 @@ hypervisor supervisor 恢复干净快照。
   `CalibrateCredentialHelper`、`CalibrateGit`、
   `WriteCalibrationEvidence`、`CleanupCalibrationResources`。
 - VM 使用固定镜像和独立测试用户；不复用宿主凭据，不共享可写用户目录。
-- `TEST_REQUEST` 已绑定精确 repository commit、校准 artifact/sidecar/hash、runbook
-  和 cycle；VM 不跟随移动分支头，也没有产品仓库写权限。
+- Formal request 已绑定精确 repository commit、校准 artifact/sidecar/hash 和 runbook；
+  VM 不跟随移动分支头，且本轮不使用开发写权限。
 - 外部 hypervisor supervisor 已为本次 Formal P10A 恢复固定快照并出 receipt。VM
   Codex 不能恢复自身正在运行的整机快照；Fast Lane 的 in-guest reset receipt 不
   满足该进入条件。
