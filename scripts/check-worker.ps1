@@ -1741,10 +1741,21 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         'DefaultBootstrapLibraryFiles',
         'ProductDotSourceAllowList',
         'LiveAdapterEntryPoints',
+        'LiveAdapterLoadEntryPoint',
+        'LiveAdapterProviderEntryPoint',
         'LiveAdapterCommandAllowList',
         'LiveAdapterTypePrefixAllowList',
+        'LiveAdapterDirectPipelineAllowList',
+        'LiveAdapterFunctionSourceDigestAllowList',
         'LiveAdapterRequiredGateCommands',
         'LiveAdapterRequiredOperation',
+        'LiveReadOnlyCapabilities',
+        'LiveAdapterForbiddenTextPatterns',
+        'LiveAdapterForbiddenVariableNames',
+        'LiveAdapterForbidEnvironmentVariables',
+        'LiveAdapterSystemCapabilityCommands',
+        'LiveAdapterSystemCapabilityTypePrefixes',
+        'LiveAdapterSystemCapabilitySites',
         'LiveAdapterAllowedBindings',
         'ProductForbiddenCommands',
         'ProductCommandAllowList',
@@ -1825,10 +1836,149 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         (@($expectedLiveBindingTexts | Sort-Object) -join "`n")) {
         throw 'Live adapter allowed binding policy drift.'
     }
-    foreach ($mapRuleName in @('LiveAdapterEntryPoints', 'LiveAdapterCommandAllowList', 'LiveAdapterTypePrefixAllowList')) {
+    foreach ($mapRuleName in @(
+        'LiveAdapterEntryPoints',
+        'LiveAdapterCommandAllowList',
+        'LiveAdapterTypePrefixAllowList',
+        'LiveAdapterDirectPipelineAllowList',
+        'LiveAdapterFunctionSourceDigestAllowList',
+        'LiveAdapterSystemCapabilitySites'
+    )) {
         $ruleKeys = @($boundary.Rules[$mapRuleName].Keys | Sort-Object)
         if (($ruleKeys -join "`n") -cne (@($expectedLiveAdapters | Sort-Object) -join "`n")) {
             throw "Live adapter $mapRuleName keys do not match the exact file allow-list."
+        }
+    }
+    $expectedLiveAdapterCommands = @(
+        'Add-CddsiProductAccessLedgerEntry'
+        'Assert-CddsiExecutionContext'
+        'New-CddsiLiveReadOnlyProviderSet'
+        'New-CddsiOperationResult'
+        'Out-Null'
+        'Test-CddsiCommittedOperationUseReceipt'
+        'Where-Object'
+    )
+    $expectedLiveAdapterTypes = @(
+        'Alias'
+        'CmdletBinding'
+        'long'
+        'ordered'
+        'Parameter'
+        'pscustomobject'
+        'string'
+        'System.Collections.IDictionary'
+    )
+    foreach ($relative in $expectedLiveAdapters) {
+        if ((@($boundary.Rules.LiveAdapterCommandAllowList[$relative] | Sort-Object) -join "`n") -cne
+            (@($expectedLiveAdapterCommands | Sort-Object) -join "`n")) {
+            throw "$relative exact safe command allow-list drift."
+        }
+        if ((@($boundary.Rules.LiveAdapterTypePrefixAllowList[$relative] | Sort-Object) -join "`n") -cne
+            (@($expectedLiveAdapterTypes | Sort-Object) -join "`n")) {
+            throw "$relative exact safe type allow-list drift."
+        }
+        $directPipelineContracts = @(
+            $boundary.Rules.LiveAdapterDirectPipelineAllowList[$relative] |
+                ForEach-Object { [string]$_ }
+        )
+        if ($directPipelineContracts.Count -ne 36 -or
+            @($directPipelineContracts | Sort-Object -Unique).Count -ne 36 -or
+            @($directPipelineContracts | Where-Object {
+                $_ -cnotmatch '^[A-Za-z][A-Za-z0-9-]*\|(NamedBlockAst|StatementBlockAst)\|(<SUPPRESSED>|\$[A-Za-z][A-Za-z0-9]*)\|[a-f0-9]{64}$'
+            }).Count -gt 0 -or
+            (Get-CddsiWorkerSequenceSha256 -Values $directPipelineContracts) -cne
+                '09689c00a12074a7a4332e6bae331fe1ba9252fa7ea74e073dd56777955a15b6') {
+            throw "$relative direct-pipeline allow-list drift."
+        }
+        $functionSourceDigestContracts = @(
+            $boundary.Rules.LiveAdapterFunctionSourceDigestAllowList[$relative] |
+                ForEach-Object { [string]$_ }
+        )
+        if ($functionSourceDigestContracts.Count -ne 2 -or
+            @($functionSourceDigestContracts | Sort-Object -Unique).Count -ne 2 -or
+            @($functionSourceDigestContracts | Where-Object {
+                $_ -cnotmatch '^[A-Za-z][A-Za-z0-9-]*\|[a-f0-9]{64}$'
+            }).Count -gt 0 -or
+            (Get-CddsiWorkerSequenceSha256 -Values $functionSourceDigestContracts) -cne
+                '3d565a3d288c564ad0459b346a059c68c5b90df2994552741c4b939370a8cc3c') {
+            throw "$relative normalized function-source digest allow-list drift."
+        }
+    }
+    $expectedLiveReadOnlyCapabilities = @(
+        'Environment|Inspect|<ENVIRONMENT:WINDOWS>||WindowsEnvironmentObservation/v1'
+        'Environment|Inspect|<ENVIRONMENT:HARDWARE_VIRTUALIZATION>||HardwareVirtualizationObservation/v1'
+        'Environment|Inspect|<KNOWN_FOLDERS:CURRENT_USER>||CurrentUserKnownFoldersObservation/v1'
+        'Package|Inspect|<PACKAGE:CLAUDE_DESKTOP>||ClaudeDesktopPackageInventory/v1'
+        'Process|Inspect|<PROCESS:GIT_FOR_WINDOWS>||GitForWindowsInventory/v2'
+        'Feature|Inspect|<FEATURE:VIRTUAL_MACHINE_PLATFORM>||VirtualMachinePlatformObservation/v1'
+        'Service|Inspect|<SERVICE:COWORK>||CoworkServiceObservation/v1'
+        'Registry|Inspect|<HKLM_MANAGED_POLICY>||ClaudeConfigSourceMetadata/v1'
+        'Registry|Inspect|<HKCU_MANAGED_POLICY>||ClaudeConfigSourceMetadata/v1'
+        'FileSystem|Inspect|<CONFIG_LIBRARY>||ClaudeConfigSourceMetadata/v1'
+        'Process|Inspect|<PROCESS:CLAUDE_DESKTOP>||ClaudeDesktopProcessInventory/v1'
+    )
+    $actualLiveReadOnlyCapabilities = @()
+    foreach ($capability in @($boundary.Rules.LiveReadOnlyCapabilities)) {
+        if ($null -eq $capability -or
+            (@($capability.Keys | ForEach-Object { [string]$_ } | Sort-Object) -join "`n") -cne
+                ((@('ArgumentNames', 'Operation', 'Provider', 'ResourceToken', 'ResultSchemaId') | Sort-Object) -join "`n") -or
+            $capability.Provider -isnot [string] -or $capability.Operation -isnot [string] -or
+            $capability.ResourceToken -isnot [string] -or $capability.ResultSchemaId -isnot [string] -or
+            @($capability.ArgumentNames).Count -ne 0) {
+            throw 'LiveReadOnly capability does not match the exact empty-argument schema.'
+        }
+        $actualLiveReadOnlyCapabilities += '{0}|{1}|{2}|{3}|{4}' -f
+            $capability.Provider,
+            $capability.Operation,
+            $capability.ResourceToken,
+            (@($capability.ArgumentNames) -join ','),
+            $capability.ResultSchemaId
+    }
+    if (($actualLiveReadOnlyCapabilities -join "`n") -cne ($expectedLiveReadOnlyCapabilities -join "`n")) {
+        throw 'LiveReadOnly capability policy drift.'
+    }
+    if ($boundary.Rules.LiveAdapterForbidEnvironmentVariables -isnot [bool] -or
+        -not $boundary.Rules.LiveAdapterForbidEnvironmentVariables) {
+        throw 'Live adapter environment-variable prohibition must remain enabled.'
+    }
+    foreach ($forbiddenName in @(
+        'HOME', 'PROFILE', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA',
+        'PROGRAMDATA', 'HOMEDRIVE', 'HOMEPATH'
+    )) {
+        if (@($boundary.Rules.LiveAdapterForbiddenVariableNames) -cnotcontains $forbiddenName) {
+            throw "Live adapter forbidden-variable policy omits $forbiddenName."
+        }
+    }
+    foreach ($forbiddenPattern in @(
+        '(?i)\.claude',
+        '(?i)settings\.json',
+        '(?i)\bUserProfile\b',
+        '(?i)\bHomeDirectory\b'
+    )) {
+        if (@($boundary.Rules.LiveAdapterForbiddenTextPatterns) -cnotcontains $forbiddenPattern) {
+            throw "Live adapter forbidden-text policy omits $forbiddenPattern."
+        }
+    }
+    foreach ($requiredSystemCommand in @(
+        @($boundary.Rules.ProductForbiddenCommands) +
+        @(
+            'Resolve-Path', 'Convert-Path', 'Join-Path', 'Split-Path', 'Get-Location', 'Get-PSDrive',
+            'Get-Acl', 'Get-ItemPropertyValue', 'Resolve-DnsName', 'Test-NetConnection',
+            'Start-Job', 'Invoke-Command', 'New-Object', 'gci', 'gc', 'dir'
+        )
+    )) {
+        if (@($boundary.Rules.LiveAdapterSystemCapabilityCommands) -cnotcontains $requiredSystemCommand) {
+            throw "Live adapter system-capability command policy omits $requiredSystemCommand."
+        }
+    }
+    foreach ($requiredSystemTypePrefix in @($boundary.Rules.ProductForbiddenTypePrefixes + @('System.IO.Path'))) {
+        if (@($boundary.Rules.LiveAdapterSystemCapabilityTypePrefixes) -cnotcontains $requiredSystemTypePrefix) {
+            throw "Live adapter system-capability type policy omits $requiredSystemTypePrefix."
+        }
+    }
+    foreach ($relative in $expectedLiveAdapters) {
+        if (@($boundary.Rules.LiveAdapterSystemCapabilitySites[$relative]).Count -ne 0) {
+            throw "$relative must have an empty system-capability site allow-list in this batch."
         }
     }
     $releasePolicy = Import-PowerShellDataFile -LiteralPath (Join-Path $script:Root 'scripts/release-manifest.psd1')
@@ -1972,6 +2122,16 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         $errors = $parse.Errors
         $ast = $parse.Ast
         if (@($errors).Count -gt 0) { throw "$relative has PowerShell syntax errors." }
+        $cleanBlockProperty = $ast.PSObject.Properties['CleanBlock']
+        if ($null -ne $ast.ScriptRequirements -or
+            @($ast.UsingStatements).Count -gt 0 -or
+            $null -ne $ast.ParamBlock -or
+            $null -ne $ast.DynamicParamBlock -or
+            $null -ne $ast.BeginBlock -or
+            $null -ne $ast.ProcessBlock -or
+            ($null -ne $cleanBlockProperty -and $null -ne $cleanBlockProperty.Value)) {
+            throw "$relative must contain only ordinary function definitions and no automatic script requirements or auxiliary script blocks."
+        }
         $topLevelStatements = @($ast.EndBlock.Statements)
         if ($topLevelStatements.Count -eq 0 -or @($topLevelStatements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] }).Count -gt 0) {
             throw "$relative contains directly executable top-level statements."
@@ -1982,17 +2142,52 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         if (($actualEntryPoints -join "`n") -cne ($expectedEntryPoints -join "`n")) {
             throw "$relative entry points differ from the exact allow-list."
         }
-        if ($functionNodes.Count -ne 1) { throw "$relative must expose one auditable Live entry point." }
-        $entryPoint = $functionNodes[0]
-        $requiredParameters = @(
-            'Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState',
-            'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc'
+        if ($functionNodes.Count -ne 2) { throw "$relative must expose exactly two auditable Live entry points." }
+        $actualFunctionSourceDigestContracts = @(
+            $functionNodes |
+                ForEach-Object {
+                    $normalizedFunctionSource = $_.Extent.Text.Replace("`r`n", "`n").Replace("`r", "`n")
+                    '{0}|{1}' -f $_.Name, (Get-CddsiWorkerSha256Text -Text $normalizedFunctionSource)
+                } |
+                Sort-Object
         )
-        $parameterNames = @($entryPoint.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath } | Sort-Object)
-        if (($parameterNames -join "`n") -cne (@($requiredParameters | Sort-Object) -join "`n")) {
-            throw "$relative Live entry-point parameter schema drift."
+        $configuredFunctionSourceDigestContracts = @(
+            $boundary.Rules.LiveAdapterFunctionSourceDigestAllowList[$relative] |
+                ForEach-Object { [string]$_ } |
+                Sort-Object
+        )
+        if (($actualFunctionSourceDigestContracts -join "`n") -cne
+            ($configuredFunctionSourceDigestContracts -join "`n")) {
+            throw "$relative normalized function source differs from the exact digest allow-list."
         }
-        foreach ($parameter in @($entryPoint.Body.ParamBlock.Parameters)) {
+        if ($boundary.Rules.LiveAdapterLoadEntryPoint -cne 'Invoke-CddsiLiveAdapterOperation' -or
+            $boundary.Rules.LiveAdapterProviderEntryPoint -cne 'Invoke-CddsiLiveReadOnlyProviderOperation') {
+            throw 'Live adapter named entry-point policy drift.'
+        }
+        $loadEntryPoint = @($functionNodes | Where-Object Name -CEQ $boundary.Rules.LiveAdapterLoadEntryPoint)
+        $providerEntryPoint = @($functionNodes | Where-Object Name -CEQ $boundary.Rules.LiveAdapterProviderEntryPoint)
+        if ($loadEntryPoint.Count -ne 1 -or $providerEntryPoint.Count -ne 1) {
+            throw "$relative named entry points are not unique."
+        }
+        $loadEntryPoint = $loadEntryPoint[0]
+        $providerEntryPoint = $providerEntryPoint[0]
+        $loadRequiredParameters = @(
+            'Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState',
+            'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc', 'AdapterSha256'
+        )
+        $providerRequiredParameters = @('Context', 'Provider', 'Operation', 'ResourceToken', 'Arguments')
+        $loadParameterNames = @($loadEntryPoint.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath } | Sort-Object)
+        $providerParameterNames = @($providerEntryPoint.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath } | Sort-Object)
+        if (($loadParameterNames -join "`n") -cne (@($loadRequiredParameters | Sort-Object) -join "`n")) {
+            throw "$relative Live load entry-point parameter schema drift."
+        }
+        if (($providerParameterNames -join "`n") -cne (@($providerRequiredParameters | Sort-Object) -join "`n")) {
+            throw "$relative Live read-only provider entry-point parameter schema drift."
+        }
+        foreach ($parameter in @(
+            $loadEntryPoint.Body.ParamBlock.Parameters +
+            $providerEntryPoint.Body.ParamBlock.Parameters
+        )) {
             $isMandatory = $false
             foreach ($attribute in @($parameter.Attributes | Where-Object { $_.TypeName.FullName -ceq 'Parameter' })) {
                 foreach ($namedArgument in @($attribute.NamedArguments | Where-Object { $_.ArgumentName -ieq 'Mandatory' })) {
@@ -2001,10 +2196,32 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             }
             if (-not $isMandatory) { throw "$relative parameter $($parameter.Name.VariablePath.UserPath) must be mandatory." }
         }
-        $contextParameter = @($entryPoint.Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -ceq 'Context' })[0]
-        $contextAliases = @($contextParameter.Attributes | Where-Object { $_.TypeName.FullName -ceq 'Alias' } | ForEach-Object { $_.PositionalArguments[0].Value })
-        if ($contextAliases.Count -ne 1 -or $contextAliases[0] -cne 'ExecutionContext') {
-            throw "$relative Context must use the exact ExecutionContext alias."
+        foreach ($entryPoint in @($loadEntryPoint, $providerEntryPoint)) {
+            $contextParameter = @($entryPoint.Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -ceq 'Context' })[0]
+            $contextAliases = @($contextParameter.Attributes | Where-Object { $_.TypeName.FullName -ceq 'Alias' } | ForEach-Object { $_.PositionalArguments[0].Value })
+            if ($contextAliases.Count -ne 1 -or $contextAliases[0] -cne 'ExecutionContext') {
+                throw "$relative Context must use the exact ExecutionContext alias."
+            }
+            $bodyCleanBlockProperty = $entryPoint.Body.PSObject.Properties['CleanBlock']
+            if ($entryPoint.IsFilter -or $entryPoint.IsWorkflow -or
+                $null -eq $entryPoint.Body.ParamBlock -or
+                $null -ne $entryPoint.Body.DynamicParamBlock -or
+                $null -ne $entryPoint.Body.BeginBlock -or
+                $null -ne $entryPoint.Body.ProcessBlock -or
+                ($null -ne $bodyCleanBlockProperty -and $null -ne $bodyCleanBlockProperty.Value) -or
+                $null -eq $entryPoint.Body.EndBlock) {
+                throw "$relative entry point $($entryPoint.Name) must be one ordinary end-block function."
+            }
+            if (@($entryPoint.Body.ParamBlock.Parameters | Where-Object { $null -ne $_.DefaultValue }).Count -gt 0) {
+                throw "$relative entry point $($entryPoint.Name) must not declare parameter default values."
+            }
+            $entryPointStatements = @($entryPoint.Body.EndBlock.Statements)
+            if ($entryPointStatements.Count -eq 0 -or
+                $entryPointStatements[0] -isnot [System.Management.Automation.Language.PipelineAst] -or
+                $entryPointStatements[0].Extent.Text -cne
+                    'Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode Live | Out-Null') {
+                throw "$relative entry point $($entryPoint.Name) must begin with the exact Live context assertion pipeline."
+            }
         }
 
         $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
@@ -2019,16 +2236,128 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         if ($dotOrImportCommands.Count -gt 0 -or $dynamicCommands.Count -gt 0) {
             throw "$relative must not dot-source, import or dynamically invoke code."
         }
-        $commandNames = @($commands | ForEach-Object { Get-CddsiCommandName -CommandAst $_ } | Where-Object { $_ })
-        foreach ($gateName in @($boundary.Rules.LiveAdapterRequiredGateCommands)) {
-            if (@($commandNames | Where-Object { $_ -ceq $gateName }).Count -ne 1) {
-                throw "$relative must call required gate $gateName exactly once."
-            }
+        $forbiddenStatementNodes = @($ast.FindAll({
+            param($node)
+            $node.GetType().Name -in @(
+                'TrapStatementAst',
+                'ExitStatementAst',
+                'DataStatementAst',
+                'TypeDefinitionAst'
+            )
+        }, $true))
+        if ($forbiddenStatementNodes.Count -gt 0) {
+            throw "$relative contains forbidden trap, exit, data or type-definition syntax."
         }
-        $assertGate = @($commands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Assert-CddsiExecutionContext' })[0]
-        $receiptGate = @($commands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Test-CddsiCommittedOperationUseReceipt' })[0]
+        $forbiddenUnaryNodes = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.UnaryExpressionAst] -and
+                $node.TokenKind.ToString() -in @(
+                    'PlusPlus',
+                    'PostfixPlusPlus',
+                    'MinusMinus',
+                    'PostfixMinusMinus'
+                )
+        }, $true))
+        if ($forbiddenUnaryNodes.Count -gt 0) {
+            throw "$relative must not use prefix or postfix increment/decrement syntax."
+        }
+        $livePipelines = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.PipelineAst]
+        }, $true))
+        $backgroundPipelines = @($livePipelines | Where-Object {
+            $backgroundProperty = $_.PSObject.Properties['Background']
+            if ($null -ne $backgroundProperty) {
+                return [bool]$backgroundProperty.Value
+            }
+            return $_.Extent.Text -match '(?s)&\s*$'
+        })
+        if ($backgroundPipelines.Count -gt 0) {
+            throw "$relative must not use background pipelines."
+        }
+        $pipelineChains = @($ast.FindAll({
+            param($node)
+            $node.GetType().Name -ceq 'PipelineChainAst'
+        }, $true))
+        if ($pipelineChains.Count -gt 0) {
+            throw "$relative must not use pipeline-chain operators."
+        }
+
+        $actualDirectPipelineContracts = @(
+            foreach ($entryPoint in @($loadEntryPoint, $providerEntryPoint)) {
+                $directPipelines = @($entryPoint.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.PipelineAst] -and
+                        ($node.Parent -is [System.Management.Automation.Language.NamedBlockAst] -or
+                        $node.Parent -is [System.Management.Automation.Language.StatementBlockAst])
+                }, $true))
+                foreach ($pipeline in $directPipelines) {
+                    $captureTarget = $null
+                    $ancestor = $pipeline.Parent
+                    while ($null -ne $ancestor -and $ancestor -ne $entryPoint) {
+                        if ($ancestor -is [System.Management.Automation.Language.AssignmentStatementAst]) {
+                            $captureTarget = $ancestor.Left.Extent.Text
+                            break
+                        }
+                        $ancestor = $ancestor.Parent
+                    }
+                    if ($null -eq $captureTarget) {
+                        $pipelineElements = @($pipeline.PipelineElements)
+                        $lastPipelineElement = if ($pipelineElements.Count -gt 0) {
+                            $pipelineElements[-1]
+                        }
+                        else {
+                            $null
+                        }
+                        if ($lastPipelineElement -is [System.Management.Automation.Language.CommandAst] -and
+                            (Get-CddsiCommandName -CommandAst $lastPipelineElement) -ceq 'Out-Null') {
+                            $captureTarget = '<SUPPRESSED>'
+                        }
+                        else {
+                            $captureTarget = '<UNBOUND>'
+                        }
+                    }
+                    $normalizedPipelineExtent = $pipeline.Extent.Text.Replace("`r`n", "`n").Replace("`r", "`n")
+                    '{0}|{1}|{2}|{3}' -f
+                        $entryPoint.Name,
+                        $pipeline.Parent.GetType().Name,
+                        $captureTarget,
+                        (Get-CddsiWorkerSha256Text -Text $normalizedPipelineExtent)
+                }
+            }
+        )
+        $configuredDirectPipelineContracts = @(
+            $boundary.Rules.LiveAdapterDirectPipelineAllowList[$relative] |
+                ForEach-Object { [string]$_ } |
+                Sort-Object
+        )
+        if (@($actualDirectPipelineContracts | Where-Object {
+            $_ -cmatch '\|<UNBOUND>\|'
+        }).Count -gt 0 -or
+            ((@($actualDirectPipelineContracts | Sort-Object) -join "`n") -cne
+            ($configuredDirectPipelineContracts -join "`n"))) {
+            throw "$relative contains an unapproved direct pipeline or implicit-output expression."
+        }
+
+        $commandNames = @($commands | ForEach-Object { Get-CddsiCommandName -CommandAst $_ } | Where-Object { $_ })
+        $loadCommands = @($loadEntryPoint.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+        $providerCommands = @($providerEntryPoint.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+        $loadAssertGates = @($loadCommands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Assert-CddsiExecutionContext' })
+        $providerAssertGates = @($providerCommands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Assert-CddsiExecutionContext' })
+        $receiptGates = @($loadCommands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Test-CddsiCommittedOperationUseReceipt' })
+        if ($loadAssertGates.Count -ne 2 -or $providerAssertGates.Count -ne 1 -or $receiptGates.Count -ne 1) {
+            throw "$relative must keep two load-context assertions, one provider-context assertion and one load receipt gate."
+        }
+        $assertGate = @($loadAssertGates | Sort-Object { $_.Extent.StartOffset })[0]
+        $loadedAssertGate = @($loadAssertGates | Sort-Object { $_.Extent.StartOffset })[1]
+        $providerAssertGate = $providerAssertGates[0]
+        $receiptGate = $receiptGates[0]
         if ($assertGate.Extent.Text -notmatch '(?i)-ExpectedMode\s+Live') {
             throw "$relative does not statically require Live mode."
+        }
+        if ($loadedAssertGate.Extent.Text -notmatch '(?i)-ExpectedMode\s+Live' -or
+            $providerAssertGate.Extent.Text -notmatch '(?i)-ExpectedMode\s+Live') {
+            throw "$relative does not revalidate loaded Live contexts."
         }
         foreach ($bindingName in @('StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc')) {
             if ($receiptGate.Extent.Text -notmatch ('(?i)-' + [regex]::Escape($bindingName) + '\s+')) {
@@ -2040,7 +2369,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         }
 
         $bindingHashtableNodes = @(
-            $entryPoint.FindAll({
+            $loadEntryPoint.FindAll({
                 param($node)
                 if ($node -isnot [System.Management.Automation.Language.HashtableAst]) { return $false }
                 $keys = @($node.KeyValuePairs | ForEach-Object {
@@ -2079,7 +2408,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             [System.Management.Automation.Language.TokenKind]::Ceq,
             [System.Management.Automation.Language.TokenKind]::Cne
         )
-        $comparisonNodes = @($entryPoint.FindAll({
+        $comparisonNodes = @($loadEntryPoint.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
                 $comparisonTokenKinds -ccontains $node.Operator
@@ -2101,7 +2430,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             }
         }
 
-        $bindingMatchAssignments = @($entryPoint.FindAll({
+        $bindingMatchAssignments = @($loadEntryPoint.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
                 $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
@@ -2123,7 +2452,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
                 throw "$relative must case-sensitively bind $requiredMemberText inside bindingMatches."
             }
         }
-        $bindingFailureBranches = @($entryPoint.FindAll({
+        $bindingFailureBranches = @($loadEntryPoint.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.IfStatementAst] -and
                 $node.Extent.Text -cmatch '\$bindingMatches\.Count\s+-ne\s+1' -and
@@ -2137,7 +2466,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             throw "$relative must fail closed on any non-unique Live binding before the committed receipt gate."
         }
 
-        $runBindingFailureBranches = @($entryPoint.FindAll({
+        $runBindingFailureBranches = @($loadEntryPoint.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.IfStatementAst] -and
                 $node.Extent.Text -cmatch '\$Context\.RunId\s+-cne\s+\$OperationGrant\.RunId' -and
@@ -2160,7 +2489,7 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             $operationComparisons[0].Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
             throw "$relative must require the exact LoadLiveProviders operation before the committed receipt gate."
         }
-        $operationFailureBranches = @($entryPoint.FindAll({
+        $operationFailureBranches = @($loadEntryPoint.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.IfStatementAst] -and
                 $node.Extent.Text -cmatch '\$Operation\s+-cne\s+[''"]LoadLiveProviders[''"]' -and
@@ -2174,22 +2503,289 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             throw "$relative must fail closed on any non-LoadLiveProviders operation before the committed receipt gate."
         }
 
-        $notImplementedResults = @($commands | Where-Object {
-            (Get-CddsiCommandName -CommandAst $_) -ceq 'New-CddsiOperationResult' -and
-                $_.Extent.Text -match '(?i)-Status\s+[''"]?ACTION_REQUIRED[''"]?' -and
-                $_.Extent.Text -match '(?i)-ErrorCode\s+[''"]LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED[''"]' -and
-                $_.Extent.Text -match '(?i)-Mode\s+Live(?:\s|$)'
-        })
-        if ($notImplementedResults.Count -ne 1 -or
-            $notImplementedResults[0].Extent.StartOffset -le $receiptGate.Extent.EndOffset -or
-            $notImplementedResults[0].Extent.Text -match '(?i)-Changed\s*:?\s*\$true') {
-            throw "$relative must return one unchanged Live ACTION_REQUIRED result after the committed receipt gate."
+        $adapterHashChecks = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$AdapterSha256\s+-cnotmatch\s+[''"]\^\[a-f0-9\]\{64\}\$[''"]'
+        }, $true))
+        if ($adapterHashChecks.Count -ne 1 -or $adapterHashChecks[0].Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
+            throw "$relative must validate the package-bound adapter SHA-256 before the committed receipt gate."
         }
 
-        $actualLiveCommands = @($commandNames | Where-Object { $forbiddenCommands -ccontains $_ } | Sort-Object -Unique)
+        $providerSetConstructors = @($loadCommands | Where-Object {
+            (Get-CddsiCommandName -CommandAst $_) -ceq 'New-CddsiLiveReadOnlyProviderSet'
+        })
+        if ($providerSetConstructors.Count -ne 1 -or
+            $providerSetConstructors[0].Extent.StartOffset -le $receiptGate.Extent.EndOffset) {
+            throw "$relative must construct one LiveReadOnly provider set after the committed receipt gate."
+        }
+        foreach ($parameterName in @(
+            'RunId', 'Stage', 'EnvironmentTier', 'ArtifactProfile', 'AdapterSha256',
+            'LoadOperationUseId', 'LoadReceiptBindingToken'
+        )) {
+            if ($providerSetConstructors[0].Extent.Text -notmatch ('(?i)-' + [regex]::Escape($parameterName) + '\s+')) {
+                throw "$relative provider-set construction omits $parameterName."
+            }
+        }
+        if ($providerSetConstructors[0].Extent.Text -cnotmatch '-AdapterSha256\s+\$AdapterSha256(?:\s|$)' -or
+            $providerSetConstructors[0].Extent.Text -cnotmatch '-LoadReceiptBindingToken\s+\$OperationUseState\.ReceiptBindingToken(?:\s|$)') {
+            throw "$relative does not bind the adapter hash and committed receipt into the provider set."
+        }
+
+        $providerInstallAssignments = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -ceq '$Context.Providers' -and
+                $node.Right.Extent.Text -ceq '$loadedProviderSet'
+        }, $true))
+        $ledgerLoadAssignments = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -ceq '$Context.AccessLedger.LiveProviderLoaded' -and
+                $node.Right.Extent.Text -ceq '$true'
+        }, $true))
+        if ($providerInstallAssignments.Count -ne 1 -or $ledgerLoadAssignments.Count -ne 1 -or
+            $providerInstallAssignments[0].Extent.StartOffset -le $receiptGate.Extent.EndOffset -or
+            $ledgerLoadAssignments[0].Extent.StartOffset -le $receiptGate.Extent.EndOffset -or
+            $loadedAssertGate.Extent.StartOffset -le $providerInstallAssignments[0].Extent.EndOffset -or
+            $loadedAssertGate.Extent.StartOffset -le $ledgerLoadAssignments[0].Extent.EndOffset) {
+            throw "$relative must install and revalidate one fully loaded in-memory provider context."
+        }
+
+        $previousProviderCaptures = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Operator.ToString() -ceq 'Equals' -and
+                $node.Left.Extent.Text -ceq '$previousProviderSet' -and
+                $node.Right.Extent.Text -ceq '$Context.Providers'
+        }, $true))
+        $previousLoadedFlagCaptures = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Operator.ToString() -ceq 'Equals' -and
+                $node.Left.Extent.Text -ceq '$previousLiveProviderLoaded' -and
+                $node.Right.Extent.Text -ceq '$Context.AccessLedger.LiveProviderLoaded'
+        }, $true))
+        if ($previousProviderCaptures.Count -ne 1 -or $previousLoadedFlagCaptures.Count -ne 1 -or
+            $previousProviderCaptures[0].Extent.StartOffset -ge $providerInstallAssignments[0].Extent.StartOffset -or
+            $previousLoadedFlagCaptures[0].Extent.StartOffset -ge $ledgerLoadAssignments[0].Extent.StartOffset) {
+            throw "$relative must capture both pre-install provider values before changing the context."
+        }
+
+        $allTryStatements = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.TryStatementAst]
+        }, $true))
+        $loadTryStatements = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.TryStatementAst]
+        }, $true))
+        $providerTryStatements = @($providerEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.TryStatementAst]
+        }, $true))
+        if ($allTryStatements.Count -ne 1 -or $loadTryStatements.Count -ne 1 -or
+            $providerTryStatements.Count -ne 0) {
+            throw "$relative must contain exactly one loader rollback try/catch."
+        }
+        $rollbackTry = $loadTryStatements[0]
+        $rollbackTryStatements = @($rollbackTry.Body.Statements)
+        $rollbackCatchClauses = @($rollbackTry.CatchClauses)
+        if ($null -ne $rollbackTry.Finally -or $rollbackTryStatements.Count -ne 3 -or
+            $rollbackTryStatements[0] -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $rollbackTryStatements[0].Operator.ToString() -cne 'Equals' -or
+            $rollbackTryStatements[0].Left.Extent.Text -cne '$Context.Providers' -or
+            $rollbackTryStatements[0].Right.Extent.Text -cne '$loadedProviderSet' -or
+            $rollbackTryStatements[0].Extent.StartOffset -ne $providerInstallAssignments[0].Extent.StartOffset -or
+            $rollbackTryStatements[1] -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $rollbackTryStatements[1].Operator.ToString() -cne 'Equals' -or
+            $rollbackTryStatements[1].Left.Extent.Text -cne '$Context.AccessLedger.LiveProviderLoaded' -or
+            $rollbackTryStatements[1].Right.Extent.Text -cne '$true' -or
+            $rollbackTryStatements[1].Extent.StartOffset -ne $ledgerLoadAssignments[0].Extent.StartOffset -or
+            $rollbackTryStatements[2] -isnot [System.Management.Automation.Language.PipelineAst] -or
+            $rollbackTryStatements[2].Extent.StartOffset -ne $loadedAssertGate.Parent.Extent.StartOffset -or
+            $rollbackTryStatements[2].Extent.Text -cne
+                'Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode Live | Out-Null' -or
+            $rollbackCatchClauses.Count -ne 1 -or -not $rollbackCatchClauses[0].IsCatchAll -or
+            @($rollbackCatchClauses[0].CatchTypes).Count -ne 0) {
+            throw "$relative loader rollback try/catch shape drift."
+        }
+        $rollbackCatchStatements = @($rollbackCatchClauses[0].Body.Statements)
+        if ($rollbackCatchStatements.Count -ne 3 -or
+            $rollbackCatchStatements[0] -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $rollbackCatchStatements[0].Operator.ToString() -cne 'Equals' -or
+            $rollbackCatchStatements[0].Left.Extent.Text -cne '$Context.Providers' -or
+            $rollbackCatchStatements[0].Right.Extent.Text -cne '$previousProviderSet' -or
+            $rollbackCatchStatements[1] -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $rollbackCatchStatements[1].Operator.ToString() -cne 'Equals' -or
+            $rollbackCatchStatements[1].Left.Extent.Text -cne '$Context.AccessLedger.LiveProviderLoaded' -or
+            $rollbackCatchStatements[1].Right.Extent.Text -cne '$previousLiveProviderLoaded' -or
+            $rollbackCatchStatements[2] -isnot [System.Management.Automation.Language.ThrowStatementAst] -or
+            $null -ne $rollbackCatchStatements[2].Pipeline) {
+            throw "$relative loader catch must restore both values and terminate with one bare throw."
+        }
+        if ($rollbackTry.Extent.StartOffset -le $previousProviderCaptures[0].Extent.EndOffset -or
+            $rollbackTry.Extent.StartOffset -le $previousLoadedFlagCaptures[0].Extent.EndOffset) {
+            throw "$relative loader rollback try/catch must follow both pre-install value captures."
+        }
+
+        $successResults = @($loadCommands | Where-Object {
+            (Get-CddsiCommandName -CommandAst $_) -ceq 'New-CddsiOperationResult' -and
+                $_.Extent.Text -match '(?i)-Operation\s+[''"]LoadLiveProviders[''"]' -and
+                $_.Extent.Text -match '(?i)-Status\s+[''"]?SUCCEEDED[''"]?' -and
+                $_.Extent.Text -match '(?i)-Changed\s+\$false' -and
+                $_.Extent.Text -match '(?i)-Mode\s+Live(?:\s|$)'
+        })
+        if ($successResults.Count -ne 1 -or
+            $successResults[0].Extent.StartOffset -le $rollbackTry.Extent.EndOffset) {
+            throw "$relative must return one unchanged Live SUCCEEDED load result after loaded-context validation."
+        }
+        $allReturnStatements = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.ReturnStatementAst]
+        }, $true))
+        $loadReturnStatements = @($loadEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.ReturnStatementAst]
+        }, $true))
+        $providerReturnStatements = @($providerEntryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.ReturnStatementAst]
+        }, $true))
+        $loadEndStatements = @($loadEntryPoint.Body.EndBlock.Statements)
+        if ($allReturnStatements.Count -ne 1 -or $loadReturnStatements.Count -ne 1 -or
+            $providerReturnStatements.Count -ne 0 -or $loadEndStatements.Count -eq 0 -or
+            $loadEndStatements[-1] -isnot [System.Management.Automation.Language.ReturnStatementAst] -or
+            $loadEndStatements[-1].Extent.StartOffset -ne $loadReturnStatements[0].Extent.StartOffset -or
+            $loadReturnStatements[0].Parent -ne $loadEntryPoint.Body.EndBlock -or
+            $null -eq $loadReturnStatements[0].Pipeline -or
+            @($loadReturnStatements[0].Pipeline.PipelineElements).Count -ne 1 -or
+            $loadReturnStatements[0].Pipeline.PipelineElements[0] -isnot
+                [System.Management.Automation.Language.CommandAst] -or
+            $loadReturnStatements[0].Pipeline.PipelineElements[0].GetCommandName() -cne
+                'New-CddsiOperationResult' -or
+            $loadReturnStatements[0].Pipeline.PipelineElements[0].Extent.StartOffset -ne
+                $successResults[0].Extent.StartOffset) {
+            throw "$relative must end the loader with the only direct return of the only success result."
+        }
+
+        $deniedLedgerCommands = @($providerCommands | Where-Object {
+            (Get-CddsiCommandName -CommandAst $_) -ceq 'Add-CddsiProductAccessLedgerEntry' -and
+                $_.Extent.Text -match '(?i)-Outcome\s+Denied(?:\s|$)'
+        })
+        $providerFailureLedgerCommands = @($providerCommands | Where-Object {
+            (Get-CddsiCommandName -CommandAst $_) -ceq 'Add-CddsiProductAccessLedgerEntry' -and
+                $_.Extent.Text -match '(?i)-Outcome\s+ProviderFailure(?:\s|$)'
+        })
+        if ($deniedLedgerCommands.Count -ne 1 -or $providerFailureLedgerCommands.Count -ne 1) {
+            throw "$relative must ledger one Denied path and one ProviderFailure path."
+        }
+        if ($deniedLedgerCommands[0].Extent.Text -notmatch '(?i)-Allowed\s+\$false' -or
+            $deniedLedgerCommands[0].Extent.Text -notmatch '(?i)-Expected\s+\$false' -or
+            $deniedLedgerCommands[0].Extent.Text -notmatch '(?i)-ProviderEvidenceDigest\s+\$null' -or
+            $providerFailureLedgerCommands[0].Extent.Text -notmatch '(?i)-Allowed\s+\$true' -or
+            $providerFailureLedgerCommands[0].Extent.Text -notmatch '(?i)-Expected\s+\$true' -or
+            $providerFailureLedgerCommands[0].Extent.Text -notmatch '(?i)-IsMutation\s+\$false' -or
+            $providerFailureLedgerCommands[0].Extent.Text -notmatch '(?i)-FailureInjected\s+\$false' -or
+            $providerFailureLedgerCommands[0].Extent.Text -notmatch '(?i)-ProviderEvidenceDigest\s+\$null') {
+            throw "$relative Live read-only ledger outcomes do not match their exact fail-closed schemas."
+        }
+        if ($providerAssertGate.Extent.StartOffset -ge $deniedLedgerCommands[0].Extent.StartOffset -or
+            $providerAssertGate.Extent.StartOffset -ge $providerFailureLedgerCommands[0].Extent.StartOffset) {
+            throw "$relative must assert the loaded Live context before recording provider outcomes."
+        }
+
+        $providerText = $providerEntryPoint.Extent.Text
+        foreach ($requiredDenialCode in @(
+            'LIVE_READ_ONLY_ARGUMENTS_DENIED',
+            'LIVE_READ_ONLY_RESOURCE_DENIED',
+            'LIVE_READ_ONLY_CAPABILITY_DENIED',
+            'LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED'
+        )) {
+            if ($providerText -cnotmatch ("['`"]" + [regex]::Escape($requiredDenialCode) + "['`"]")) {
+                throw "$relative omits stable provider error code $requiredDenialCode."
+            }
+        }
+        foreach ($providerName in @(
+            'FileSystem', 'Environment', 'Registry', 'Process', 'Network',
+            'Package', 'Feature', 'Service', 'Credential', 'Clock'
+        )) {
+            if ($providerText -cnotmatch ('\$Context\.Providers\.' + [regex]::Escape($providerName) + '\.Capabilities')) {
+                throw "$relative does not inspect the $providerName LiveReadOnly capability partition."
+            }
+        }
+        if ($providerText -cmatch '\$_\.Provider') {
+            throw "$relative must derive provider identity from the exact provider partition, not a capability field."
+        }
+        foreach ($counterName in @('ForbiddenResourceAccessCount', 'UnexpectedEntryCount')) {
+            $counterAssignments = @($providerEntryPoint.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left.Extent.Text -ceq ('$Context.AccessLedger.' + $counterName)
+            }, $true))
+            if ($counterAssignments.Count -ne 1 -or
+                $counterAssignments[0].Extent.StartOffset -le $deniedLedgerCommands[0].Extent.EndOffset) {
+                throw "$relative must increment $counterName after recording a denied request."
+            }
+        }
+
+        $memberAssignments = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left -is [System.Management.Automation.Language.MemberExpressionAst]
+        }, $true))
+        $actualMemberAssignmentContracts = @($memberAssignments | ForEach-Object {
+            '{0}|{1}|{2}' -f
+                $_.Operator.ToString(),
+                $_.Left.Extent.Text,
+                $_.Right.Extent.Text
+        } | Sort-Object)
+        $expectedMemberAssignmentContracts = @(
+            'Equals|$Context.Providers|$loadedProviderSet'
+            'Equals|$Context.AccessLedger.LiveProviderLoaded|$true'
+            'Equals|$Context.Providers|$previousProviderSet'
+            'Equals|$Context.AccessLedger.LiveProviderLoaded|$previousLiveProviderLoaded'
+            'Equals|$Context.AccessLedger.ForbiddenResourceAccessCount|[long]$Context.AccessLedger.ForbiddenResourceAccessCount + 1L'
+            'Equals|$Context.AccessLedger.UnexpectedEntryCount|[long]$Context.AccessLedger.UnexpectedEntryCount + 1L'
+        ) | Sort-Object
+        if (($actualMemberAssignmentContracts -join "`n") -cne
+            ($expectedMemberAssignmentContracts -join "`n")) {
+            throw "$relative member-assignment allow-list drift."
+        }
+        $unsupportedAssignmentTargets = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left -isnot [System.Management.Automation.Language.VariableExpressionAst] -and
+                $node.Left -isnot [System.Management.Automation.Language.MemberExpressionAst]
+        }, $true))
+        if ($unsupportedAssignmentTargets.Count -gt 0) {
+            throw "$relative must not use indexed or other indirect assignment targets."
+        }
+
+        $unresolvedLiveCommands = @($commands | Where-Object {
+            [string]::IsNullOrWhiteSpace($_.GetCommandName())
+        })
+        $nonDirectLiveCommands = @($commands | Where-Object {
+            $_.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Unknown
+        })
+        if ($unresolvedLiveCommands.Count -gt 0 -or $nonDirectLiveCommands.Count -gt 0) {
+            throw "$relative must use only statically named, directly invoked safe commands."
+        }
+        $liveRedirections = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.RedirectionAst]
+        }, $true))
+        if ($liveRedirections.Count -gt 0) {
+            throw "$relative must not use PowerShell redirection syntax."
+        }
+        $actualLiveCommands = @(
+            $commands |
+                ForEach-Object { $_.GetCommandName() } |
+                Sort-Object -Unique
+        )
         $allowedLiveCommands = @($boundary.Rules.LiveAdapterCommandAllowList[$relative] | Sort-Object)
         if (($actualLiveCommands -join "`n") -cne ($allowedLiveCommands -join "`n")) {
-            throw "$relative system-command capability allow-list drift."
+            throw "$relative exact safe command allow-list drift."
         }
         foreach ($hostCommand in @($commands | Where-Object { $forbiddenCommands -ccontains (Get-CddsiCommandName -CommandAst $_) })) {
             if ($hostCommand.Extent.StartOffset -le $receiptGate.Extent.EndOffset) {
@@ -2197,13 +2793,64 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
             }
         }
         $types = @(Get-CddsiAstTypeNames -Ast $ast | Sort-Object -Unique)
-        $actualLiveTypePrefixes = @($forbiddenTypePrefixes | Where-Object {
-            $prefix = $_
-            @($types | Where-Object { $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
-        } | Sort-Object)
-        $allowedLiveTypePrefixes = @($boundary.Rules.LiveAdapterTypePrefixAllowList[$relative] | Sort-Object)
-        if (($actualLiveTypePrefixes -join "`n") -cne ($allowedLiveTypePrefixes -join "`n")) {
-            throw "$relative system-type capability allow-list drift."
+        $attributeTypeNames = @(
+            $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.AttributeAst]
+            }, $true) |
+                ForEach-Object { $_.TypeName.FullName }
+        )
+        $actualLiveTypes = @(($types + $attributeTypeNames) | Sort-Object -Unique)
+        $allowedLiveTypes = @($boundary.Rules.LiveAdapterTypePrefixAllowList[$relative] | Sort-Object)
+        if (($actualLiveTypes -join "`n") -cne ($allowedLiveTypes -join "`n")) {
+            throw "$relative exact safe type allow-list drift."
+        }
+        $invokeMemberExpressions = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst]
+        }, $true))
+        if ($invokeMemberExpressions.Count -gt 0) {
+            throw "$relative must not invoke object or static methods."
+        }
+        $liveVariableNames = @(
+            $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.VariableExpressionAst] }, $true) |
+                ForEach-Object { $_.VariablePath.UserPath } |
+                Sort-Object -Unique
+        )
+        $liveVariableHits = @($liveVariableNames | Where-Object {
+            $_.IndexOf(':', [StringComparison]::Ordinal) -ge 0 -or
+                @($boundary.Rules.LiveAdapterForbiddenVariableNames) -ccontains $_ -or
+                ($boundary.Rules.LiveAdapterForbidEnvironmentVariables -and
+                    $_.StartsWith('env:', [StringComparison]::OrdinalIgnoreCase))
+        })
+        if ($liveVariableHits.Count -gt 0) {
+            throw "$relative resolves forbidden scoped, provider, user or environment variables: $($liveVariableHits -join ', ')."
+        }
+        $liveText = [System.IO.File]::ReadAllText((Join-Path $script:Root $relative))
+        foreach ($forbiddenTextPattern in @($boundary.Rules.LiveAdapterForbiddenTextPatterns)) {
+            if ([regex]::IsMatch($liveText, [string]$forbiddenTextPattern)) {
+                throw "$relative contains a forbidden user-profile resource pattern."
+            }
+        }
+        $actualSystemCapabilitySites = New-Object System.Collections.Generic.List[string]
+        foreach ($command in $commands) {
+            $commandName = Get-CddsiCommandName -CommandAst $command
+            if ($commandName -and @($boundary.Rules.LiveAdapterSystemCapabilityCommands) -ccontains $commandName) {
+                $actualSystemCapabilitySites.Add(('Command|{0}|{1}' -f $commandName, $command.Extent.StartOffset))
+            }
+        }
+        foreach ($typeName in $types) {
+            foreach ($prefix in @($boundary.Rules.LiveAdapterSystemCapabilityTypePrefixes)) {
+                if ($typeName.StartsWith([string]$prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                    $actualSystemCapabilitySites.Add(('Type|{0}' -f $typeName))
+                    break
+                }
+            }
+        }
+        $expectedSystemCapabilitySites = @($boundary.Rules.LiveAdapterSystemCapabilitySites[$relative])
+        if ((@($actualSystemCapabilitySites | Sort-Object) -join "`n") -cne
+            (@($expectedSystemCapabilitySites | Sort-Object) -join "`n")) {
+            throw "$relative system-capability sites differ from the exact empty allow-list."
         }
         $reflectionHits = @(Get-CddsiForbiddenReflectionFindings -Ast $ast)
         if ($reflectionHits.Count -gt 0) { throw "$relative uses forbidden reflection or dynamic code: $($reflectionHits -join ', ')" }

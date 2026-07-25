@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 ## 定位
 
@@ -8,12 +8,13 @@
 Anthropic 官方 Third-Party managed configuration 连接 DeepSeek，固定以 Chat、
 内置 Code 和 Cowork 三项全部可用为产品目标。
 
-宿主机交接版本仍为 `Scaffold`，领域模块的 Live 动作无条件失败；D-026 授权
-disposable VM 在独立 `VmDevelopment` 通道内完成这些实现，而不是把当前脚手架
-误称为可用产品。P1 已实现
-ExecutionContext、十类 provider contract、default-deny fake provider、
-AccessLedger、state-store provider 边界和 trusted HostSandbox；没有 live adapter
-进入默认 bootstrap 或本地执行图。
+公开入口仍为 `Scaffold`，领域模块的 Live 动作无条件失败；D-026 授权 disposable
+VM 在独立 `VmDevelopment` 通道内完成这些实现，而不是把当前脚手架误称为可用产品。
+P1 已实现 ExecutionContext、十类 provider contract、default-deny fake provider、
+AccessLedger、state-store provider 边界和 trusted HostSandbox。当前又完成隔离的
+`LiveReadOnly` 装载合同，但调度来源仍未绑定；11 个只读 capability 在任何同名函数
+调用前稳定以 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND` 失败，保持零 OS I/O；
+live adapter 仍不进入默认 bootstrap 或本地/CI 执行图。
 
 当前架构采用两段式单写者模型：
 
@@ -108,10 +109,43 @@ Feature、Service、Credential、Clock。
 
 - fake/sandbox provider 是本地和 CI 唯一可加载实现。
 - live adapter 使用精确文件 allow-list，不能由默认 bootstrap 加载。
-- VmDevelopment 授权骨架先构造不可执行的 `Unloaded` provider set；只有 package-bound
+- VmDevelopment 授权骨架先构造不可执行的 `Unloaded` provider set；只有
   stage manifest、精确 stage/tier/profile、独立 `LoadLiveProviders` 确认和已提交
-  single-use CAS receipt 全部匹配时才能到达 adapter 边界。当前边界仍返回
-  `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`，没有系统能力。
+  single-use CAS receipt 全部匹配时才能到达 adapter 边界。装载成功只会产生绑定
+  run/stage/tier/profile、调用方声明的 adapter SHA-256 字段、load operation-use ID/receipt 和
+  capability-set digest 的 `LiveReadOnly` provider set；它不授予 mutation capability。
+  当前 SHA-256 字段只做格式和传递校验；在受信规范化路径、实际文件重新哈希和组合
+  load receipt 实现前，不得称为 package-bound adapter identity。
+- `LiveReadOnly` 每个 provider contract 都显式包含 `Access=ReadOnly`。provider 分区内
+  capability 的精确字段为 `SchemaVersion=1/Operation/ResourceToken/ArgumentNames/ResultSchemaId`；
+  capability-set digest 将分区 Provider 名与后四个 capability 字段组成五段 canonical
+  line，并做 ordinal sort 后绑定。它只接受
+  以下 11 个精确 tuple；Operation 均为 `Inspect`，Arguments 必须是空 dictionary：
+
+  | Provider | ResourceToken | ResultSchemaId |
+  | --- | --- | --- |
+  | `Environment` | `<ENVIRONMENT:WINDOWS>` | `WindowsEnvironmentObservation/v1` |
+  | `Environment` | `<ENVIRONMENT:HARDWARE_VIRTUALIZATION>` | `HardwareVirtualizationObservation/v1` |
+  | `Environment` | `<KNOWN_FOLDERS:CURRENT_USER>` | `CurrentUserKnownFoldersObservation/v1` |
+  | `Package` | `<PACKAGE:CLAUDE_DESKTOP>` | `ClaudeDesktopPackageInventory/v1` |
+  | `Process` | `<PROCESS:GIT_FOR_WINDOWS>` | `GitForWindowsInventory/v2` |
+  | `Feature` | `<FEATURE:VIRTUAL_MACHINE_PLATFORM>` | `VirtualMachinePlatformObservation/v1` |
+  | `Service` | `<SERVICE:COWORK>` | `CoworkServiceObservation/v1` |
+  | `Registry` | `<HKLM_MANAGED_POLICY>` | `ClaudeConfigSourceMetadata/v1` |
+  | `Registry` | `<HKCU_MANAGED_POLICY>` | `ClaudeConfigSourceMetadata/v1` |
+  | `FileSystem` | `<CONFIG_LIBRARY>` | `ClaudeConfigSourceMetadata/v1` |
+  | `Process` | `<PROCESS:CLAUDE_DESKTOP>` | `ClaudeDesktopProcessInventory/v1` |
+
+- 本批不实现任何 tuple 的系统读取。当前 provider set 尚未绑定 adapter 的规范化绝对
+  路径、函数定义 SHA-256 与 load receipt 组合摘要，因此合法 tuple 也会在查询或调用
+  任何 ambient 同名函数、写入 ledger 或改变 context 前抛出
+  `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`。adapter 内的精确
+  `ProviderFailure/LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED` 分支只受静态合同约束，
+  不是当前 dispatcher 可达的产品路径。未装载、越界 tuple、非空参数或绑定漂移同样
+  在 provider 调用前 fail closed。
+- adapter 静态策略绝对禁止定位或接触真实
+  `%USERPROFILE%\.claude\settings.json`，包括 `Test-Path`、枚举、哈希、读取、备份、
+  写入和删除；known folders 只能作为结构化观察返回，不得转化为该禁区的访问能力。
 - D-026 下 live adapter 的实现和首次真实执行只在 disposable VM 的
   `VmDevelopment` stage；最终 acceptance 只消费重新冻结的候选。
 - trusted test harness 使用另一份精确 allow-list，只能创建自有 sandbox、启动
@@ -430,18 +464,18 @@ VMP 首版使用 `-NoRestart` 和人工重启后重新双击续跑，不创建�
 
 ## Claude Code settings
 
-项目正式选择零读取政策：不定位、不 Test-Path、不哈希、不监视、不备份、不修改
-`%USERPROFILE%\.claude\settings.json`。
-
-宿主机完整性证明来自 provider 无访问、AST 门和 sandbox ledger；后续 disposable
-VM 可以在 VM 自身范围建立基线，但不授权宿主机读取。
+项目正式选择绝对零接触政策：任何 stage/mode/provider 都不定位、不 Test-Path、
+不枚举、不读取、不哈希、不监视、不备份、不写入或删除
+`%USERPROFILE%\.claude\settings.json`。disposable VM、真实用户验收和 known-folder
+探测都没有例外；只能对不指向该真实文件的 synthetic 项目资源建立测试基线。
 
 ## 架构不变量
 
 - 默认 bootstrap 无副作用。
 - 领域模块不直接访问真实系统。
 - 缺 Context/provider fail closed。
-- 本机/CI 不加载 live adapter。
+- 本机/CI 默认 bootstrap 不加载 live adapter；contract tests 只解析其 AST，运行时
+  loaded-context/dispatcher 覆盖也只能走零-I/O 绑定/失败路径。
 - trusted test harness 与产品 provider 使用独立 allow-list/ledger。
 - 验签先于安装。
 - 凭据先保护后持久化配置。

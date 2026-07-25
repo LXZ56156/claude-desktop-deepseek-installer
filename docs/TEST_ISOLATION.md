@@ -1,6 +1,6 @@
 # 宿主机零接触测试合同
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
@@ -30,9 +30,13 @@ trusted harness 分平面记账；worker evidence、仓库快照和 Release Simu
 并发修改、force push 或用第二个 PR 分叉同一修复。D-026 不把这一权限扩展到宿主机、
 CI 或最终冻结候选验收。
 
-当前 VM 尚无 guest 外部可恢复 clean snapshot receipt，因此本轮没有使用上述 Live
-授权，只执行 repository 源码、fake、TestSafe、DryRun 和隔离测试工作；安装、注册表、
-AppX、VMP、服务、Credential Manager 及其他真实系统写入仍未开始。
+当前 VM 尚无 guest 外部可恢复 clean snapshot receipt，因此本轮没有执行真实系统
+探测或使用上述 Live mutation 授权，只执行 repository 源码、fake、TestSafe、DryRun
+和隔离 contract。新 `LiveReadOnly` loaded-context 只验证装载结构和调用方声明字段；
+它尚未把 adapter SHA-256 与受信包内文件重新哈希绑定。冻结的 11 个
+tuple 在任何 ambient 函数调用、ledger 写入或 OS I/O 前统一
+`LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`。安装、注册表、AppX、VMP、服务、
+Credential Manager 及其他真实系统读取/写入仍未开始。
 
 realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler
 及 `codex exec resume` 继续退役，不得恢复、调用或作为隔离门。tracked operator
@@ -246,12 +250,38 @@ Provider 至少覆盖：
 
 - TestSafe 或自动化 DryRun 缺 Context/fake provider 时立即失败。
 - TestSafe/DryRun 只能使用 `Fake` provider 且 `AllowLiveProvider=false`。
-- Live context 只能使用 `Unloaded` provider，且只接受
+- Live context 初始只能使用 `Unloaded` provider，且只接受
   `VmDevelopment/VmDevelopment`、`VmAcceptance/VmAcceptance`、
   `UserLive/UserLive` 三个精确 Stage/EnvironmentTier 组合；HostSandbox/CI
   永远不能构造 Live context。
 - `Unloaded` 不是 provider 实现；任何调度都以 `LIVE_PROVIDER_NOT_LOADED`
   fail closed，`LIVE_PROVIDER_LOADED` 仍为 false。
+- 产品授权 loader 路径只有在已提交的 `LoadLiveProviders` operation-use receipt、
+  stage/profile、RunId、adapter SHA-256 和 manifest 全部精确绑定后，才可把
+  `LiveReadOnly` provider set 装入现有 Live context。公开纯构造器只构造并验证
+  结构候选，供合同测试和 loader 内部使用；它不读取或重新验证外部 receipt，
+  不能代替产品 loader 的授权证据。
+  每个 provider contract 必须含 `Access=ReadOnly`；provider 分区内每个 capability
+  精确包含 `SchemaVersion=1/Operation/ResourceToken/ArgumentNames/ResultSchemaId`。
+  capability-set digest 将分区 Provider 名与后四个 capability 字段组成 canonical line，
+  经过 ordinal sort 后绑定。冻结以下 11 个 tuple；全部
+  Operation=`Inspect` 且 ArgumentNames 为空：
+  `Environment/<ENVIRONMENT:WINDOWS>`、
+  `Environment/<ENVIRONMENT:HARDWARE_VIRTUALIZATION>`、
+  `Environment/<KNOWN_FOLDERS:CURRENT_USER>`、
+  `Package/<PACKAGE:CLAUDE_DESKTOP>`、
+  `Process/<PROCESS:GIT_FOR_WINDOWS>`、
+  `Feature/<FEATURE:VIRTUAL_MACHINE_PLATFORM>`、
+  `Service/<SERVICE:COWORK>`、
+  `Registry/<HKLM_MANAGED_POLICY>`、
+  `Registry/<HKCU_MANAGED_POLICY>`、
+  `FileSystem/<CONFIG_LIBRARY>`、
+  `Process/<PROCESS:CLAUDE_DESKTOP>`。
+- 当前合法 tuple 尚未绑定可信 adapter 来源和函数定义；dispatcher 在查询或调用任何
+  ambient 同名函数、写 ledger 或改变 context 前抛出
+  `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`。adapter 内的
+  `ProviderFailure/LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED` 分支只受静态合同约束，
+  不是当前可达的产品路径。这不是读取成功，也不能作为 Live evidence。
 - 不允许从 fake 回退到真实系统。
 - 领域模块不得直接调用系统 cmdlet 或 .NET 系统 API。
 - live adapter 位于独立允许列表，不由本地测试 bootstrap 加载。
@@ -364,6 +394,10 @@ REJECTED_UNSAFE` 状态。stderr 只允许输出具名的
 - Credential/DPAPI 调用。
 
 默认策略全部拒绝。每个测试场景声明精确允许序列，结束时核对无额外调用。
+`ScenarioBindingToken` 对完整 ExpectedCalls/FailureInjections 安全数据图做规范化
+序列化并计算 SHA-256；它拒绝可执行/扩展属性、循环、超限深度和超限体积，并在每次
+断言时重算，以发现场景被删除或改写。该值是无密钥的结构完整性校验，不是 MAC、
+外部 receipt 或抗同权限协同伪造证明，不得当作 release evidence。
 
 Sandbox 中建立 synthetic canary：
 
@@ -416,6 +450,9 @@ TestSafe/DryRun 的每个 mutation spy 调用次数必须为零，返回结果�
 - 领域模块、测试和入口不得解析真实 UserProfile/LocalAppData。
 - 禁止动态命令调用、`Invoke-Expression`、shell 字符串拼接和隐式 provider。
 - live adapter 不能由 TestSafe bootstrap 导入。
+- live adapter 不得引用用户 profile/home 环境变量、`.claude` 或 `settings.json`，
+  不得定位、Test-Path、枚举、哈希、读取、备份、写入或删除真实
+  `%USERPROFILE%\.claude\settings.json`；disposable VM 也没有例外。
 - 测试 fixtures、docs、代码和 Release 全量 secret scan。
 
 新增 live adapter 或 trusted harness 文件时，必须同时增加对应 allow-list、

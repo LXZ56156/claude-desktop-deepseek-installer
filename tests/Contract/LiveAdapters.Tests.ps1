@@ -11,6 +11,37 @@
         [ref]$script:LiveTokens,
         [ref]$script:LiveErrors
     )
+
+    function Get-CddsiLiveAdapterTestSha256 {
+        param([Parameter(Mandatory = $true)][string]$Text)
+
+        $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Text)
+        $algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return [System.BitConverter]::ToString(
+                $algorithm.ComputeHash($bytes)
+            ).Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $algorithm.Dispose()
+        }
+    }
+
+    function Get-CddsiLiveAdapterFunctionSourceDigestContracts {
+        param([Parameter(Mandatory = $true)]$Ast)
+
+        return @(
+            $Ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+            }, $true) |
+                ForEach-Object {
+                    $normalizedSource = $_.Extent.Text.Replace("`r`n", "`n").Replace("`r", "`n")
+                    '{0}|{1}' -f $_.Name, (Get-CddsiLiveAdapterTestSha256 -Text $normalizedSource)
+                } |
+                Sort-Object
+        )
+    }
 }
 
 Describe 'Live adapter static isolation boundary' {
@@ -25,10 +56,24 @@ Describe 'Live adapter static isolation boundary' {
         @($script:ReleaseManifest.DevelopmentOnlyFiles) | Should -Not -Contain $script:LiveRelative
         @($script:ReleaseManifest.DevelopmentOnlyFiles) | Should -Contain 'tests/Contract/LiveAdapters.Tests.ps1'
 
-        foreach ($ruleName in @('LiveAdapterEntryPoints', 'LiveAdapterCommandAllowList', 'LiveAdapterTypePrefixAllowList')) {
+        foreach ($ruleName in @(
+            'LiveAdapterEntryPoints',
+            'LiveAdapterCommandAllowList',
+            'LiveAdapterTypePrefixAllowList',
+            'LiveAdapterDirectPipelineAllowList',
+            'LiveAdapterFunctionSourceDigestAllowList',
+            'LiveAdapterSystemCapabilitySites'
+        )) {
             @($script:Boundary.Rules[$ruleName].Keys).Count | Should -Be 1
             @($script:Boundary.Rules[$ruleName].Keys)[0] | Should -BeExactly $script:LiveRelative
         }
+        $script:Boundary.Rules.LiveAdapterLoadEntryPoint | Should -BeExactly 'Invoke-CddsiLiveAdapterOperation'
+        $script:Boundary.Rules.LiveAdapterProviderEntryPoint | Should -BeExactly 'Invoke-CddsiLiveReadOnlyProviderOperation'
+        (@($script:Boundary.Rules.LiveAdapterEntryPoints[$script:LiveRelative] | Sort-Object) -join "`n") |
+            Should -BeExactly ((@(
+                'Invoke-CddsiLiveAdapterOperation'
+                'Invoke-CddsiLiveReadOnlyProviderOperation'
+            ) | Sort-Object) -join "`n")
         $script:Boundary.Rules.LiveAdapterRequiredOperation | Should -BeExactly 'LoadLiveProviders'
         $bindingTexts = @(
             $script:Boundary.Rules.LiveAdapterAllowedBindings |
@@ -62,54 +107,67 @@ Describe 'Live adapter static isolation boundary' {
                 [string]::IsNullOrWhiteSpace($_.GetCommandName())
         }).Count | Should -Be 0
         @($script:LiveAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.UsingStatementAst] }, $true)).Count | Should -Be 0
+
+        $configuredFunctionDigests = @(
+            $script:Boundary.Rules.LiveAdapterFunctionSourceDigestAllowList[$script:LiveRelative] |
+                ForEach-Object { [string]$_ }
+        )
+        $configuredFunctionDigests.Count | Should -Be 2
+        @($configuredFunctionDigests | Sort-Object -Unique).Count | Should -Be 2
+        @($configuredFunctionDigests | Where-Object {
+            $_ -cnotmatch '^[A-Za-z][A-Za-z0-9-]*\|[a-f0-9]{64}$'
+        }).Count | Should -Be 0
+        (Get-CddsiLiveAdapterTestSha256 -Text ($configuredFunctionDigests -join "`n")) |
+            Should -BeExactly '3d565a3d288c564ad0459b346a059c68c5b90df2994552741c4b939370a8cc3c'
+        $actualFunctionDigests = @(Get-CddsiLiveAdapterFunctionSourceDigestContracts -Ast $script:LiveAst)
+        ($actualFunctionDigests -join "`n") |
+            Should -BeExactly ((@($configuredFunctionDigests | Sort-Object)) -join "`n")
     }
 
-    It 'requires one exact Live binding and LoadLiveProviders receipt before returning the stable disabled result' {
+    It 'binds the package hash and committed LoadLiveProviders receipt before installing a loaded read-only context' {
         $functions = @($script:LiveAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
-        $functions.Count | Should -Be 1
-        $functions[0].Name | Should -BeExactly 'Invoke-CddsiLiveAdapterOperation'
-
+        $functions.Count | Should -Be 2
+        (@($functions.Name | Sort-Object) -join "`n") | Should -BeExactly ((@(
+            'Invoke-CddsiLiveAdapterOperation'
+            'Invoke-CddsiLiveReadOnlyProviderOperation'
+        ) | Sort-Object) -join "`n")
+        $loadFunction = @($functions | Where-Object Name -CEQ 'Invoke-CddsiLiveAdapterOperation')[0]
         $requiredParameters = @(
             'Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState',
-            'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc'
+            'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc', 'AdapterSha256'
         )
-        $parameters = @($functions[0].Body.ParamBlock.Parameters)
+        $parameters = @($loadFunction.Body.ParamBlock.Parameters)
         (@($parameters | ForEach-Object { $_.Name.VariablePath.UserPath } | Sort-Object) -join "`n") |
             Should -BeExactly (@($requiredParameters | Sort-Object) -join "`n")
         foreach ($parameter in $parameters) {
-            $mandatoryArguments = @(
+            @(
                 $parameter.Attributes |
                     Where-Object { $_.TypeName.FullName -ceq 'Parameter' } |
                     ForEach-Object { $_.NamedArguments } |
                     Where-Object { $_.ArgumentName -ieq 'Mandatory' }
-            )
-            @($mandatoryArguments).Count | Should -Be 1
-            $mandatoryArguments[0].Argument.Extent.Text | Should -BeExactly '$true'
+            ).Count | Should -Be 1
         }
 
-        $commands = @($script:LiveAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
-        $assertGate = @($commands | Where-Object { $_.GetCommandName() -ceq 'Assert-CddsiExecutionContext' })
-        $receiptGate = @($commands | Where-Object { $_.GetCommandName() -ceq 'Test-CddsiCommittedOperationUseReceipt' })
-        $assertGate.Count | Should -Be 1
-        $receiptGate.Count | Should -Be 1
-        $assertGate[0].Extent.Text | Should -Match '(?i)-ExpectedMode\s+Live'
-        $assertGate[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
+        $commands = @($loadFunction.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+        $assertGates = @($commands | Where-Object { $_.GetCommandName() -ceq 'Assert-CddsiExecutionContext' } | Sort-Object { $_.Extent.StartOffset })
+        $receiptGates = @($commands | Where-Object { $_.GetCommandName() -ceq 'Test-CddsiCommittedOperationUseReceipt' })
+        $assertGates.Count | Should -Be 2
+        $receiptGates.Count | Should -Be 1
+        $assertGates[0].Extent.Text | Should -Match '(?i)-ExpectedMode\s+Live'
+        $assertGates[1].Extent.Text | Should -Match '(?i)-ExpectedMode\s+Live'
+        $assertGates[0].Extent.StartOffset | Should -BeLessThan $receiptGates[0].Extent.StartOffset
         foreach ($bindingName in @('StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc')) {
-            $receiptGate[0].Extent.Text | Should -Match ('(?i)-' + [regex]::Escape($bindingName) + '\s+')
+            $receiptGates[0].Extent.Text | Should -Match ('(?i)-' + [regex]::Escape($bindingName) + '\s+')
         }
 
-        $bindingHashtableNodes = @(
-            $functions[0].FindAll({
-                param($node)
-                if ($node -isnot [System.Management.Automation.Language.HashtableAst]) { return $false }
-                $keys = @($node.KeyValuePairs | ForEach-Object {
-                    if ($_.Item1 -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-                        [string]$_.Item1.Value
-                    }
-                } | Sort-Object)
-                return (($keys -join "`n") -ceq ((@('ArtifactProfile', 'EnvironmentTier', 'Stage') | Sort-Object) -join "`n"))
-            }, $true)
-        )
+        $bindingHashtableNodes = @($loadFunction.FindAll({
+            param($node)
+            if ($node -isnot [System.Management.Automation.Language.HashtableAst]) { return $false }
+            $keys = @($node.KeyValuePairs | ForEach-Object {
+                if ($_.Item1 -is [System.Management.Automation.Language.StringConstantExpressionAst]) { [string]$_.Item1.Value }
+            } | Sort-Object)
+            return (($keys -join "`n") -ceq ((@('ArtifactProfile', 'EnvironmentTier', 'Stage') | Sort-Object) -join "`n"))
+        }, $true))
         $sourceBindingTexts = @()
         foreach ($bindingNode in $bindingHashtableNodes) {
             $bindingValues = @{}
@@ -121,123 +179,231 @@ Describe 'Live adapter static isolation boundary' {
                 $valueNodes.Count | Should -Be 1
                 $bindingValues[[string]$pair.Item1.Value] = [string]$valueNodes[0].Value
             }
-            $sourceBindingTexts += '{0}|{1}|{2}' -f
-                $bindingValues.EnvironmentTier,
-                $bindingValues.Stage,
-                $bindingValues.ArtifactProfile
+            $sourceBindingTexts += '{0}|{1}|{2}' -f $bindingValues.EnvironmentTier, $bindingValues.Stage, $bindingValues.ArtifactProfile
         }
-        (@($sourceBindingTexts | Sort-Object) -join "`n") |
-            Should -BeExactly ((@(
-                'UserLive|UserLive|UserLive'
-                'VmAcceptance|VmAcceptance|VmAcceptance'
-                'VmDevelopment|VmDevelopment|VmDevelopment'
-            ) | Sort-Object) -join "`n")
-
-        $comparisonTokenKinds = @(
-            [System.Management.Automation.Language.TokenKind]::Ceq,
-            [System.Management.Automation.Language.TokenKind]::Cne
-        )
-        $comparisonNodes = @($functions[0].FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
-                $comparisonTokenKinds -ccontains $node.Operator
-        }, $true))
-        foreach ($requiredMemberText in @(
-            '$Context.EnvironmentTier',
-            '$Context.Stage',
-            '$StageManifest.Stage',
-            '$StageManifest.ArtifactProfile',
-            '$Context.RunId',
-            '$OperationGrant.RunId'
+        (@($sourceBindingTexts | Sort-Object) -join "`n") | Should -BeExactly ((@(
+            'UserLive|UserLive|UserLive'
+            'VmAcceptance|VmAcceptance|VmAcceptance'
+            'VmDevelopment|VmDevelopment|VmDevelopment'
+        ) | Sort-Object) -join "`n")
+        foreach ($requiredComparison in @(
+            '$Context.EnvironmentTier', '$Context.Stage', '$StageManifest.Stage',
+            '$StageManifest.ArtifactProfile', '$Context.RunId', '$OperationGrant.RunId'
         )) {
-            $memberComparisons = @($comparisonNodes | Where-Object {
-                $_.Extent.Text -cmatch [regex]::Escape($requiredMemberText)
-            })
-            $memberComparisons.Count | Should -BeGreaterThan 0
-            @($memberComparisons | Where-Object {
-                $_.Extent.StartOffset -lt $receiptGate[0].Extent.StartOffset
-            }).Count | Should -BeGreaterThan 0
+            $beforeReceipt = @($loadFunction.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+                    $node.Extent.Text -cmatch [regex]::Escape($requiredComparison)
+            }, $true) | Where-Object { $_.Extent.StartOffset -lt $receiptGates[0].Extent.StartOffset })
+            $beforeReceipt.Count | Should -BeGreaterThan 0
         }
+        $loadFunction.Extent.Text | Should -Match '\$Operation\s+-cne\s+[''"]LoadLiveProviders[''"]'
+        $loadFunction.Extent.Text | Should -Match '\$AdapterSha256\s+-cnotmatch\s+[''"]\^\[a-f0-9\]\{64\}\$[''"]'
 
-        $bindingMatchAssignments = @($functions[0].FindAll({
+        $constructors = @($commands | Where-Object { $_.GetCommandName() -ceq 'New-CddsiLiveReadOnlyProviderSet' })
+        $constructors.Count | Should -Be 1
+        $constructors[0].Extent.StartOffset | Should -BeGreaterThan $receiptGates[0].Extent.EndOffset
+        foreach ($parameterName in @(
+            'RunId', 'Stage', 'EnvironmentTier', 'ArtifactProfile', 'AdapterSha256',
+            'LoadOperationUseId', 'LoadReceiptBindingToken'
+        )) {
+            $constructors[0].Extent.Text | Should -Match ('(?i)-' + [regex]::Escape($parameterName) + '\s+')
+        }
+        $constructors[0].Extent.Text | Should -Match '-AdapterSha256\s+\$AdapterSha256'
+        $constructors[0].Extent.Text | Should -Match '-LoadReceiptBindingToken\s+\$OperationUseState\.ReceiptBindingToken'
+        $rollbackTryStatements = @($loadFunction.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.TryStatementAst]
+        }, $true))
+        $rollbackTryStatements.Count | Should -Be 1
+        $rollbackTry = $rollbackTryStatements[0]
+        $rollbackTry.Finally | Should -BeNullOrEmpty
+        $installStatements = @($rollbackTry.Body.Statements)
+        $installStatements.Count | Should -Be 3
+        $installStatements[0].Extent.Text |
+            Should -BeExactly '$Context.Providers = $loadedProviderSet'
+        $installStatements[1].Extent.Text |
+            Should -BeExactly '$Context.AccessLedger.LiveProviderLoaded = $true'
+        $installStatements[2].Extent.Text | Should -BeExactly (
+            'Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode Live | Out-Null'
+        )
+        $preInstallCaptures = @($loadFunction.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-                $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-                $node.Left.VariablePath.UserPath -ceq 'bindingMatches'
+                $node.Extent.Text -in @(
+                    '$previousProviderSet = $Context.Providers',
+                    '$previousLiveProviderLoaded = $Context.AccessLedger.LiveProviderLoaded'
+                )
         }, $true))
-        $bindingMatchAssignments.Count | Should -Be 1
-        foreach ($requiredMemberText in @(
-            '$Context.EnvironmentTier',
-            '$Context.Stage',
-            '$StageManifest.Stage',
-            '$StageManifest.ArtifactProfile'
-        )) {
-            $escapedRequiredMember = [regex]::Escape($requiredMemberText)
-            $bindingMatchAssignments[0].Right.Extent.Text |
-                Should -Match ('(?:' + $escapedRequiredMember + '\s+-ceq\s+|\s-ceq\s+' +
-                    $escapedRequiredMember + '(?:\s|$))')
+        $preInstallCaptures.Count | Should -Be 2
+        foreach ($capture in $preInstallCaptures) {
+            $capture.Extent.EndOffset | Should -BeLessThan $rollbackTry.Extent.StartOffset
         }
-        $bindingFailureBranches = @($functions[0].FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.IfStatementAst] -and
-                $node.Extent.Text -cmatch '\$bindingMatches\.Count\s+-ne\s+1' -and
-                @($node.FindAll({
-                    param($child)
-                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
-                }, $true)).Count -eq 1
-        }, $true))
-        $bindingFailureBranches.Count | Should -Be 1
-        $bindingFailureBranches[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
+        @($rollbackTry.CatchClauses).Count | Should -Be 1
+        $rollbackTry.CatchClauses[0].IsCatchAll | Should -BeTrue
+        @($rollbackTry.CatchClauses[0].CatchTypes).Count | Should -Be 0
+        $restoreStatements = @($rollbackTry.CatchClauses[0].Body.Statements)
+        $restoreStatements.Count | Should -Be 3
+        $restoreStatements[0].Extent.Text |
+            Should -BeExactly '$Context.Providers = $previousProviderSet'
+        $restoreStatements[1].Extent.Text |
+            Should -BeExactly '$Context.AccessLedger.LiveProviderLoaded = $previousLiveProviderLoaded'
+        $restoreStatements[2] |
+            Should -BeOfType ([System.Management.Automation.Language.ThrowStatementAst])
+        $restoreStatements[2].Pipeline | Should -BeNullOrEmpty
+        $assertGates[1].Extent.StartOffset | Should -BeGreaterThan $constructors[0].Extent.EndOffset
 
-        $runBindingFailureBranches = @($functions[0].FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.IfStatementAst] -and
-                $node.Extent.Text -cmatch '\$Context\.RunId\s+-cne\s+\$OperationGrant\.RunId' -and
-                @($node.FindAll({
-                    param($child)
-                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
-                }, $true)).Count -eq 1
-        }, $true))
-        $runBindingFailureBranches.Count | Should -Be 1
-        $runBindingFailureBranches[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
-
-        $operationComparisons = @($comparisonNodes | Where-Object {
-            $_.Extent.Text -cmatch '(?<![A-Za-z0-9_:])\$Operation(?![A-Za-z0-9_])' -and
-                $_.Extent.Text -cmatch "['`"]LoadLiveProviders['`"]"
-        })
-        $operationComparisons.Count | Should -Be 1
-        $operationComparisons[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
-        $operationFailureBranches = @($functions[0].FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.IfStatementAst] -and
-                $node.Extent.Text -cmatch '\$Operation\s+-cne\s+[''"]LoadLiveProviders[''"]' -and
-                @($node.FindAll({
-                    param($child)
-                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
-                }, $true)).Count -eq 1
-        }, $true))
-        $operationFailureBranches.Count | Should -Be 1
-        $operationFailureBranches[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
-
-        $notImplementedResults = @($commands | Where-Object {
+        $successResults = @($commands | Where-Object {
             $_.GetCommandName() -ceq 'New-CddsiOperationResult' -and
-                $_.Extent.Text -match '(?i)-Status\s+[''"]?ACTION_REQUIRED[''"]?' -and
-                $_.Extent.Text -match '(?i)-ErrorCode\s+[''"]LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED[''"]' -and
+                $_.Extent.Text -match '(?i)-Operation\s+[''"]LoadLiveProviders[''"]' -and
+                $_.Extent.Text -match '(?i)-Status\s+[''"]?SUCCEEDED[''"]?' -and
+                $_.Extent.Text -match '(?i)-Changed\s+\$false' -and
                 $_.Extent.Text -match '(?i)-Mode\s+Live(?:\s|$)'
         })
-        $notImplementedResults.Count | Should -Be 1
-        $notImplementedResults[0].Extent.StartOffset | Should -BeGreaterThan $receiptGate[0].Extent.EndOffset
-        $notImplementedResults[0].Extent.Text | Should -Not -Match '(?i)-Changed\s*:?\s*\$true'
+        $successResults.Count | Should -Be 1
+        $successResults[0].Extent.StartOffset | Should -BeGreaterThan $rollbackTry.Extent.EndOffset
+        $loadFunction.Extent.Text | Should -Match '\.CapabilitySetDigest'
+        $loadFunction.Extent.Text | Should -Not -Match 'LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED'
+    }
 
-        $forbiddenCommands = @($script:Boundary.Rules.ProductForbiddenCommands)
-        $actualSystemCommands = @(
-            $commands |
-                ForEach-Object { $_.GetCommandName() } |
-                Where-Object { $_ -and $forbiddenCommands -ccontains $_ } |
-                Sort-Object -Unique
+    It 'freezes eleven empty-argument capabilities and ledgers denied or unavailable dispatch without system access' {
+        $expectedCapabilities = @(
+            'Environment|Inspect|<ENVIRONMENT:WINDOWS>||WindowsEnvironmentObservation/v1'
+            'Environment|Inspect|<ENVIRONMENT:HARDWARE_VIRTUALIZATION>||HardwareVirtualizationObservation/v1'
+            'Environment|Inspect|<KNOWN_FOLDERS:CURRENT_USER>||CurrentUserKnownFoldersObservation/v1'
+            'Package|Inspect|<PACKAGE:CLAUDE_DESKTOP>||ClaudeDesktopPackageInventory/v1'
+            'Process|Inspect|<PROCESS:GIT_FOR_WINDOWS>||GitForWindowsInventory/v2'
+            'Feature|Inspect|<FEATURE:VIRTUAL_MACHINE_PLATFORM>||VirtualMachinePlatformObservation/v1'
+            'Service|Inspect|<SERVICE:COWORK>||CoworkServiceObservation/v1'
+            'Registry|Inspect|<HKLM_MANAGED_POLICY>||ClaudeConfigSourceMetadata/v1'
+            'Registry|Inspect|<HKCU_MANAGED_POLICY>||ClaudeConfigSourceMetadata/v1'
+            'FileSystem|Inspect|<CONFIG_LIBRARY>||ClaudeConfigSourceMetadata/v1'
+            'Process|Inspect|<PROCESS:CLAUDE_DESKTOP>||ClaudeDesktopProcessInventory/v1'
         )
-        (@($actualSystemCommands) -join "`n") |
-            Should -BeExactly (@($script:Boundary.Rules.LiveAdapterCommandAllowList[$script:LiveRelative] | Sort-Object) -join "`n")
+        $actualCapabilities = @($script:Boundary.Rules.LiveReadOnlyCapabilities | ForEach-Object {
+            (@($_.Keys | ForEach-Object { [string]$_ } | Sort-Object) -join "`n") |
+                Should -BeExactly ((@('ArgumentNames', 'Operation', 'Provider', 'ResourceToken', 'ResultSchemaId') | Sort-Object) -join "`n")
+            @($_.ArgumentNames).Count | Should -Be 0
+            '{0}|{1}|{2}|{3}|{4}' -f $_.Provider, $_.Operation, $_.ResourceToken, (@($_.ArgumentNames) -join ','), $_.ResultSchemaId
+        })
+        ($actualCapabilities -join "`n") | Should -BeExactly ($expectedCapabilities -join "`n")
+
+        $functions = @($script:LiveAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
+        $providerFunction = @($functions | Where-Object Name -CEQ 'Invoke-CddsiLiveReadOnlyProviderOperation')[0]
+        $parameters = @($providerFunction.Body.ParamBlock.Parameters)
+        (@($parameters.Name.VariablePath.UserPath | Sort-Object) -join "`n") |
+            Should -BeExactly ((@('Arguments', 'Context', 'Operation', 'Provider', 'ResourceToken') | Sort-Object) -join "`n")
+        foreach ($parameter in $parameters) {
+            @(
+                $parameter.Attributes |
+                    Where-Object { $_.TypeName.FullName -ceq 'Parameter' } |
+                    ForEach-Object { $_.NamedArguments } |
+                    Where-Object { $_.ArgumentName -ieq 'Mandatory' }
+            ).Count | Should -Be 1
+        }
+        $commands = @($providerFunction.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+        @($commands | Where-Object { $_.GetCommandName() -ceq 'Assert-CddsiExecutionContext' }).Count | Should -Be 1
+        $deniedLedger = @($commands | Where-Object {
+            $_.GetCommandName() -ceq 'Add-CddsiProductAccessLedgerEntry' -and $_.Extent.Text -match '(?i)-Outcome\s+Denied'
+        })
+        $providerFailureLedger = @($commands | Where-Object {
+            $_.GetCommandName() -ceq 'Add-CddsiProductAccessLedgerEntry' -and $_.Extent.Text -match '(?i)-Outcome\s+ProviderFailure'
+        })
+        $deniedLedger.Count | Should -Be 1
+        $providerFailureLedger.Count | Should -Be 1
+        $deniedLedger[0].Extent.Text | Should -Match '(?i)-Allowed\s+\$false'
+        $deniedLedger[0].Extent.Text | Should -Match '(?i)-Expected\s+\$false'
+        $deniedLedger[0].Extent.Text | Should -Match '(?i)-Provider\s+\$Provider'
+        $deniedLedger[0].Extent.Text | Should -Match '(?i)-Operation\s+\$ledgerOperation'
+        $deniedLedger[0].Extent.Text | Should -Match '(?i)-ProviderEvidenceDigest\s+\$null'
+        $providerFailureLedger[0].Extent.Text | Should -Match '(?i)-Allowed\s+\$true'
+        $providerFailureLedger[0].Extent.Text | Should -Match '(?i)-Expected\s+\$true'
+        $providerFailureLedger[0].Extent.Text | Should -Match '(?i)-Outcome\s+ProviderFailure'
+        $providerFailureLedger[0].Extent.Text | Should -Match '(?i)-ProviderEvidenceDigest\s+\$null'
+        foreach ($code in @(
+            'LIVE_READ_ONLY_ARGUMENTS_DENIED', 'LIVE_READ_ONLY_RESOURCE_DENIED',
+            'LIVE_READ_ONLY_CAPABILITY_DENIED', 'LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED'
+        )) {
+            $providerFunction.Extent.Text | Should -Match ([regex]::Escape($code))
+        }
+        foreach ($counterName in @('ForbiddenResourceAccessCount', 'UnexpectedEntryCount')) {
+            $providerFunction.Extent.Text | Should -Match ('\$Context\.AccessLedger\.' + $counterName + '\s*=')
+        }
+        foreach ($providerName in @(
+            'FileSystem', 'Environment', 'Registry', 'Process', 'Network',
+            'Package', 'Feature', 'Service', 'Credential', 'Clock'
+        )) {
+            $providerFunction.Extent.Text | Should -Match ('\$Context\.Providers\.' + $providerName + '\.Capabilities')
+        }
+        $providerFunction.Extent.Text | Should -Not -Match '\$_\.Provider'
+
+        $providerText = $providerFunction.Extent.Text
+        $providerSwitches = @($providerFunction.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.SwitchStatementAst] -and
+                $node.Extent.Text -cmatch '^switch\s+-CaseSensitive\s+\(\$Provider\)'
+        }, $true))
+        $providerSwitches.Count | Should -Be 1
+        $providerSwitches[0].Extent.StartOffset | Should -BeLessThan $deniedLedger[0].Extent.StartOffset
+        $providerText | Should -Match '\$providerIsExact\s*=\s*\$true'
+        $providerText | Should -Match 'default\s*\{\s*\$providerIsExact\s*=\s*\$false'
+        $providerText | Should -Match (
+            '\$ledgerOperation\s*=\s*if(?s:.*?)else\s*\{\s*' +
+            '[''"]RejectedCapability[''"]'
+        )
+        $providerGateBranches = @($providerFunction.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '^if\s*\(-not\s+\$providerIsExact\)'
+        }, $true))
+        $providerGateBranches.Count | Should -Be 1
+        $providerGate = $providerGateBranches[0]
+        $providerGate.Extent.Text |
+            Should -Match 'throw\s+[''"]LIVE_READ_ONLY_CAPABILITY_DENIED[''"]'
+        $providerGate.Extent.StartOffset | Should -BeGreaterThan $providerSwitches[0].Extent.EndOffset
+        $providerGate.Extent.EndOffset | Should -BeLessThan $deniedLedger[0].Extent.StartOffset
+        @($providerGate.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -ceq 'Add-CddsiProductAccessLedgerEntry'
+        }, $true)).Count | Should -Be 0
+        @($providerGate.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -cmatch '^\$Context\.'
+        }, $true)).Count | Should -Be 0
+        $contextAsserts = @($commands | Where-Object {
+            $_.GetCommandName() -ceq 'Assert-CddsiExecutionContext'
+        })
+        $contextAsserts.Count | Should -Be 1
+        $contextAsserts[0].Extent.EndOffset | Should -BeLessThan $providerSwitches[0].Extent.StartOffset
+        $allCapabilityAssignments = @($providerFunction.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -ceq '$allCapabilities'
+        }, $true))
+        $allCapabilityAssignments.Count | Should -Be 1
+        $allCapabilityAssignments[0].Extent.StartOffset |
+            Should -BeGreaterThan $providerSwitches[0].Extent.EndOffset
+
+        $liveText = [System.IO.File]::ReadAllText($script:LivePath)
+        foreach ($pattern in @($script:Boundary.Rules.LiveAdapterForbiddenTextPatterns)) {
+            $liveText | Should -Not -Match $pattern
+        }
+        $variables = @($script:LiveAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.VariableExpressionAst]
+        }, $true) | ForEach-Object { $_.VariablePath.UserPath } | Sort-Object -Unique)
+        @($variables | Where-Object {
+            @($script:Boundary.Rules.LiveAdapterForbiddenVariableNames) -ccontains $_ -or
+                $_.StartsWith('env:', [StringComparison]::OrdinalIgnoreCase)
+        }).Count | Should -Be 0
+        $systemCommands = @($commands | Where-Object {
+            $name = $_.GetCommandName()
+            $name -and @($script:Boundary.Rules.LiveAdapterSystemCapabilityCommands) -ccontains $name
+        })
+        $systemCommands.Count | Should -Be 0
+        @($script:Boundary.Rules.LiveAdapterSystemCapabilitySites[$script:LiveRelative]).Count | Should -Be 0
     }
 
     It 'keeps the exact default bootstrap graph disjoint from Live adapters' {

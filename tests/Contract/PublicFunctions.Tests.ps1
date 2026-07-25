@@ -229,7 +229,8 @@ Describe 'public function contracts' {
             'Write-CddsiLog',
             'Invoke-CddsiProviderOperation',
             'Invoke-CddsiFakeProviderOperation',
-            'Invoke-CddsiLiveAdapterOperation'
+            'Invoke-CddsiLiveAdapterOperation',
+            'Invoke-CddsiLiveReadOnlyProviderOperation'
         )) {
             $contract = $script:PublicContract.ParameterContracts[$name]
             $contract.Kind | Should -BeExactly 'ContextBound'
@@ -247,6 +248,79 @@ Describe 'public function contracts' {
         @($script:PublicContract.Files['lib/execution-context.ps1'] | Where-Object {
             $_ -ceq 'New-CddsiUnloadedProviderSet'
         }).Count | Should -Be 1
+
+        $liveReadOnlyContract = $script:PublicContract.ParameterContracts['New-CddsiLiveReadOnlyProviderSet']
+        $liveReadOnlyContract.Kind | Should -BeExactly 'Pure'
+        @($liveReadOnlyContract.Mandatory) -join '|' | Should -BeExactly (
+            'RunId|Stage|EnvironmentTier|ArtifactProfile|AdapterSha256|' +
+            'LoadOperationUseId|LoadReceiptBindingToken'
+        )
+        $liveReadOnlyContract.Mode | Should -BeFalse
+        @($script:PublicContract.Files['lib/execution-context.ps1'] | Where-Object {
+            $_ -ceq 'New-CddsiLiveReadOnlyProviderSet'
+        }).Count | Should -Be 1
+        $capabilityContract = $script:PublicContract.ParameterContracts[
+            'Get-CddsiLiveReadOnlyCapabilityContracts'
+        ]
+        $capabilityContract.Kind | Should -BeExactly 'Pure'
+        @($capabilityContract.Mandatory).Count | Should -Be 0
+        $capabilityContract.Mode | Should -BeFalse
+        @($script:PublicContract.Files['lib/execution-context.ps1'] | Where-Object {
+            $_ -ceq 'Get-CddsiLiveReadOnlyCapabilityContracts'
+        }).Count | Should -Be 1
+
+        $tupleContract = $script:PublicContract.ParameterContracts['Test-CddsiLiveReadOnlyCapabilityTuple']
+        $tupleContract.Kind | Should -BeExactly 'Pure'
+        @($tupleContract.Mandatory) -join '|' |
+            Should -BeExactly 'ProviderSet|Provider|Operation|ResourceToken|ArgumentCount'
+        $tupleContract.Mode | Should -BeFalse
+
+        $ledgerValueContract = $script:PublicContract.ParameterContracts['Assert-CddsiProductAccessLedgerEntryValues']
+        $ledgerValueContract.Kind | Should -BeExactly 'Pure'
+        @($ledgerValueContract.Mandatory) -join '|' | Should -BeExactly (
+            'ProviderSet|Provider|Operation|ResourceToken|ArgumentCount|Allowed|Expected|' +
+            'IsMutation|FailureInjected|Outcome|ErrorCode'
+        )
+        $ledgerValueContract.Mode | Should -BeFalse
+
+        $scenarioContract = $script:PublicContract.ParameterContracts['Assert-CddsiFakeProviderScenario']
+        $scenarioContract.Kind | Should -BeExactly 'Pure'
+        @($scenarioContract.Mandatory) | Should -Be @('ProviderSet')
+        $scenarioContract.Mode | Should -BeFalse
+
+        $scenarioBindingContract = $script:PublicContract.ParameterContracts['Get-CddsiFakeScenarioBindingToken']
+        $scenarioBindingContract.Kind | Should -BeExactly 'Pure'
+        @($scenarioBindingContract.Mandatory) |
+            Should -Be @('ExpectedCalls', 'FailureInjections')
+        $scenarioBindingContract.Mode | Should -BeFalse
+
+        $notePropertyContract = $script:PublicContract.ParameterContracts['Test-CddsiExactNotePropertySet']
+        $notePropertyContract.Kind | Should -BeExactly 'Pure'
+        @($notePropertyContract.Mandatory) | Should -Be @('InputObject', 'Expected')
+        $notePropertyContract.Mode | Should -BeFalse
+
+        $resourceContract = $script:PublicContract.ParameterContracts['Test-CddsiFakeResourceTokenAllowed']
+        $resourceContract.Kind | Should -BeExactly 'Pure'
+        @($resourceContract.Mandatory) | Should -Be @('Policy')
+        $resourceContract.Mode | Should -BeFalse
+
+        foreach ($movedHelper in @(
+            'Test-CddsiExactNotePropertySet',
+            'Get-CddsiFakeInputFieldNames',
+            'Get-CddsiFakeInputFieldValue',
+            'Test-CddsiFakeValueEqual',
+            'Get-CddsiFakeScenarioBindingToken',
+            'Test-CddsiFakeMutationOperation',
+            'Test-CddsiFakeResourceTokenAllowed',
+            'Assert-CddsiFakeProviderScenario'
+        )) {
+            @($script:PublicContract.Files['lib/execution-context.ps1'] | Where-Object {
+                $_ -ceq $movedHelper
+            }).Count | Should -Be 1
+            @($script:PublicContract.Files['lib/fake-providers.ps1'] | Where-Object {
+                $_ -ceq $movedHelper
+            }).Count | Should -Be 0
+        }
 
         $script:PublicContract.ParameterContracts['Initialize-CddsiConsoleEncoding'].Kind |
             Should -BeExactly 'ProcessScoped'

@@ -4,6 +4,34 @@
 
 ## 当前动态状态（唯一入口）
 
+**D026_SCOPE_FREEZE_IN_PROGRESS / SUPERSEDED_WIP_CHECKPOINT_ONLY /
+NON_RELEASE / NOT_A_CANDIDATE / NOT_READY_FOR_FORMAL_P10A /
+NOT_RELEASE_READY。**
+
+2026-07-25 收到明确产品范围变更后，D-026 实现和测试加固已停止；所有子代理均已
+停止写入，最后一次文件写入均完整结束。冻结 parent 为 branch
+`codex/repair/p10a-0a-fast-lane`、local/remote/PR #1 head
+`1a367046f00b64e61f677320d2ed9f25999bd9b8`，parent tree
+`90e12c2c34bcc2178ad27ef1d6f15f3ebd48e8f2`。当前 checkpoint 包含 22 个 tracked
+修改文件、无 staged 或 untracked 文件；它保存未完成工作，不代表这些设计继续获得
+产品权威。
+
+冻结最低检查仅包括：Windows PowerShell 5.1.26100.8875 对 13 个 changed
+`.ps1/.psd1` 文件解析 13/13；22 个 changed 文件编码检查 22/22；
+`git diff --check` 通过；tracked 170 files、release 10 files、evidence 334 files
+的脱敏 secret scan 均为 0 findings。未运行 ProductReleaseGate、历史诊断、PS7、
+Pester、HostSandbox、`scripts/check.ps1`、Release DryRun 或旧完整矩阵。
+
+已知未完成项：最后停止的子代理修改了 `lib/execution-context.ps1`、
+`lib/live-adapters.ps1`、`config/public-functions.psd1`、
+`tests/Contract/PublicFunctions.Tests.ps1` 和
+`tests/Unit/ExecutionContext.Tests.ps1`，但没有运行测试；
+`tests/Unit/FakeProviders.Tests.ps1` 与 `tests/Contract/LiveAdapters.Tests.ps1`
+尚未同步，Live function source digest 也未在 `config/execution-boundaries.psd1`、
+`scripts/check-worker.ps1` 和相应 contract 中重算，因此旧静态门预期失败。不得把
+这个 checkpoint 称为可运行产品、候选或发布证据；Git 静默安装、Claude 安装和
+Computer Use 均未真实通过。
+
 **D026_VM_ACCEPTANCE_FIRST / VM_DEVELOPMENT_NAMED_GATE_ACTIVE /
 VM_START_BINDING_CONFIRMED / HOST_WRITE_FROZEN_AFTER_HANDOFF /
 VM_SOLE_WRITER_ON_EXISTING_BRANCH_AND_PR1 / NAMED_PRODUCT_RELEASE_GATE_ACTIVE /
@@ -12,8 +40,11 @@ NAMED_GATE_FAILURE_EVIDENCE_FIX_DUAL_ENGINE_PASSED /
 PERSISTED_EVIDENCE_TIMESTAMP_ROUNDTRIP_FIX_DUAL_ENGINE_PASSED /
 PRODUCT_GATE_COMMIT_PUSHED_AND_CI_PASSED /
 VMDEVELOPMENT_AUTHORIZATION_SPINE_ACTIVE /
-LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED /
 VMDEVELOPMENT_AUTHORIZATION_SPINE_FINAL_GATES_PASSED /
+LIVE_READ_ONLY_LOADED_CONTRACT_ACTIVE /
+LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND /
+FAKE_LEDGER_SCENARIO_BINDING_HARDENING_IN_FINAL_GATES /
+LIVE_ADAPTER_FULL_FUNCTION_DIGEST_GATE_FOCUSED_DUAL_ENGINE_PASSED /
 EXTERNAL_SNAPSHOT_RECEIPT_MISSING / LIVE_MUTATIONS_NOT_STARTED /
 REAL_INSTALL_AND_COMPUTER_USE_REQUIRED /
 RELAY_PERMANENTLY_RETIRED / AUTOMATION_PAUSED_OR_ABSENT / DEFAULT_ENTRY_STILL_SCAFFOLD /
@@ -39,14 +70,29 @@ detached commit 未被覆盖，保存在
 `release-contract` 两个 GitHub Actions 均为 `success`。该批建立具名
 ProductReleaseGate，不含 Live mutation。
 
-当前下一批建立 VmDevelopment 授权骨架：ExecutionContext schema v2 增加显式 Stage，
-安全模式只接受 Fake；Live 只接受三个精确 stage/tier 组合和不可执行的
-`Unloaded` provider set。stage manifest v1 保持原五阶段兼容，VmDevelopment 必须使用
-v2；独立 `LoadLiveProviders` 确认/single-use CAS 是 install plan v3 的首个受 grant
-步骤。live adapter 不在默认 bootstrap 中，完整授权后仍只返回
-`ACTION_REQUIRED/LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`。本批不装载 provider，
-`Test-CddsiRealMutationAllowed` 仍为 false，也不执行安装、注册表、AppX、VMP、服务、
-进程、Credential Manager 或网络请求。
+第二个 VM 写入批次已经普通 fast-forward 推送：commit
+`1a367046f00b64e61f677320d2ed9f25999bd9b8`，tree
+`90e12c2c34bcc2178ad27ef1d6f15f3ebd48e8f2`；PR #1 的 `quality` 与
+`release-contract` 均为 `success`。该批建立 VmDevelopment 授权骨架：
+ExecutionContext schema v2 增加显式 Stage，安全模式只接受 Fake；Live 只接受三个
+精确 stage/tier 组合和不可执行的 `Unloaded` provider set。stage manifest v1 保持
+原五阶段兼容，VmDevelopment 必须使用 v2；独立 `LoadLiveProviders` 确认/single-use
+CAS 是 install plan v3 的首个受 grant 步骤。live adapter 不在默认 bootstrap 中。
+
+当前未提交第三批把装载结果收紧为身份、调用方声明的 adapter SHA-256 字段、
+load receipt 和 11 个冻结只读 capability 结构绑定的 `LiveReadOnly` provider set；
+没有 mutation capability。adapter 字段目前只验证格式和传递，尚未与受信包内文件
+重新哈希绑定，不能作为 package identity 证据。
+通用 dispatcher 尚未绑定可信 adapter 路径/函数定义，因此合法 tuple 也会在查询或
+调用 ambient 同名函数、写 ledger 或改变 context 前抛出
+`LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`。adapter 内
+`ProviderFailure/LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED` 只保留为不可达静态合同。
+本批还给完整 Fake 场景增加无密钥结构绑定、精确 ledger/MutationSpy/counter 双向校验
+和原子回滚；该 token 不是 MAC 或外部 receipt。live adapter 的两个完整 normalized
+函数源码另以 SHA-256 allow-list 锁定，已用 `if ($false)` 包裹关键 receipt/binding
+检查的反例验证，不能再只靠命令存在或 pipeline 多重集冒充关键 gate 可达。
+本批仍不执行安装、注册表、AppX、VMP、服务、进程、Credential Manager 或产品网络
+请求；完整门禁、提交和推送尚未结束。
 
 该授权骨架在本段交接更新前的 tracked bytes 已完成双引擎 focused 和完整门禁。
 PS7 7.6.3 与
@@ -101,12 +147,22 @@ Computer Use 还没有形成产品 GUI PASS，D-026 的 Live grant 也没有使�
 repo 源码、文档、fake、TestSafe、DryRun 和隔离测试；未执行安装、注册表、AppX、
 VMP、服务、Credential Manager 或其他真实系统写入。
 
-Computer Use 已通过真实桌面只读探测：可列出并观察当前 Windows 应用，只观察到
-Explorer/Notepad，未观察到正在运行或可见的 Claude Desktop；该探测没有确认软件
-安装状态。因此当前证据只证明 Computer Use 通道可用，不能证明 Claude Chat、Code
-或 Cowork 已验收；密钥输入期间也没有截图、OCR、剪贴板或输入框读取。真实 GUI
-路径必须等 NON-PROMOTABLE VmDevelopment ZIP、Claude Desktop 实装和外部可恢复
-snapshot receipt 就绪后执行。
+Computer Use 已通过真实桌面只读探测：可列出当前 Windows 应用，返回 ChatGPT、
+Explorer 和 Notepad 的现有窗口，但未返回正在运行或可见的 Claude Desktop；
+ChatGPT 窗口按电脑控制安全规则未被自动化。该探测没有确认 Claude 软件安装状态。
+因此当前证据只证明 Computer Use 通道可用，不能证明 Claude Chat、Code 或 Cowork
+已验收；密钥输入期间也没有截图、OCR、剪贴板或输入框读取。真实 GUI 路径必须等
+NON-PROMOTABLE VmDevelopment ZIP、Claude Desktop 实装和外部可恢复 snapshot
+receipt 就绪后执行。
+
+2026-07-25 对 Git for Windows 官方 GitHub Releases API 的只读复核发现当前稳定
+release 为 `v2.55.0.windows.3`；唯一 x64 installer 是
+`Git-2.55.0.3-64-bit.exe`，65388144 bytes，官方 API digest 为
+`af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca`，
+content type 为 `application/executable`。仓库现有 synthetic supply-chain fixture
+错误省略 `.windows.3` 对应的 asset 修订号，并只接受旧 MIME；真实官方元数据会
+fail closed。该根因列为下一批 Git 供应链修复，尚未下载、运行或安装该 installer，
+也未把本机已有 Git 当作“无 Git 静默安装”证据。
 
 本轮复用工具 receipt（均为规范绝对路径；未临时安装 Pester 或其他工具）：
 

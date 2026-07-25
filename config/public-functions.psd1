@@ -129,9 +129,21 @@
             'Update-CddsiClaudeDesktopMsix'
         )
         'lib/execution-context.ps1' = @(
+            'Get-CddsiLiveReadOnlyCapabilityContracts'
             'Test-CddsiExactNameSet'
+            'Test-CddsiExactNotePropertySet'
             'Test-CddsiLogicalResourceToken'
+            'Get-CddsiFakeInputFieldNames'
+            'Get-CddsiFakeInputFieldValue'
+            'Test-CddsiFakeValueEqual'
+            'Get-CddsiFakeScenarioBindingToken'
+            'Test-CddsiFakeMutationOperation'
+            'Test-CddsiFakeResourceTokenAllowed'
+            'Assert-CddsiFakeProviderScenario'
+            'Test-CddsiLiveReadOnlyCapabilityTuple'
+            'Assert-CddsiProductAccessLedgerEntryValues'
             'New-CddsiUnloadedProviderSet'
+            'New-CddsiLiveReadOnlyProviderSet'
             'New-CddsiAccessLedger'
             'Add-CddsiProductAccessLedgerEntry'
             'New-CddsiExecutionContext'
@@ -142,10 +154,6 @@
             'Assert-CddsiIsolationEvidence'
         )
         'lib/fake-providers.ps1' = @(
-            'Get-CddsiFakeInputFieldNames'
-            'Get-CddsiFakeInputFieldValue'
-            'Test-CddsiFakeValueEqual'
-            'Test-CddsiFakeMutationOperation'
             'New-CddsiFakeProviderSet'
             'Invoke-CddsiFakeProviderOperation'
             'Assert-CddsiFakeProviderExpectations'
@@ -160,6 +168,7 @@
         )
         'lib/live-adapters.ps1' = @(
             'Invoke-CddsiLiveAdapterOperation'
+            'Invoke-CddsiLiveReadOnlyProviderOperation'
         )
         'lib/logger.ps1' = @(
             'Initialize-CddsiConsoleEncoding'
@@ -460,11 +469,16 @@
         'Test-CddsiClaudeDesktopMsixSignature' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'PackagePath', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $false }
         'Install-CddsiClaudeDesktopMsix' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'PackagePath', 'SignatureEvidence', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $true }
         'Update-CddsiClaudeDesktopMsix' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'PackagePath', 'SignatureEvidence', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $true }
+        'Get-CddsiLiveReadOnlyCapabilityContracts' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Test-CddsiExactNameSet' = @{ Kind = 'Pure'; Mandatory = @('Actual', 'Expected'); Mode = $false }
+        'Test-CddsiExactNotePropertySet' = @{ Kind = 'Pure'; Mandatory = @('InputObject', 'Expected'); Mode = $false }
         'Test-CddsiLogicalResourceToken' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Test-CddsiLiveReadOnlyCapabilityTuple' = @{ Kind = 'Pure'; Mandatory = @('ProviderSet', 'Provider', 'Operation', 'ResourceToken', 'ArgumentCount'); Mode = $false }
+        'Assert-CddsiProductAccessLedgerEntryValues' = @{ Kind = 'Pure'; Mandatory = @('ProviderSet', 'Provider', 'Operation', 'ResourceToken', 'ArgumentCount', 'Allowed', 'Expected', 'IsMutation', 'FailureInjected', 'Outcome', 'ErrorCode'); Mode = $false }
         'New-CddsiAccessLedger' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Add-CddsiProductAccessLedgerEntry' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken', 'Allowed', 'Expected', 'IsMutation', 'FailureInjected', 'Outcome'); Mode = $false }
         'New-CddsiUnloadedProviderSet' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'New-CddsiLiveReadOnlyProviderSet' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'Stage', 'EnvironmentTier', 'ArtifactProfile', 'AdapterSha256', 'LoadOperationUseId', 'LoadReceiptBindingToken'); Mode = $false }
         'New-CddsiExecutionContext' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'Mode', 'Stage', 'EnvironmentTier', 'SandboxRoot', 'Paths', 'Providers', 'Policy'); Mode = $true }
         'Assert-CddsiExecutionContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Get-CddsiExecutionPathTokenValues' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
@@ -474,7 +488,10 @@
         'Get-CddsiFakeInputFieldNames' = @{ Kind = 'Pure'; Mandatory = @('InputObject'); Mode = $false }
         'Get-CddsiFakeInputFieldValue' = @{ Kind = 'Pure'; Mandatory = @('InputObject', 'Name'); Mode = $false }
         'Test-CddsiFakeValueEqual' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Get-CddsiFakeScenarioBindingToken' = @{ Kind = 'Pure'; Mandatory = @('ExpectedCalls', 'FailureInjections'); Mode = $false }
         'Test-CddsiFakeMutationOperation' = @{ Kind = 'Pure'; Mandatory = @('Provider', 'Operation'); Mode = $false }
+        'Test-CddsiFakeResourceTokenAllowed' = @{ Kind = 'Pure'; Mandatory = @('Policy'); Mode = $false }
+        'Assert-CddsiFakeProviderScenario' = @{ Kind = 'Pure'; Mandatory = @('ProviderSet'); Mode = $false }
         'New-CddsiFakeProviderSet' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Invoke-CddsiFakeProviderOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken'); Mode = $false }
         'Assert-CddsiFakeProviderExpectations' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
@@ -484,7 +501,8 @@
         'Save-CddsiOfficialGitInstaller' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'DestinationPath', 'ArtifactDescriptor'); Mode = $true }
         'Test-CddsiGitInstallerSignature' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $false }
         'Install-CddsiGitForWindows' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'SignatureEvidence', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $true }
-        'Invoke-CddsiLiveAdapterOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc'); Mode = $false }
+        'Invoke-CddsiLiveAdapterOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc', 'AdapterSha256'); Mode = $false }
+        'Invoke-CddsiLiveReadOnlyProviderOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken', 'Arguments'); Mode = $false }
         'Initialize-CddsiConsoleEncoding' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
         'Protect-CddsiLogMessage' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Initialize-CddsiLogger' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }

@@ -1,6 +1,6 @@
 # 安全设计
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 ## 安全目标
 
@@ -57,8 +57,19 @@ snapshot/CAS/签名仍是正式证据门，不因 lean relay 改变。
 - 默认 `Scaffold` stage 继续无条件拒绝 Live。独立 `VmDevelopment` 授权骨架只允许
   精确 stage/tier/profile、`Unloaded` provider 和已确认、已 CAS 提交的
   `LoadLiveProviders` operation；环境变量或 `-Live` 开关不能单独授权。
-- 首批 adapter 边界固定返回 `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`，且
-  `Test-CddsiRealMutationAllowed` 仍为 false；授权骨架通过不等于真实系统写入获准。
+- `LoadLiveProviders` 成功只会把同一 context 转换为身份和 capability-set digest 精确绑定
+  的 `LiveReadOnly` provider set；它只包含冻结的 11 个 `Inspect` tuple，不包含 mutation
+  或任意扩展能力。每个 provider contract 显式为 `Access=ReadOnly`，capability 绑定
+  精确 `ResultSchemaId`。所有 tuple 当前均为零 OS I/O：provider set 尚未绑定 adapter
+  规范化绝对路径、函数定义 SHA-256 和组合 load receipt，通用 dispatcher 会在解析或
+  调用任何 ambient 同名函数、写 ledger 或改变 context 前返回稳定
+  `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`。adapter 内的
+  `ProviderFailure/LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED` 只是不可达的静态合同。
+  静态门除精确 command/type allow-list 和 pipeline 调用多重集外，还锁定两个函数完整、
+  规范化的 `FunctionDefinitionAst` source SHA-256；把既有检查包进不可达分支等控制流改写
+  也会造成摘要漂移并 fail closed。
+- `Test-CddsiRealMutationAllowed` 仍为 false；provider 装载成功不等于真实系统读取或
+  写入获准。Host、CI、TestSafe、DryRun 和默认 bootstrap 始终不能装载该 set。
 - 开发机和 CI 即使代码未来实现 Live，也不得加载或执行 live provider。
 - D-026 后首次实现与真实系统操作允许在 `VmDevelopment` disposable VM 执行；它必须
   使用 owner-scoped 资源、独立交互确认、失败补偿和可恢复 snapshot，不得加载到宿主机。
@@ -233,11 +244,12 @@ SBOM、PE、签名身份和 VM provider receipt 仍是发布阻断项。
 
 ## Claude Code 配置
 
-项目不定位、不 Test-Path、不读取、不哈希、不监视、不备份、不写入或删除
+项目在任何 stage、mode 或 provider 中都不定位、不 Test-Path、不枚举、不读取、不
+哈希、不监视、不备份、不写入或删除
 `%USERPROFILE%\.claude\settings.json`。这是冻结决策，不再保留“由本进程计算前后
 hash”的矛盾要求。
-
-后续 VM 可以对 VM 内 synthetic/测试用户范围建立基线，但不授权宿主机访问。
+disposable VM、真实用户验收和 known-folder 探测都不构成例外；只能对不指向该真实
+文件的 synthetic 项目资源建立测试基线。
 
 ## 汉化
 

@@ -4,15 +4,26 @@
 function New-CddsiTestExecutionContext {
     [CmdletBinding()]
     param(
-        [ValidateSet('TestSafe', 'DryRun')]
+        [ValidateSet('TestSafe', 'DryRun', 'Live')]
         [string]$Mode = 'TestSafe',
+
+        [ValidateSet('Scaffold', 'Development', 'VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive')]
+        [string]$Stage = 'Scaffold',
+
+        [ValidateSet('HostSandbox', 'CI', 'VmDevelopment', 'VmAcceptance', 'UserLive')]
+        [string]$EnvironmentTier = 'HostSandbox',
 
         [string]$SandboxRoot = 'C:\cddsi-synthetic-tests',
 
         [object[]]$ExpectedCalls = @(),
         [object[]]$FailureInjections = @(),
 
-        [string]$RunId = '00000000-0000-0000-0000-000000000101'
+        [string]$RunId = '00000000-0000-0000-0000-000000000101',
+
+        [AllowNull()]
+        $Providers = $null,
+
+        [bool]$AllowLiveProvider = $false
     )
 
     $paths = [ordered]@{
@@ -34,10 +45,14 @@ function New-CddsiTestExecutionContext {
     }
     $policy = [ordered]@{
         SchemaVersion            = 1
-        AllowLiveProvider        = $false
+        AllowLiveProvider        = $AllowLiveProvider
         ForbiddenResourceTokens = @('<REAL_CLAUDE_CONFIG>', '<REAL_GIT_CONFIG>', '<REAL_REGISTRY>', '<REAL_PROCESS>', '<REAL_NETWORK>')
         CanaryTokens             = @('<CANARY_CLAUDE_CODE_SETTINGS>', '<CANARY_GIT_CONFIG>', '<CANARY_CLAUDE_POLICY>', '<CANARY_CREDENTIAL>')
     }
-    $providers = New-CddsiFakeProviderSet -ExpectedCalls $ExpectedCalls -FailureInjections $FailureInjections
-    return New-CddsiExecutionContext -RunId $RunId -Mode $Mode -Stage Scaffold -EnvironmentTier HostSandbox -SandboxRoot $SandboxRoot -Paths $paths -Providers $providers -Policy $policy -AccessLedger (New-CddsiAccessLedger)
+    if ($null -eq $Providers) {
+        $Providers = New-CddsiFakeProviderSet -ExpectedCalls $ExpectedCalls -FailureInjections $FailureInjections
+    }
+    return New-CddsiExecutionContext -RunId $RunId -Mode $Mode -Stage $Stage `
+        -EnvironmentTier $EnvironmentTier -SandboxRoot $SandboxRoot -Paths $paths `
+        -Providers $Providers -Policy $policy
 }

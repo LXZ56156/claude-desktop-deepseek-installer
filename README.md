@@ -9,11 +9,16 @@ BIOS 虚拟化或 Claude 的安全授权。
 
 ## 当前状态
 
-默认入口仍是 `Scaffold`，真实安装器尚未实现。VmDevelopment 的首个授权骨架已经
-加入显式 `Stage`、三个精确 Live stage/tier 绑定、不可执行的 `Unloaded` provider
-set，以及独立单次 `LoadLiveProviders` grant/CAS；provider 装载仍以
-`LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED` fail closed，默认 bootstrap、Host 和 CI
-不会加载 live adapter。2026-07-24 冻结的 D-026 已将
+默认入口仍是 `Scaffold`，真实安装器尚未实现。VmDevelopment 已加入显式 `Stage`、
+三个精确 Live stage/tier 绑定、独立单次 `LoadLiveProviders` grant/CAS，以及与
+run/stage/tier/profile、调用方声明的 adapter SHA-256 字段和已提交 load receipt 结构绑定的
+`LiveReadOnly` provider set。该 set 只声明 11 个冻结的只读 `Inspect` capability，
+并绑定一个 canonical capability-set digest。本批没有真实 OS I/O。当前通用 dispatcher
+尚未把 provider set 绑定到受信 adapter 定义，因此即使 tuple 合法，也会在调用任何
+同名函数和写入 ledger 前以 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND` fail closed；
+adapter SHA-256 字段当前只校验格式和传递关系，不是已验证的包内文件摘要；
+adapter 内的 `ProviderFailure/NOT_IMPLEMENTED` 路径只是静态合同，尚不是可执行产品
+读取路径。默认 bootstrap、Host 和 CI 仍不会加载 live adapter。2026-07-24 冻结的 D-026 已将
 开发方式切换为 disposable VM acceptance-first：宿主机在现有
 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1 正常推送 clean handoff commit 后冻结
 产品写入；从该精确 commit/tree 起，VM Codex 成为阶段性唯一写入者，可以直接修改
@@ -73,9 +78,11 @@ worker evidence 和 Release Simulation。
 VM 单写开发的前置；Formal candidate 的 clean snapshot、CAS、签名和只读验收仍是
 P12 前置。
 
-截至本 handoff，所有产品入口仍固定运行 TestSafe；产品系统操作、网络请求、配置写入
-和进程控制尚未实现，产品 `-Live` 仍 fail closed。D-026 授权 VM 在唯一写入租约内实现
-并验证受控 Live，但不授权宿主机或 CI 执行真实动作。DevelopmentOnly 的 Windows
+截至本 handoff，所有公开产品入口仍固定运行 TestSafe；新增的 `LiveReadOnly`
+装载/调度合同目前只由静态/contract tests 验证，且 11 个只读操作仍全部稳定
+fail closed，没有读取真实环境。产品系统修改、网络请求、配置写入和进程控制尚未实现。
+D-026 授权 VM 在唯一写入租约内实现并验证受控 Live，但不授权宿主机或 CI 执行真实
+动作。DevelopmentOnly 的 Windows
 guest-reset provider 历史上只允许在 disposable VM 经外部 trust/ownership/one-shot
 authorization 后进入其 operator Live 路径，不由默认 bootstrap 或 Release 加载。
 

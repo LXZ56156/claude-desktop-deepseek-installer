@@ -1,6 +1,6 @@
 # 测试与质量门
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 ## 核心原则
 
@@ -30,6 +30,10 @@ registry、AppX、VMP、进程或网络访问。HostSandbox 不是 OS 权限隔�
 
 - 仓库本地 Pester 5。
 - 纯函数、schema、serializer、provider contract。
+- `LiveReadOnly` 的精确装载 identity/capability-set digest、11-tuple allow-list、空参数、
+  provider `Access=ReadOnly`、capability `ResultSchemaId`、source-unbound dispatcher，
+  以及 adapter 内不可达的精确 `ProviderFailure/NOT_IMPLEMENTED` 静态合同；这些测试
+  不得执行真实 OS I/O。
 - 只写 `TestDrive:`。
 - Registry、network、process、AppX、feature、credential 全部 fake。
 - 每个公开函数变更同步 `config/public-functions.psd1`。
@@ -64,6 +68,8 @@ registry、AppX、VMP、进程或网络访问。HostSandbox 不是 OS 权限隔�
   测试 Key 只允许进入 L5 明确授权的 disposable VM 本地安全输入路径。当前不执行
   relay smoke，也不搬运通信凭据。
 - 绝不运行 Live。
+- 默认 bootstrap 不能导入 live adapter；HostSandbox/CI 构造或调度
+  `LiveReadOnly` 必须在任何 provider 调用前 fail closed。
 
 ### L5：Disposable VM 校准与 Live 验收
 
@@ -88,6 +94,13 @@ D-026 把 L5 分为四个不可混淆的步骤：
 关键门：必须以用户双击入口完成实际安装与配置，再由 Computer Use 验证 Claude
 Desktop 的 Chat、Code、Cowork 可见行为；进程退出 0、readiness 或 synthetic evidence
 不能单独替代 GUI 结果。
+
+当前 `VmDevelopment` 仅完成 `LiveReadOnly` loaded-context 合同；可信 adapter
+来源和函数定义尚未绑定，11 个只读 `Inspect` capability 在调用任何 ambient 同名函数
+前统一返回 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`，不会写 ledger 或改变 context。
+当前没有真实环境、Known Folder、AppX、Git、Feature、Service、Registry、
+configLibrary 或 Claude 进程读取。这一批的 contract PASS 不能计作任何 Live 或 GUI
+验收。
 
 ### D-026 开发协调
 
@@ -492,12 +505,19 @@ token 和 sandbox 相对路径；本机临时控制台可以显示 sandbox 绝�
 源码修改。全部通过只表示“可提交 P12 人工决定”，不授权自动 merge、promotion 或
 release。
 
-VmDevelopment 授权骨架的 focused 合同必须在 PS7 与 PS5.1 同时证明：安全模式只用
-Fake；Host/CI 拒绝 Live；三个 Live stage/tier/profile 组合精确匹配；provider 初始
-为 `Unloaded`；`LoadLiveProviders` 是 install plan v3 的首个受 grant 步骤并使用独立
-确认与 single-use CAS；缺失、错配和 replay 都在 adapter 前失败；即使授权完整，
-adapter 也只返回 `ACTION_REQUIRED/LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`，且真实进程、
-网络、注册表和 provider-loaded 指标全部为零。
+VmDevelopment 授权及只读装载合同的 focused tests 必须在 PS7 与 PS5.1 同时证明：
+安全模式只用 Fake；Host/CI 拒绝 Live；三个 Live stage/tier/profile 组合精确匹配；
+provider 初始为 `Unloaded`；`LoadLiveProviders` 是 install plan v3 的首个受 grant
+步骤并使用独立确认与 single-use CAS；缺失、错配和 replay 都在 adapter 前失败；
+完整授权只能产生结构字段/capability-set digest 精确的 `LiveReadOnly` set。调用方
+声明的 adapter SHA-256 当前只做格式和传递校验，不是包内文件摘要证据。11 个 tuple、
+空 Arguments、未知 capability、adapter 字段/receipt 漂移和 dispatcher 路由都须逐项
+覆盖；合法 tuple 当前须在调用 ambient 同名函数、记录 ledger 或改变 context 前抛出
+`LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`。adapter 内不可达的静态 handler 仍锁定精确
+`ProviderFailure/LIVE_READ_ONLY_PROVIDER_NOT_IMPLEMENTED` 分支；真实进程、网络、
+注册表、文件和其他 OS 访问指标全部为零。adapter 静态合同还必须逐函数核对规范化完整
+`FunctionDefinitionAst` source SHA-256，证明不只锁定 command、type 和 pipeline
+调用多重集；不可达分支改写也必须被拒绝。
 
 ## P1 交付判定（已满足）
 

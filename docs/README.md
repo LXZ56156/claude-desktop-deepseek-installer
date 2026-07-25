@@ -1,6 +1,6 @@
 # 文档索引
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
@@ -37,9 +37,14 @@
 租约，可以在同一分支/PR 内修改源码、测试、文档和构建定义，正常 commit 并
 fast-forward push。不得创建重复 PR、force push、改写历史或自动 rebase。
 
-默认入口仍是 `Scaffold`；VmDevelopment 已开始建立显式 Stage、精确 Live
-stage/tier/profile 绑定、`Unloaded` provider set 和独立 `LoadLiveProviders`
-grant/CAS，但真实 provider 装载仍 fail closed，不能称为可用安装器。D-026 将真实用户路径置于完成门首位：VM 先从不可 promotion
+默认入口仍是 `Scaffold`；VmDevelopment 已建立显式 Stage、精确 Live
+stage/tier/profile、独立 `LoadLiveProviders` grant/CAS 和 `LiveReadOnly` provider
+结构/capability 绑定。调用方声明的 adapter SHA-256 字段尚未与受信包内文件重新哈希
+绑定。当前 11 个冻结的 `Inspect` tuple 没有真实 OS I/O；因为
+adapter 来源和函数定义尚未可信绑定，通用 dispatcher 会在调用任何同名函数和写入
+ledger 前以 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND` fail closed，不能称为可用
+安装器。默认 bootstrap、Host 和 CI 仍不能加载 live adapter。
+D-026 将真实用户路径置于完成门首位：VM 先从不可 promotion
 的 development ZIP 实测安装、配置、API、重复运行、诊断、修复、恢复、UAC/重启，并
 用 Computer Use 实际验证 Claude Desktop 的 Chat、Code、Cowork，取得
 `READY_FOR_FORMAL_P10A`；P11 再对最终候选精确字节重复正式矩阵。宿主机和 CI 仍不执行
@@ -56,9 +61,9 @@ HistoricalDiagnostics 和 CI/Release 绑定隔离。产品集合始终阻塞；�
 13 / 9 / 20 / 23 / 52。`scripts/check.ps1` 作为 legacy `AllBlocking` 诊断单列，
 拓扑为 42 / 13 / 28 / 31 / 68，不是具名产品发布门。
 
-当前 VM 尚无 guest 外部可恢复 clean snapshot receipt，因此未使用 D-026 的产品
-Live 权限，也未执行安装、注册表、AppX、VMP、服务、Credential Manager 或其他真实
-系统写入。
+当前 VM 尚无 guest 外部可恢复 clean snapshot receipt，因此未执行真实系统探测或
+使用 D-026 的产品 mutation 权限，也未执行安装、注册表、AppX、VMP、服务、
+Credential Manager 或其他真实系统写入。
 
 API Key 只允许用户在 VM 本地遮罩输入，Codex 不读取、不转述、不截图；产品只能经
 DPAPI CurrentUser 和 owner-only helper 使用。此前暴露的测试 Key 已由用户确认撤销，

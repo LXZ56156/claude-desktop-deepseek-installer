@@ -699,4 +699,30 @@ Describe 'P1 isolation evidence contract' {
             $content | Should -Not -Match '(?i)\[guid\]::NewGuid|\[DateTime\]::UtcNow'
         }
     }
+
+    It 'keeps TestSafe DryRun and static worker evidence disjoint from the packaged Live adapter' {
+        $testSafeContext = New-IsolationEvidenceTestContext -Mode TestSafe
+        $dryRunContext = New-IsolationEvidenceTestContext -Mode DryRun
+        foreach ($context in @($testSafeContext, $dryRunContext)) {
+            $context.Providers.Kind | Should -BeExactly 'Fake'
+            $context.Policy.AllowLiveProvider | Should -BeFalse
+            $context.AccessLedger.LiveProviderLoaded | Should -BeFalse
+        }
+        $measurement = Measure-CddsiWorkerExecutionContexts -Contexts @($testSafeContext, $dryRunContext)
+        $measurement.LiveProviderLoaded | Should -BeFalse
+
+        $boundary = Import-PowerShellDataFile -LiteralPath (Join-Path $script:RepoRoot 'config\execution-boundaries.psd1')
+        @($boundary.Planes.LiveAdapters) | Should -Be @('lib/live-adapters.ps1')
+        @($boundary.Rules.LiveAdapterSystemCapabilitySites['lib/live-adapters.ps1']).Count | Should -Be 0
+        foreach ($relative in @(
+            'lib/bootstrap.ps1',
+            'scripts/check-worker.ps1',
+            'scripts/product-release-gate.ps1',
+            'scripts/invoke-release-gates.ps1'
+        )) {
+            $content = [System.IO.File]::ReadAllText((Join-Path $script:RepoRoot $relative))
+            $content | Should -Not -Match '(?m)^\s*\.\s+.*live-adapters\.ps1'
+            $content | Should -Not -Match '(?i)Import-Module[^\r\n]*live-adapters\.ps1'
+        }
+    }
 }

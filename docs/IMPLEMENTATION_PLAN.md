@@ -56,7 +56,7 @@ prompt、Git、命令参数、环境变量、日志、报告、截图、evidence
 | P5 | Credential 生命周期 | 已完成（纯合同） | Key 不进入不允许的持久明文面 |
 | P6 | 配置所有权、备份与恢复 | 已完成（纯合同） | receipt、备份与补偿独立绑定 |
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
-| P8 | Live Adapter 与编排器 | VmDevelopment 授权骨架已实现；Live provider 未实现 | 精确绑定后仍以 `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED` 终止 |
+| P8 | Live Adapter 与编排器 | VmDevelopment 授权及 `LiveReadOnly` loaded contract 已实现；可信来源绑定/真实 provider 未实现 | 通用 dispatcher 仍以 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND` 终止 |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | VmDevelopment | Disposable VM acceptance-first 开发租约 | **当前开发路径** | development ZIP 的真实 Live/GUI 用户矩阵达到 `READY_FOR_FORMAL_P10A` |
 | P10A-0A | 旧双机 Fast Lane MVP 前置门 | **RETIRED / SUPERSEDED** | 仅保留历史回归字节；不恢复旧 bundle/bootstrap/automation/relay，也不再作为当前开发门 |
@@ -557,19 +557,31 @@ DPAPI adapter、helper 源码、固定 .NET 构建链、SBOM、已签名 PE 均�
 - 任何异常都不会误认为 Cowork ready。
 - D-012 保持成立。
 
-## P8：Live Adapter 与编排器（授权骨架已完成；Live provider 未实现）
+## P8：Live Adapter 与编排器（只读装载合同已完成；可信来源绑定和真实 provider 未实现）
 
 ### 目标
 
 以完整用户流程、stage/grant/auth/workflow 绑定、receipt trace 与补偿编排为核心。
-fake executor/orchestrator 和 VmDevelopment provider-load 授权骨架已实现；真实
-adapter/provider 仍是未完成交付物。本地只做
+fake executor/orchestrator、VmDevelopment provider-load 授权骨架，以及绑定
+run/stage/tier/profile、调用方声明的 adapter SHA-256 字段、load receipt 和
+capability-set digest 的
+`LiveReadOnly` loaded-context 合同已实现。冻结的 11 个只读 tuple 尚未绑定 adapter
+规范化绝对路径、函数定义 SHA-256 和组合 load receipt；通用 dispatcher 当前在调用
+任何同名函数和记录 ledger 前稳定抛出 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND`，
+没有真实 OS I/O。adapter SHA-256 字段当前只做格式和传递校验；可信来源绑定与真实
+adapter/provider body 仍是未完成交付物。本地只做
 静态/contract/fake executor 测试；“不在宿主机执行”是强制开发政策，stage/grant
 负责防误触但不声称能在同一 Windows 用户权限下证明 VM 身份。
+每个 provider contract 固定 `Access=ReadOnly`；每项 capability 显式绑定
+`ResultSchemaId`，不能用调用者输入扩展结果 schema 或权限。
 
 ### 主要实现
 
 - 真实网络、MSIX/Git 获取与安装 adapter。
+- 先逐个实现 11 个冻结的只读 `Inspect` tuple：Windows、硬件虚拟化、当前用户
+  Known Folders、Claude package、Git inventory、VMP、Cowork service、HKLM/HKCU
+  managed policy、configLibrary metadata 和 Claude process。不得扩大 capability，
+  不得用原始路径参数绕过 tuple。
 - HKCU managed policy、DPAPI、credential helper adapter；HKLM/local 只读检测。
 - VMP、service、Desktop lifecycle adapter。
 - 顶层 install plan v3：preflight → fixed all-surfaces target →
@@ -584,14 +596,17 @@ adapter/provider 仍是未完成交付物。本地只做
 
 ### 测试
 
-- live adapter 只做静态/contract/fake executor 测试。
+- 本批 live adapter 只做静态/contract/零-I/O source-unbound dispatcher 测试；逐个真实 provider body
+  实现后才在有外部 snapshot receipt 的 disposable VM 运行对应 read-only smoke。
 - 每个操作的 TestSafe、DryRun、Live gate、失败注入和补偿。
 - 参数边界、特殊路径、超时和进程树。
 - Git 合格复用时 `Changed=false`；缺失/过旧时才进入安装，歧义或用户取消时不能
   报告完成。
 - Cowork 阻断可以保留已安全完成的 Chat/Code，但顶层只能为
   `PARTIAL/ACTION_REQUIRED`，未知部分修改必须 `FAILED`。
-- 本机测试证明 live adapter 未加载/未执行。
+- Host/CI 默认 bootstrap 证明 live adapter 未加载；contract tests 只解析 adapter AST，
+  并通过 execution-context/dispatcher contract 证明 11 个 tuple 在来源未绑定时不会
+  查询或调用 ambient 同名函数、写 ledger 或产生真实 provider I/O。
 
 ### 退出条件
 

@@ -2,10 +2,12 @@
 
 > 当前状态：本仓库尚未提供可用的 Live 安装器，也没有可供真实安装的候选包。
 > 现有入口只会返回 `scaffold_only`。仓库内的 VmDevelopment 授权骨架只能验证
-> 未装载 provider、独立确认和 CAS 绑定，并以
-> `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED` 终止；它不会安装软件、修改系统、写入配置
-> 或发送 API 请求。本文件描述未来候选通过 P11 虚拟机验收后，正式发布包必须遵守
-> 的用户合同。
+> 独立确认、CAS、调用方声明的 adapter identity 字段和 `LiveReadOnly` provider
+> 装载结构。该字段尚未与受信包内文件重新哈希绑定。冻结的
+> 11 个只读探测 capability 尚未绑定到受信 adapter 定义，通用 dispatcher 当前会在
+> 调用任何 provider 函数前以 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND` 终止；本批没有真实系统探测，也不会
+> 安装软件、修改系统、写入配置或发送 API 请求。本文件描述未来候选通过 P11
+> 虚拟机验收后，正式发布包必须遵守的用户合同。
 
 ## 使用前
 
