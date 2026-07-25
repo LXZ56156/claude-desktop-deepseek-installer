@@ -30,7 +30,7 @@ Describe 'P3 environment and readiness contracts' {
             (New-CddsiContractExpectedCall -Provider Process -ResourceToken '<PROCESS:GIT_FOR_WINDOWS>' -Result ([pscustomobject][ordered]@{
                 SchemaVersion = 1
                 Candidates = @([pscustomobject][ordered]@{
-                    ExecutableToken = '<GIT_EXECUTABLE:PRIMARY>'; Version = '2.45.0'; Source = 'GitForWindows'; IdentityStatus = 'Trusted'; CapabilityState = 'Operational'
+                    ExecutableToken = '<GIT_EXECUTABLE:PRIMARY>'; Version = '2.45.0.windows.1'; Source = 'GitForWindows'; IdentityStatus = 'Trusted'; CapabilityState = 'Operational'
                 })
             })),
             (New-CddsiContractExpectedCall -Provider Feature -ResourceToken '<FEATURE:VIRTUAL_MACHINE_PLATFORM>' -Result ([pscustomobject][ordered]@{ SchemaVersion = 1; State = 'Enabled' })),

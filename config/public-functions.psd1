@@ -159,6 +159,22 @@
             'Assert-CddsiFakeProviderExpectations'
         )
         'lib/git-for-windows.ps1' = @(
+            'Test-CddsiD027Windows11X64Platform'
+            'Assert-CddsiD027GitLiveContext'
+            'ConvertFrom-CddsiGitVersionProbeResult'
+            'ConvertTo-CddsiGitInstallerReceiptVersion'
+            'ConvertFrom-CddsiGitPeHeader'
+            'Test-CddsiCurrentProcessElevated'
+            'Get-CddsiGitForWindowsRegistryObservation'
+            'Test-CddsiGitProtectedInstallPathSet'
+            'Get-CddsiGitForWindowsPrivateDllObservation'
+            'Get-CddsiGitForWindowsSignedComponentObservation'
+            'Resolve-CddsiGitExecutablePathSet'
+            'New-CddsiGitVersionProbeStartInfo'
+            'Initialize-CddsiD027GitProbeRunnerType'
+            'Invoke-CddsiGitVersionProbe'
+            'Get-CddsiGitForWindowsExecutableObservation'
+            'Get-CddsiLiveGitForWindowsObservation'
             'Get-CddsiGitForWindowsStatus'
             'ConvertFrom-CddsiGitHubReleaseMetadata'
             'Get-CddsiOfficialGitInstallerMetadata'
@@ -495,6 +511,22 @@
         'New-CddsiFakeProviderSet' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Invoke-CddsiFakeProviderOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken'); Mode = $false }
         'Assert-CddsiFakeProviderExpectations' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
+        'Test-CddsiD027Windows11X64Platform' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
+        'Assert-CddsiD027GitLiveContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
+        'ConvertFrom-CddsiGitVersionProbeResult' = @{ Kind = 'Pure'; Mandatory = @('ProbeResult'); Mode = $false }
+        'ConvertTo-CddsiGitInstallerReceiptVersion' = @{ Kind = 'Pure'; Mandatory = @('GitVersion'); Mode = $false }
+        'ConvertFrom-CddsiGitPeHeader' = @{ Kind = 'Pure'; Mandatory = @('HeaderBytes', 'ImageLength'); Mode = $false }
+        'Test-CddsiCurrentProcessElevated' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
+        'Get-CddsiGitForWindowsRegistryObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ExpectedInstallRoot', 'ExpectedReceiptVersion'); Mode = $false }
+        'Test-CddsiGitProtectedInstallPathSet' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallRoot', 'RequiredPaths'); Mode = $false }
+        'Get-CddsiGitForWindowsPrivateDllObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'BinPath', 'ExpectedPaths'); Mode = $false }
+        'Get-CddsiGitForWindowsSignedComponentObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ComponentPath', 'ComponentRole'); Mode = $false }
+        'Resolve-CddsiGitExecutablePathSet' = @{ Kind = 'Pure'; Mandatory = @('CandidatePaths', 'ShadowPaths'); Mode = $false }
+        'New-CddsiGitVersionProbeStartInfo' = @{ Kind = 'Pure'; Mandatory = @('ExecutablePath', 'SystemRootPath', 'ProductTempPath'); Mode = $false }
+        'Initialize-CddsiD027GitProbeRunnerType' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
+        'Invoke-CddsiGitVersionProbe' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ExecutablePath', 'ExpectedFileIdentityToken'); Mode = $false }
+        'Get-CddsiGitForWindowsExecutableObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ExecutablePath'); Mode = $false }
+        'Get-CddsiLiveGitForWindowsObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion'); Mode = $false }
         'Get-CddsiGitForWindowsStatus' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion'); Mode = $false }
         'ConvertFrom-CddsiGitHubReleaseMetadata' = @{ Kind = 'Pure'; Mandatory = @('ReleaseDocument', 'Architecture'); Mode = $false }
         'Get-CddsiOfficialGitInstallerMetadata' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Architecture'); Mode = $false }

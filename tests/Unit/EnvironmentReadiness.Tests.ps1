@@ -46,7 +46,7 @@
 
     function New-CddsiTestGitCandidate {
         param(
-            [string]$Version = '2.45.0',
+            [string]$Version = '2.45.0.windows.1',
             [string]$Source = 'GitForWindows',
             [string]$IdentityStatus = 'Trusted',
             [string]$CapabilityState = 'Operational',
@@ -194,7 +194,7 @@ Describe 'P3 synthetic Git for Windows inventory' {
         $cases = @(
             [pscustomobject]@{ Candidates = @(New-CddsiTestGitCandidate); Status = 'READY'; Reason = 'GIT_REUSE_READY' },
             [pscustomobject]@{ Candidates = @(); Status = 'BLOCKED'; Reason = 'GIT_MISSING' },
-            [pscustomobject]@{ Candidates = @(New-CddsiTestGitCandidate -Version '2.44.0'); Status = 'BLOCKED'; Reason = 'GIT_UPGRADE_REQUIRED' },
+            [pscustomobject]@{ Candidates = @(New-CddsiTestGitCandidate -Version '2.44.0.windows.1'); Status = 'BLOCKED'; Reason = 'GIT_UPGRADE_REQUIRED' },
             [pscustomobject]@{ Candidates = @(New-CddsiTestGitCandidate -CapabilityState Broken); Status = 'BLOCKED'; Reason = 'GIT_CAPABILITY_BROKEN' },
             [pscustomobject]@{ Candidates = @(New-CddsiTestGitCandidate -Source Other); Status = 'BLOCKED'; Reason = 'GIT_SOURCE_UNSUPPORTED' },
             [pscustomobject]@{ Candidates = @((New-CddsiTestGitCandidate), (New-CddsiTestGitCandidate -ExecutableToken '<GIT_EXECUTABLE:SECONDARY>')); Status = 'BLOCKED'; Reason = 'GIT_PATH_AMBIGUOUS' }

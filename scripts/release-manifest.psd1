@@ -137,6 +137,7 @@
         'tests/Unit/DeepSeekApi.Tests.ps1'
         'tests/Contract/CredentialHelperRelease.Tests.ps1'
         'tests/Unit/EnvironmentReadiness.Tests.ps1'
+        'tests/Unit/GitForWindowsObserver.Tests.ps1'
         'tests/Contract/DevelopmentDependencies.Tests.ps1'
         'tests/Contract/IsolationEvidence.Tests.ps1'
         'tests/Contract/PublicFunctions.Tests.ps1'

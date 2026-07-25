@@ -9,6 +9,11 @@ D026_CHECKPOINT=NON_RELEASE_SUPERSEDED /
 D027_SCOPE_HANDOFF_ACTIVE / WINDOWS_11_X64_ONLY /
 WINDOWS_POWERSHELL_5_1_RUNTIME_ONLY /
 GIT_OFFICIAL_METADATA_CURRENT_SHAPE_FIXED /
+NATIVE_WIN11_AMD64_WORKSTATION_PREFLIGHT_IMPLEMENTED /
+GIT_UNIQUE_PROTECTED_BUNDLE_OBSERVER_IMPLEMENTED /
+GIT_PRIVATE_DLL_SET_PROTECTED_AND_BOUND /
+REAL_READ_ONLY_GIT_2_54_OBSERVED /
+GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
 GIT_LIVE_DOWNLOAD_AND_INSTALL_STILL_DISABLED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
@@ -21,6 +26,84 @@ D-027 从用户指定的精确起点开始：commit
 `157cca551bcd49eac4845ca5d87f60805b004b9f`。开始写入前已确认 local HEAD/tree、
 upstream、remote branch 和 PR #1 head 全部等于该起点，index/worktree clean；
 fetch 后再次确认远端没有未知提交。
+
+第二批 parent 为首批已普通 fast-forward 推送的 commit
+`bdd81fc4246a4370fcf32e9d20fb987583bbd18f`、tree
+`28a9b1d880e8ec6026e1ac3425e49972fc33d272`。本批只实现 D-027 Git
+复用路径所需的窄 Live observer；没有恢复 D-026 通用 HostSandbox、Fake Provider、
+access-ledger、双引擎或旧门。
+
+- Live 入口先用 native `IsWow64Process2` 与 `RtlGetVersion` 证明原生 AMD64、
+  Windows 11 build >= 22000 和 Workstation SKU，并要求 64-bit Windows
+  PowerShell 5.1。产品 temp 必须已存在于 fixed local volume，且从卷根到目标均
+  不是 reparse point。
+- PATH 现在只接受唯一的 `Program Files\Git\cmd\git.exe`；每个 PATH 目录先证明
+  位于 fixed local volume 且所有祖先无 reparse point，才允许 `Test-Path`。
+  重复同一路径去重；两个不同 `git.exe`、破损/非本地 PATH、动态 PATHEXT shadow、
+  `git.ps1` shadow 均在任何身份观察或进程执行前 fail closed。产品后续只绑定
+  绝对 executable，child 环境没有 PATH/PATHEXT，也不读取全局 Git 配置。
+- 不再把签名的 `cmd\git.exe` launcher 单独视为可信安装。bundle 必须同时绑定
+  PATH launcher、实际 `mingw64\bin\git.exe` core 和
+  `mingw64\libexec\git-core\git-remote-https.exe`；三个组件均须 x64、有效时间戳
+  Authenticode、受限 Johannes Schindelin signer、同一 signer thumbprint、同一严格
+  `.windows.N` 版本，以及精确 Git for Windows publisher/version-resource identity。
+  `mingw64\bin` 的全部当前 private DLL 也进入有界集合、逐文件 ACL/reparse/size/
+  SHA-256 measurement 和 bundle token；至少要求 core 的 5 个已知直接导入
+  `libiconv-2.dll`、`libintl-8.dll`、`libpcre2-8-0.dll`、
+  `libwinpthread-1.dll`、`zlib1.dll` 存在。
+- 安装根固定为 64-bit Program Files 的 `Git`；Program Files、安装根、所需祖先目录、
+  三个组件和全部 private DLL 均不得为 reparse point。ACL owner/writer 只允许 SYSTEM、
+  Administrators、TrustedInstaller，另只允许 inherit-only Creator Owner；任何
+  Users/未知主体 write/delete/change-permissions/take-ownership grant 均阻断。
+  observer 提权运行也阻断，卷必须为 fixed NTFS。
+- HKLM 64-bit `SOFTWARE\GitForWindows` 和精确 `Git_is1` uninstall receipt 只作
+  不可信的只读 corroboration；它们必须与已由文件系统推出并验证的固定 root、
+  libexec、精确 installer receipt version、Git display name 和 publisher 完全一致；
+  `windows.1` 映射为三段 receipt，后续 revision 映射为四段 receipt，且上述值必须为
+  `REG_SZ`。observer 绝不跟随 registry 指向的其他路径，也未读取/修改 Git 全局配置。
+- 版本探针不执行 PATH launcher，而是以 `FileShare.Read` 锁定三个组件和全部 private
+  DLL、再次重验完整 bundle 后执行已签名 core；working directory 固定为已保护的
+  `mingw64\bin`。
+  PS5.1 专用 runner 用 `CreateProcessW(CREATE_SUSPENDED|DETACHED_PROCESS)`、精确
+  inherited stdio handle allowlist、先加入 `KILL_ON_JOB_CLOSE` Job 后再恢复、
+  `ActiveProcessLimit=1`、最终 job process accounting `1/0/0`。stdout/stderr 各固定
+  128 bytes；所有 deadline 使用单调 `Stopwatch`，超限或超时终止完整 Job，并以
+  `CancelSynchronousIo`、明确 read-handle ownership 和有界 join 证明 root、Job 与
+  两个 drain 均在 cleanup budget 内归零。实现中没有 `ReadToEnd*` 或仅杀 root
+  的 `.Kill()`。
+- 本机只读校准的现有安装为 `2.54.0.windows.1`：PATH launcher 46480 bytes、
+  real core 4422544 bytes、HTTPS transport 2629024 bytes；三者都是 x64、
+  Authenticode `Valid`、同 signer thumbprint
+  `3eb14a3aef84b7153e139397f0a49e2fac662b0e`、同版本。Program Files ACL、84 个
+  private DLL measurement 和 HKLM receipt 均通过 bundle observer。
+- 真实 PS5.1 observer 在专用空产品 temp 中运行上述受控 core；以当前官方候选
+  `2.55.0.3` 为 minimum 时返回
+  `SUCCEEDED/Changed=false/CapabilityStatus=BLOCKED/ReuseEligible=false/
+  GIT_UPGRADE_REQUIRED`，版本 `2.54.0.windows.1`，temp writes 为 0，随后精确删除
+  仅由本批创建的空 temp。
+- PS5.1 focused observer 为 32/32，且 Pester 不读取或执行真实 Git；public function
+  contract 为 4/4；
+  environment/readiness 与 Git supply-chain 合并为 28/28。三组均为 0 failed、
+  0 skipped、0 inconclusive、0 not-run。
+- PS5.1 encoding 为 4/4，`git diff --check` 通过。Release DryRun 为
+  `SUCCEEDED/DryRun/Changed=false/CleanupOutcome=Succeeded`，39 个 package/ZIP/
+  extracted files inventory 和 hash 完全一致；product process/network/registry、
+  outside write、forbidden access、unexpected ledger、secret findings 和 live
+  provider loaded 均为 0/false。tracked 加本批 intended 新文件共 171 个，
+  独立 stream secret scan 为 0 findings；顶层 evidence/artifact/report/log root 为 0。
+
+本批还以非执行方式把精确官方 `Git-2.55.0.3-64-bit.exe` 下载到专用临时目录进行
+校准：长度和 SHA-256 与 metadata 完全一致；outer Inno bootstrap PE 为 x86（不能把
+安装器外壳误判为 payload architecture），Authenticode 为 `Valid`，signer subject
+为 `CN=Johannes Schindelin, O=Johannes Schindelin, L=Bruehl, C=DE`，installer
+identity 为 Git Setup / Git / The Git Development Community / `2.55.0.3`。该文件
+从未执行，校准目录随后精确删除；这些事实不是 snapshot 安装验收或候选证据。
+
+真实 download redirect、完整 installer signature/publisher policy、执行前 TOCTOU
+rehash、Inno 静默安装/UAC/退出码、安装后 persistent PATH/registry/bundle readback
+仍未实现或通过。因此即使 observer 能可信识别现有安装，状态仍是
+`GIT_LIVE_DOWNLOAD_AND_INSTALL_STILL_DISABLED` 和
+`REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED`。
 
 首批只修复直接阻塞真实 Git for Windows x64 路径的官方 release metadata 合同：
 
