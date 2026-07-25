@@ -2,7 +2,36 @@
 
 更新日期：2026-07-25
 
-本文件是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
+## D-027 当前隔离合同
+
+D-027 不再建设或扩展产品级 HostSandbox、通用 Fake Provider 或通用 access-ledger。
+隔离模型只有两层：
+
+- CI、普通开发、PS5.1 focused 测试和 DryRun：不得加载 Live；薄 TestSafe/DryRun
+  门在任何真实进程、网络、注册表、Credential Manager、AppX、Feature、服务或
+  sandbox 外写入前失败。
+- Live：只在 Windows 11 x64 disposable VM 且具有 VM 外部可恢复 clean snapshot
+  receipt 时执行。不同 destructive 场景通过恢复同一个 clean snapshot 隔离；没有
+  snapshot 或精确 ownership receipt 就不执行。
+
+薄层只需证明当前命令没有真实副作用，不需要复刻另一套完整 Windows、通用 fake
+场景系统或逐访问 ledger。已有 HostSandbox/Fake/ledger 仅在直接服务 D-027 真实
+垂直路径且维护成本合理时复用；不得优先扩展它们。
+
+以下边界始终阻塞：永不定位、Test-Path、枚举、哈希、读取、备份、写入或删除真实
+`%USERPROFILE%\.claude\settings.json`；不读取/修改全局 Git 配置；TestSafe/DryRun
+不得继承真实 credential；API key 不进入 argv、环境、日志、报告、Git、截图、
+fixture 或 evidence；不明 ownership 或 destructive 目标时停止。
+
+relay、outbox、scheduler、Automation、旧 onboarding 及其历史测试永久退役，不再
+运行，也不作为隔离证据。PowerShell 7 不是发布隔离门。
+
+## D-026 HostSandbox 合同（历史；非 D-027 发布要求）
+
+以下内容记录旧框架。D-027 不要求修复、扩展或运行它；仅其中不冲突的安全事实可供
+窄实现参考。
+
+本文件曾是开发机和 CI 测试隔离的唯一权威合同。目标不仅是“不写真实配置”，而是
 让受控的产品代码没有项目发起的读取、探测、枚举或修改保护资源的路径。
 
 HostSandbox 与当前用户使用相同 Windows 权限，不是 AppContainer 或 OS 安全

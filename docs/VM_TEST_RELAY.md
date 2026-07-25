@@ -1,8 +1,12 @@
 # Disposable VM acceptance-first 开发协议（历史文件名：VM_TEST_RELAY）
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
-## D-026 当前唯一权威
+> **D-027 历史声明：** 本文件整体已失去当前操作权。D-027 直接在现有分支/PR
+> 实现真实垂直路径；relay/outbox/scheduler/Automation 及其测试永久退役且不运行。
+> 当前范围和下一任务只看 `HANDOFF.md` 顶部与 `DECISIONS.md` D-027。
+
+## D-026 历史权威（已由 D-027 取代）
 
 D-026 已取代 D-025 的开发期角色分配。本文当前只定义 disposable VM 的
 acceptance-first `VmDevelopment` 写入租约、真实 Live/GUI 修复循环和 P12 停止线。

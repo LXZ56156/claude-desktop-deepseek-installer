@@ -1,8 +1,50 @@
-# 后续虚拟机 Codex 验收计划
+# D-027 Windows 11 虚拟机验收计划
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
-## 状态
+## D-027 当前计划
+
+唯一正式环境是 Windows 11 x64 disposable VM，且每次 destructive Live 场景前由
+VM 外部 hypervisor 恢复同一个已记录的 clean snapshot。产品运行时固定 Windows
+PowerShell 5.1；PowerShell 7 不参与发布判定。
+
+进入验收前必须冻结：
+
+- clean source commit/tree；
+- 一个候选 ZIP 的 CandidateId、SHA-256、长度、content inventory 和 SBOM；
+- Windows 11 snapshot receipt（edition/build/architecture、snapshot identity、
+  恢复者、时间和 VM 外部来源）；
+- 官方 Git/Claude artifact metadata、hash、signer/publisher/identity；
+- 公开入口清单和期望退出码。
+
+每个场景必须从恢复后的 snapshot 解压候选并运行公开入口，不跟随 branch head，
+不从源码 dot-source。可以恢复同一 snapshot 多次，不建设第二套 HostSandbox。
+
+阻塞矩阵：
+
+1. **无 Git、无 Claude**：preflight；官方 Git 下载/验签/TOCTOU/静默安装和唯一
+   PATH readback；官方 Claude 验证/安装；配置与启动。
+2. **已有合格 Git 和 Claude**：正确复用；第二次运行 Changed=false 或精确幂等状态。
+3. **Git 旧版、损坏、路径歧义**：旧版/损坏时修复或官方安装；歧义 fail closed。
+4. **UAC/VMP/重启**：取消不成功；批准后正确执行；NoRestart；checkpoint；人工
+   重启后从精确状态继续。
+5. **供应链/网络失败**：离线、DNS/HTTP/TLS/timeout、截断、hash、signature、
+   publisher、identity、architecture 不匹配均 fail closed。
+6. **密钥/API**：无效、限额以及用户在产品遮罩框中新输入的轮换测试密钥；只做最小
+   请求，证据不含密钥或片段。
+7. **Computer Use**：真实 Claude Desktop 的 Chat 返回唯一中文标记；Code 在产品
+   拥有的临时 Git 目录产生可验证文件变化；Cowork 在产品拥有目录完成安全文件任务。
+8. **维护/恢复**：Diagnose、Repair、Restore、重复执行、部分失败、生命周期冲突及
+   仅清理产品拥有资源。
+
+候选或 source 任一变化都废弃此前验收并从 clean snapshot 完整重跑。全部通过才是
+`D027_RELEASE_READY`；随后仍只输出证据并停在人工 merge/release/promotion 门。
+
+永不访问真实 `%USERPROFILE%\.claude\settings.json`。密钥输入期间不截图、OCR 或
+操作剪贴板；UAC secure desktop 不自动化；截图/录屏不得包含 secret、私有绝对路径、
+Credential Manager 内容或 ownership token。
+
+## D-026 P11 计划（以下余篇均为历史；已由 D-027 取代）
 
 本计划只定义最终冻结候选的全面产品 Live 验收。D-026 在它之前增加可写的
 `VmDevelopment` lane：VM Codex 可以在 disposable VM 中修改现有开发分支的源码、
@@ -73,7 +115,6 @@ P10 生成 runbook 时必须把表中的 `<UBR>`、镜像 SHA-256、SKU、语言
 | ID | 固定 OS 基线 | 用途 |
 |---|---|---|
 | W11-24H2 | Windows 11 Pro 24H2 x64，`26100.<UBR>` | 主发布矩阵；nested virtualization 已验证 |
-| W10-22H2 | Windows 10 Pro 22H2 x64，`19045.<UBR>` | 最低兼容矩阵；记录其生命周期状态，不外推其他 build |
 
 每个镜像从干净快照派生以下场景，不把“19041+”当作可执行测试环境：
 

@@ -2,6 +2,39 @@
 
 本文件是仓库内所有人工与自动化开发代理的强制约束。
 
+## 当前产品范围与发布路线（D-027）
+
+D-027 自 2026-07-25 起取代 D-026 的产品实现、测试和发布路线。D-026 及更早章节
+仅保留历史背景；与本节冲突时以本节为准。
+
+- 正式支持范围只有 Windows 11 x64；产品运行时只有 Windows PowerShell 5.1。
+  PowerShell 7 只可作开发者非阻塞诊断，不是发布门，也不要求与 5.1 结果一致。
+- Live 只允许在具有 VM 外部可恢复 clean snapshot 的 disposable Windows 11 x64 VM。
+  宿主机、CI、普通开发命令、TestSafe 和 DryRun 永不执行真实系统操作。
+- 不再建设或扩展产品级 HostSandbox、通用 Fake Provider 或通用 access-ledger。
+  已有抽象只在直接服务真实用户垂直路径时复用；TestSafe/DryRun 只保留防止真实进程、
+  网络、注册表和 sandbox 外写入的薄安全层。
+- relay、outbox、scheduler、Automation、旧 onboarding 和相关历史测试永久退役；
+  D-027 不运行这些测试，也不让它们阻塞发布。
+- 发布路线改为：实现真实用户路径，冻结一次 clean source commit/tree，构建一次候选
+  ZIP，在恢复后的 clean Windows 11 x64 snapshot 上验收精确候选，最后停在人工
+  merge/release 决定前。D-026 的 P10A/P10B/P11 链不再是发布要求。
+- 阻塞门只包括 PS5.1 focused Unit/Contract、公开 `.cmd` 与稳定退出码、DryRun 零真实
+  副作用、release manifest/编码/secret scan，以及 clean snapshot 上的真实端到端矩阵。
+- 当前实现优先级固定为 preflight；Git 检测与唯一 PATH；Git 官方元数据、下载、
+  hash、签名、TOCTOU 和静默安装；Claude 官方安装；VMP/UAC/NoRestart/重启恢复；
+  Credential Manager/DPAPI；HKCU policy 备份/readback/补偿；生命周期与
+  Diagnose/Repair/Restore；六个中英文入口；ZIP 与 Computer Use。
+
+以下安全边界不因简化而放宽：永不定位或访问真实
+`%USERPROFILE%\.claude\settings.json`；API key 只经产品遮罩输入和
+Credential Manager/DPAPI CurrentUser，且不进入 argv、环境、日志、报告、Git、
+截图或 fixture；Claude/Git 只取官方来源并验证 identity、SHA-256、
+Authenticode signer/publisher，执行前重新哈希；不读取或修改全局 Git 配置；
+HKLM/configLibrary 只读，产品拥有的 HKCU 写入必须有 ownership、备份、readback、
+补偿和恢复；取消或任何验证/安装失败不得显示成功。不得自动 merge、release 或
+promotion。
+
 ## 模块依赖规则
 
 1. `lib/bootstrap.ps1` 只负责定位根目录、按固定顺序加载库和初始化日志；顶层
@@ -18,13 +51,11 @@
 6. `desktop-acceptance.ps1` 可以消费领域结果，但不得成为安装实现的依赖。
 7. `scripts/check.ps1` 是薄质量门；行为验证放在 Pester，Release 文件分类只以
    `scripts/release-manifest.psd1` 为事实来源。
-8. 所有非纯系统能力必须经不可缺省的 `ExecutionContext` 和 provider 接口；
-   领域模块不得直接访问文件系统、Known Folder、注册表、网络、进程、AppX、
-   Windows Feature、服务、凭据或重启能力。缺少 fake/live provider 时必须
-   fail closed，禁止回退到真实系统。
-9. fake/sandbox provider 是本地与 CI 唯一允许加载的实现。未来 live adapter
-   必须位于精确 allow-list，默认 bootstrap、TestSafe、DryRun 自动化和本地
-   Pester 均不得加载或执行。
+8. D-027 新实现只需要面向真实垂直路径的窄 ExecutionContext/adapter 边界，不再要求
+   扩展通用 provider 或 access-ledger。保留代码不得在 TestSafe/DryRun 缺少窄
+   adapter 时回退到真实系统。
+9. 默认 bootstrap、TestSafe、DryRun 和本地/CI Pester 不得加载或执行 Live adapter。
+   Live adapter 只能在 D-027 的 disposable-VM snapshot 路径显式装载。
 
 ## 安全边界
 
@@ -42,8 +73,9 @@
 - 禁止绕过、跳过、降级或伪造 MSIX/EXE 签名验证。安装必须消费结构化且有效、
   并通过路径绑定 token、SHA-256、artifact type 与目标文件绑定的验签证据；Live
   实现还必须在执行安装前重新计算文件 SHA-256。
-- 禁止修改全局 Git 配置、全局/CurrentUser PowerShell 模块配置、用户 PATH、
-  Windows 功能或任务计划，除非未来任务明确授权并已有 Live 合同与测试。
+- 禁止读取或修改全局 Git 配置及全局/CurrentUser PowerShell 模块配置。D-027 只允许
+  已验签的官方 Git 安装器在显式 Live 确认后产生其文档化 PATH 变化，并要求唯一路径
+  readback；其他 PATH 写入仍禁止。Windows 功能只按 VMP 明确确认/checkpoint 路径修改。
 - 禁止读取、解析、备份、写入或删除 `%USERPROFILE%\.claude\settings.json`。
   同样禁止定位、Test-Path、枚举、哈希或监视该文件；项目正式采用零读取政策，
   不再由安装器或宿主机测试计算其前后哈希。
@@ -52,7 +84,7 @@
 - 可恢复备份与可分享脱敏快照是两个不同合同。脱敏快照永远不得作为恢复源；
   未来跨重启恢复材料必须使用 DPAPI CurrentUser 或经评审的等效保护。
 
-## 当前 Disposable VM acceptance-first 开发闭环（D-026）
+## Disposable VM acceptance-first 开发闭环（D-026；已由 D-027 取代）
 
 - 用户已于 2026-07-24 明确结束“VM 永远只读、宿主机逐轮批修”的开发反馈方式。
   宿主机提交并推送一个 clean handoff commit 后冻结产品写入；从该精确 commit 起，

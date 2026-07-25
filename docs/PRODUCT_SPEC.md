@@ -1,6 +1,17 @@
 # 产品规格
 
-更新日期：2026-07-24
+更新日期：2026-07-25
+
+## D-027 首版范围
+
+- 唯一正式支持环境：Windows 11 x64。
+- 唯一产品 PowerShell 运行时：Windows PowerShell 5.1。
+- Windows 10、Arm64 和 PowerShell 7 不在首版支持矩阵；PS7 仅可作开发诊断。
+- 用户闭环固定为 Git + Claude Desktop + Chat + Code + Cowork；不能以 Chat-only
+  或 synthetic readiness 代替。
+- 候选必须从 ZIP 启动，在 clean disposable VM snapshot 真实通过首次安装、复用/
+  幂等、失败矩阵、API、三个 surface、Diagnose/Repair/Restore，才可标记
+  `D027_RELEASE_READY`。
 
 ## 产品定位
 
@@ -135,9 +146,9 @@ Anthropic 提供稳定机器接口并经过决策后，才考虑内置 E2E。
 | UI 证据 | `PASS/FAIL/NOT_TESTED` | 真实 Desktop 交互是否已经验证 |
 
 `Success=true` 只允许用于 `SUCCEEDED`，它要求三项配置与 readiness 全部为
-`READY`。开发报告中的真实 UI E2E 可以由 D-026 `VmDevelopment` Computer Use 变为
-`PASS/FAIL`，但只产生 development evidence；P11 VM Codex 对精确候选字节提供正式
-外部证据后才可支持 `RELEASE_READY`。用户取消必要确认使用 `CANCELLED`，不能伪装
+`READY`。D-027 的真实 UI E2E 只由 clean Windows 11 x64 snapshot 上对精确候选
+执行的 Computer Use 产生 `PASS/FAIL`；三个 surface 和完整真实矩阵通过后才可支持
+`D027_RELEASE_READY`。用户取消必要确认使用 `CANCELLED`，不能伪装
 成技术失败或成功。
 
 每个非成功状态必须给出稳定错误码、下一步和是否可以安全续跑。报告还必须说明
@@ -162,8 +173,9 @@ Anthropic 提供稳定机器接口并经过决策后，才考虑内置 E2E。
 | 能力 | 首版目标 | 条件 |
 |---|---|---|
 | Windows 11 x64 | 必须 | 完整开发与 VM 验收 |
-| Windows 10 build 19041+ x64 | 必须 | VM 矩阵验证 |
-| Arm64 | 计划 | 有可用 VM/设备后进入发布范围 |
+| Arm64 | 不支持 | 不进入 D-027 发布或验收范围 |
+| Windows PowerShell 5.1 | 必须 | 唯一产品运行时 |
+| PowerShell 7 | 非阻塞诊断 | 不属于发布门，不维护 parity |
 | Chat 文本 | 必须 | DeepSeek API 有效 |
 | 内置 Code | 必须 | Git 和协议能力必须满足 |
 | Cowork | 必须 | 管理员、MSIX、VMP、虚拟化必须满足 |

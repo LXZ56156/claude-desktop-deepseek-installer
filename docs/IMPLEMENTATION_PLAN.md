@@ -1,8 +1,43 @@
 # 实现计划
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
-## D-026 当前唯一开发策略
+## D-027 当前唯一实现策略
+
+D-027 只面向 Windows 11 x64，产品运行时固定 Windows PowerShell 5.1。当前目标不是
+继续完善通用测试框架，而是从解压后的 ZIP 打通“无 Git、无 Claude”到
+Chat/Code/Cowork 成功的真实用户闭环。PowerShell 7 只作非阻塞诊断。
+
+实现顺序不可被框架重构抢占：
+
+1. **环境和权限 preflight**：Windows 11 x64、PS5.1、disposable VM、外部可恢复
+   snapshot、管理员/UAC、网络与 ownership 边界。
+2. **Git 检测**：唯一 executable/PATH 绑定、版本判断、合格复用、旧版/损坏判定、
+   路径歧义 fail closed，不读取或修改全局 Git 配置。
+3. **Git 安装**：官方 metadata 和固定 artifact、SHA-256、Authenticode
+   signer/publisher/identity、下载截断、TOCTOU 重新哈希、静默安装、退出码和 readback。
+4. **Claude Desktop 安装**：官方来源、artifact type/architecture/identity/hash/
+   signature/publisher、安装和复用。
+5. **VMP 与重启**：显式确认、UAC 取消/批准、NoRestart、checkpoint、手动重启和续跑。
+6. **凭据**：产品遮罩输入、Credential Manager/DPAPI CurrentUser、owner-only ACL，
+   无明文或 argv/env/log/report 回退。
+7. **HKCU managed policy**：HKLM/configLibrary 只读；ownership、冲突、备份、原子
+   写入、readback、补偿和恢复。
+8. **生命周期与维护**：Claude 启停、Diagnose、Repair、Restore、部分失败与幂等。
+9. **入口**：六个中英文 `.cmd`，稳定退出码和安全的 Status/ErrorCode/Changed/NextStep。
+10. **候选与桌面验收**：冻结 clean source，构建一个 ZIP，在 clean snapshot 从解压
+    入口执行，并用 Computer Use 验证 Chat、Code、Cowork。
+
+每个小批只运行受影响的 PS5.1 focused Unit/Contract、入口/DryRun/manifest/编码/
+secret 检查。D-027 不再扩展 HostSandbox、通用 Fake Provider 或 access-ledger；
+历史 relay/outbox/Automation 测试不运行。任何真实 destructive 场景只在 VM 外部
+可恢复 snapshot 或精确 ownership receipt 下执行。
+
+退出条件只有 `D027_RELEASE_READY`：精确候选在 clean Windows 11 x64 snapshot 完成
+附件规定的真实矩阵，ZIP 有 commit/tree、SHA-256、长度和 SBOM，且所有失败路径不
+误报成功。随后停在人工 merge/release 门。
+
+## D-026 开发策略（历史；已由 D-027 取代）
 
 D-026 已取代 D-025 的开发期角色分配。当前不再采用“VM 只读测试、宿主逐批修复、
 再人工搬运下一轮报告”的长反馈链，而是在 disposable Windows VM 内授予一个显式、
@@ -44,7 +79,7 @@ prompt、Git、命令参数、环境变量、日志、报告、截图、evidence
 `TEST_ISOLATION.md`；D-026 写入租约、Live/GUI 循环与历史协议边界见
 `VM_TEST_RELAY.md`。
 
-## 当前阶段总览
+## D-026 阶段总览（历史；非 D-027 发布门）
 
 | 阶段 | 名称 | 当前状态 | 关键退出门 |
 |---|---|---|---|

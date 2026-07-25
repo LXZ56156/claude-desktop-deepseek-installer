@@ -2,8 +2,8 @@
 
 最后核验：2026-07-22
 
-项目影响更新：2026-07-24（D-026 将真实 Live 实现移入 disposable VM 的可写
-`VmDevelopment` 通道；历史 relay/Automation 外部事实不再产生操作权）
+项目影响更新：2026-07-25（D-027 正式只支持 Windows 11 x64 +
+Windows PowerShell 5.1；D-026 与历史 relay/Automation 不再产生操作权）
 
 本文件是 Anthropic、DeepSeek、Windows、Git、Cloudflare 和 OpenAI Codex 外部事实的
 唯一项目内来源。上游可能随版本变化；实现不得只依赖这里的文字，必须把适用版本和
@@ -11,6 +11,7 @@
 
 本文中的部署选择和代码差异只是外部事实对项目的影响摘要；产品/技术选择以
 `docs/DECISIONS.md` 为准，易变实现状态以 `docs/HANDOFF.md` 和实际 Git 状态为准。
+上游支持范围不自动成为本产品支持范围；D-027 明确不发布或验收 Windows 10/Arm64。
 
 ## 状态定义
 
@@ -231,9 +232,10 @@ Anthropic 提供 credential helper 机制。helper 输出的 token 在内存中�
 
 ## Windows 与 Claude Desktop 安装
 
-官方安装条件：
+上游官方安装条件（不等于 D-027 产品支持矩阵）：
 
-- Windows 10 build 19041 或更高。
+- 上游文档列出的最低 Windows 版本包括 Windows 10 build 19041；D-027 产品明确只
+  支持和验收 Windows 11 x64，不从该上游最低条件外推 Windows 10 支持。
 - x64 或 Arm64。
 - Cowork 需要 MSIX 和硬件虚拟化。
 - Windows 支持按用户 `Add-AppxPackage` 和整机

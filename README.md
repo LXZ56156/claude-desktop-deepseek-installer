@@ -7,7 +7,32 @@ DeepSeek API Key，预置官方 Third-Party 配置并完成启动与验收。
 “一键”表示一次双击发起完整流程，不表示绕过 UAC、API Key 输入、必要重启、
 BIOS 虚拟化或 Claude 的安全授权。
 
-## 当前状态
+## 当前状态（D-027）
+
+D-027 已于 2026-07-25 取代 D-026 的实现、测试和发布路线。正式支持范围缩为
+Windows 11 x64，产品运行时固定 Windows PowerShell 5.1；PowerShell 7 只作开发者
+非阻塞诊断。唯一 Live 隔离环境是带 VM 外部可恢复 clean snapshot 的 disposable VM。
+
+当前产品仍不可用：公开入口还是 `scaffold_only`，Git 静默安装、Claude Desktop 安装、
+配置、API、Chat/Code/Cowork、Diagnose/Repair/Restore 均未真实通过。D-026 未完成
+WIP 已保存为明确 NON-RELEASE、SUPERSEDED checkpoint
+`ba7b108a1ad931fd64b3b4afad4d1e105c9f2ec2`，tree
+`b0ceb5cb1f388d088c3a65d7571ec75905821b3c`；它不是候选或发布证据。
+
+D-027 不再扩展通用 HostSandbox/Fake Provider/access-ledger，也不再运行退役
+relay/outbox/Automation 历史测试。阻塞门只保留 PS5.1 focused Unit/Contract、
+公开 `.cmd` 退出码、DryRun 零真实副作用、manifest/编码/secret scan，以及一个
+clean Windows 11 x64 snapshot 上从 ZIP 启动的真实用户矩阵。开发收敛后冻结一次
+clean source、构建一次精确候选，再对该候选验收；D-026 的 P10A/P10B/P11 不再是
+发布要求。通过后的状态为 `D027_RELEASE_READY`，仍只允许用户人工决定 merge/release，
+不得自动发布或 promotion。
+
+下一实现顺序从真实垂直路径开始：preflight → Git 检测/唯一 PATH → 官方 Git
+下载、hash、签名、TOCTOU 与静默安装 → Claude 官方安装 → VMP/UAC/重启恢复 →
+Credential Manager/DPAPI → HKCU policy 与恢复 → 生命周期/修复 → 六个入口 →
+ZIP 和 Computer Use。
+
+### D-026 checkpoint（历史；无当前产品权威）
 
 默认入口仍是 `Scaffold`，真实安装器尚未实现。VmDevelopment 已加入显式 `Stage`、
 三个精确 Live stage/tier 绑定、独立单次 `LoadLiveProviders` grant/CAS，以及与
@@ -151,28 +176,11 @@ P1 Sandbox Foundation 已完成；后续每个工作包必须持续保持其隔�
 
 ## 开发验证
 
-标准验证必须显式绑定 PowerShell 7、Windows PowerShell 和 Git 的绝对路径及
-SHA-256；完整命令见 `docs/TESTING.md` 的“P1 标准检查”。发布标准入口是
-`scripts/invoke-release-gates.ps1 -PassThru`：它先尝试阻塞发布的
-`ProductReleaseBlocking`，再独立尝试 `HistoricalDiagnostic`，即使产品路径失败也
-不会省略历史执行；任一基础设施失败最终硬失败。失败时共同入口只输出具名、安全的
-组合 evidence，分别绑定 Product/Historical 子路径的完整 HostSandbox 失败对象，不
-转发原始异常文本，也不按条数或 JSON 长度静默截断。ProductReleaseGate 在三个外层
-repository snapshot 之间运行产品质量门和嵌套 Release DryRun。
-
-D-026 要求把发布必过的产品行为/供应链/凭据/恢复/Release/真实用户路径与已退役
-operator 历史诊断分层。`config/product-release-gate.psd1` 以
-`EnforcementPhase=NamedProductReleaseGate` 覆盖全部 47 个 tracked 测试资产：
-Product 34（运行时 29 个 Pester），Historical 13。运行拓扑精确为 Product
-29 tests / 8 shards / 18 workers / 21 processes / 48 ledger，Historical
-13 / 9 / 20 / 23 / 52。`scripts/check.ps1` 保留为 42 tests / 13 shards /
-28 workers / 31 processes / 68 ledger 的 legacy `AllBlocking` 诊断并单独报告，
-不再是具名产品发布门。不得把旧 H02 时限失败误报为产品失败，也不得把历史门移除
-当作产品已经可发布。
-
-`scripts/bootstrap-dev.ps1` 只校验仓库固定 Pester tree，不下载、安装或修改用户
-PowerShell 配置。依赖缺失或漂移时普通质量门 fail closed；不得退回继承真实
-HOME/Git 配置的直跑命令。
+D-027 发布阻塞测试只运行 Windows PowerShell 5.1 focused Unit/Contract、公开
+`.cmd` 入口/退出码、DryRun 零真实进程/网络/注册表/外部写入、release manifest、
+编码与 secret scan，以及 clean Windows 11 x64 snapshot 的真实端到端矩阵。
+PowerShell 7 可诊断但不阻塞；旧 ProductReleaseGate、HostSandbox、双引擎一致性和
+HistoricalDiagnostics 只属于 D-026 历史，不再是 D-027 发布命令。
 
 ## 文档入口
 
@@ -187,10 +195,6 @@ HOME/Git 配置的直跑命令。
 - 窄范围 VM 校准：`docs/VM_CALIBRATION_PLAN.md`
 - 后续全面 VM 验收：`docs/VM_ACCEPTANCE_PLAN.md`
 
-下一任务以 `docs/HANDOFF.md` 顶部的 D-026 状态为门：宿主机完成当前文档/政策准备、
-相关本地门、正常 commit 和 fast-forward push 后冻结产品写入，并把精确 handoff
-commit/tree 交给 disposable VM。VM 从该精确锚点在现有分支和 PR #1 取得唯一写入
-租约，配置必要的官方开发工具，直接实现、测试、修复并用 Computer Use 验收，直到
-`READY_FOR_FORMAL_P10A`，再完成 P10A/P10B 和 P11 只读候选验收以取得
-`RELEASE_READY`。宿主机不得执行 Live；VM 不得恢复 relay/Automation，也不得自动
-merge、release、promotion 或越过 P12。
+下一任务以 `docs/HANDOFF.md` 顶部 D-027 状态和精确 clean HEAD/tree 为起点，在同一
+分支与 PR #1 优先打通“无 Git、无 Claude”到 Chat/Code/Cowork 的真实闭环。最终
+`D027_RELEASE_READY` 仍停在人工 merge/release 门，不自动发布。

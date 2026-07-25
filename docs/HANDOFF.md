@@ -4,33 +4,68 @@
 
 ## 当前动态状态（唯一入口）
 
-**D026_SCOPE_FREEZE_IN_PROGRESS / SUPERSEDED_WIP_CHECKPOINT_ONLY /
-NON_RELEASE / NOT_A_CANDIDATE / NOT_READY_FOR_FORMAL_P10A /
-NOT_RELEASE_READY。**
+**D026_STATUS=SUPERSEDED_BY_D027 /
+D026_CHECKPOINT=NON_RELEASE_SUPERSEDED /
+D027_SCOPE_HANDOFF_ACTIVE / WINDOWS_11_X64_ONLY /
+WINDOWS_POWERSHELL_5_1_RUNTIME_ONLY /
+REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
+REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
+D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
 
-2026-07-25 收到明确产品范围变更后，D-026 实现和测试加固已停止；所有子代理均已
-停止写入，最后一次文件写入均完整结束。冻结 parent 为 branch
-`codex/repair/p10a-0a-fast-lane`、local/remote/PR #1 head
-`1a367046f00b64e61f677320d2ed9f25999bd9b8`，parent tree
-`90e12c2c34bcc2178ad27ef1d6f15f3ebd48e8f2`。当前 checkpoint 包含 22 个 tracked
-修改文件、无 staged 或 untracked 文件；它保存未完成工作，不代表这些设计继续获得
-产品权威。
+D-026 已因 2026-07-25 的明确产品范围决定停止，不是完成、候选、
+`READY_FOR_FORMAL_P10A` 或 `RELEASE_READY`。未完成 tracked WIP 已以
+NON-RELEASE、SUPERSEDED checkpoint 保存并普通 fast-forward 推送：
 
-冻结最低检查仅包括：Windows PowerShell 5.1.26100.8875 对 13 个 changed
-`.ps1/.psd1` 文件解析 13/13；22 个 changed 文件编码检查 22/22；
+- branch：`codex/repair/p10a-0a-fast-lane`
+- checkpoint commit：`ba7b108a1ad931fd64b3b4afad4d1e105c9f2ec2`
+- checkpoint tree：`b0ceb5cb1f388d088c3a65d7571ec75905821b3c`
+- checkpoint 推送后 local、remote branch 与 PR #1 head：同一 commit
+- PR：`https://github.com/LXZ56156/claude-desktop-deepseek-installer/pull/1`
+
+checkpoint 前的冻结最低检查仅包括：Windows PowerShell 5.1.26100.8875 对 13 个
+changed `.ps1/.psd1` 文件解析 13/13；22 个 changed 文件编码检查 22/22；
 `git diff --check` 通过；tracked 170 files、release 10 files、evidence 334 files
-的脱敏 secret scan 均为 0 findings。未运行 ProductReleaseGate、历史诊断、PS7、
+脱敏 secret scan 均为 0 findings。没有运行 ProductReleaseGate、历史诊断、PS7、
 Pester、HostSandbox、`scripts/check.ps1`、Release DryRun 或旧完整矩阵。
 
-已知未完成项：最后停止的子代理修改了 `lib/execution-context.ps1`、
+该 checkpoint 明确保留未验证代码：`lib/execution-context.ps1`、
 `lib/live-adapters.ps1`、`config/public-functions.psd1`、
 `tests/Contract/PublicFunctions.Tests.ps1` 和
-`tests/Unit/ExecutionContext.Tests.ps1`，但没有运行测试；
-`tests/Unit/FakeProviders.Tests.ps1` 与 `tests/Contract/LiveAdapters.Tests.ps1`
-尚未同步，Live function source digest 也未在 `config/execution-boundaries.psd1`、
-`scripts/check-worker.ps1` 和相应 contract 中重算，因此旧静态门预期失败。不得把
-这个 checkpoint 称为可运行产品、候选或发布证据；Git 静默安装、Claude 安装和
-Computer Use 均未真实通过。
+`tests/Unit/ExecutionContext.Tests.ps1` 的最后一轮改动未测试；
+Fake/Live 回归和旧 function source digest 未同步，旧静态门预期失败。新任务不得
+先花时间恢复该门；只能按真实用户垂直路径判断哪些现有模块值得复用或简化。
+
+D-027 当前权威支持矩阵与发布路线：
+
+- 正式只支持 Windows 11 x64；产品运行时只支持 Windows PowerShell 5.1。
+- PowerShell 7 只作非阻塞开发诊断；不要求双引擎一致，不参与发布判定。
+- 唯一 Live 隔离环境是具有 VM 外部可恢复 clean snapshot 的 disposable VM。
+- 不再建设/扩展产品级 HostSandbox、通用 Fake Provider 或通用 access-ledger。
+  TestSafe/DryRun 只保留零真实进程、网络、注册表和外部写入的薄保护。
+- relay/outbox/scheduler/Automation 继续永久退役，其历史测试不再运行或阻塞。
+- P10A/P10B/P11 不再是发布要求。改为一次 clean source 冻结、一次候选构建、
+  clean snapshot 上验收精确候选，最后停在人工 merge/release 门。
+
+下一任务入口固定为：
+
+1. preflight；
+2. Git 检测、唯一 PATH、官方元数据/下载/hash/签名/TOCTOU/静默安装；
+3. Claude 官方获取、验证和安装；
+4. VMP/UAC/NoRestart/checkpoint/重启恢复；
+5. Credential Manager/DPAPI；
+6. HKCU managed policy ownership/备份/readback/补偿/恢复；
+7. Claude 生命周期、Diagnose/Repair/Restore；
+8. 六个中英文 `.cmd`；
+9. 从 ZIP 执行并用 Computer Use 验证 Chat、Code、Cowork。
+
+真实缺口必须如实保留：当前 Git 静默安装从未在“无 Git”快照成功，Claude 安装、
+配置、API、Chat/Code/Cowork、Diagnose/Repair/Restore 也均未真实通过。达到
+`D027_RELEASE_READY` 必须在 clean Windows 11 x64 snapshot 对精确候选完成附件定义的
+八组矩阵，并生成绑定 commit/tree 的 ZIP SHA-256、长度和 SBOM；任何取消、网络、
+hash、签名、publisher、安装或密钥失败都不得显示成功。不得自动 merge、release
+或 promotion。
+
+## D-026 历史状态（无当前操作权）
 
 **D026_VM_ACCEPTANCE_FIRST / VM_DEVELOPMENT_NAMED_GATE_ACTIVE /
 VM_START_BINDING_CONFIRMED / HOST_WRITE_FROZEN_AFTER_HANDOFF /

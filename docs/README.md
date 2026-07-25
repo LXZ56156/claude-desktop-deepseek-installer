@@ -5,6 +5,17 @@
 本目录是项目设计、实施和交接的长期事实入口。文档按“稳定规则”和“易变状态”
 分工，避免下一任务依赖聊天记录，也避免同一事实散落在多个文件后发生漂移。
 
+## D-027 当前文档权威
+
+D-027 自 2026-07-25 起取代 D-026 的产品范围、测试和发布路线。遇到冲突时，
+`HANDOFF.md` 顶部、`DECISIONS.md` 的 D-027、以及各文档顶部 D-027 节优先；
+D-026/P10A/P10B/P11、双引擎、HostSandbox/Fake/ledger 和历史 relay 测试文字只作
+历史记录。
+
+当前正式范围为 Windows 11 x64 + Windows PowerShell 5.1。PowerShell 7 只作非阻塞
+开发诊断。Live 只在带外部可恢复 clean snapshot 的 disposable VM；发布采用一次
+source 冻结、一次候选构建、clean snapshot 精确候选验收和最终人工发布门。
+
 ## 阅读顺序
 
 新开发任务按以下顺序阅读：
@@ -16,20 +27,19 @@
 5. `docs/DECISIONS.md`：已经冻结或仍待决策的产品与技术选择。
 6. `docs/LEGACY_REUSE.md`：旧 Claude Code 安装项目中可复用与禁止迁移的内容。
 7. `docs/ARCHITECTURE.md`、`docs/CONFIGURATION_DESIGN.md`：代码边界和配置方案。
-8. `docs/TEST_ISOLATION.md`、`docs/SECURITY.md`、`docs/TESTING.md`：宿主机零接触、
-   安全威胁和质量门。
-9. `docs/IMPLEMENTATION_PLAN.md`：从已完成 P1 的当前基线到 VM-ready 的阶段门。
-10. `docs/VM_TEST_RELAY.md`：D-026 disposable VM acceptance-first 单写开发闭环及
-    历史 `VM_BATCH_TEST_REPORT_V1`/relay 协议；文件名为兼容历史保留。
+8. `docs/TEST_ISOLATION.md`、`docs/SECURITY.md`、`docs/TESTING.md`：D-027 薄
+   TestSafe/DryRun、不可放松的安全边界和发布阻塞矩阵。
+9. `docs/IMPLEMENTATION_PLAN.md`：D-027 真实用户垂直路径优先级。
+10. `docs/VM_TEST_RELAY.md`：D-026 与更早协调协议历史；无当前操作权。
 11. `docs/REALTIME_RELAY_PROPOSAL.md`：已退役的 Cloudflare/realtime 方案历史；
     `RETIRED / NO_OPERATION_AUTHORITY`，不得作为当前路径。
-12. `docs/RELEASE_PLAN.md`、`docs/VM_CALIBRATION_PLAN.md`、
-    `docs/VM_ACCEPTANCE_PLAN.md`：发布候选、窄范围虚拟机校准与后续全面验收。
+12. `docs/RELEASE_PLAN.md`、`docs/VM_ACCEPTANCE_PLAN.md`：D-027 一次候选与 clean
+    snapshot 真实验收；`docs/VM_CALIBRATION_PLAN.md` 仅保留旧 P10A 历史。
 
 `docs/BOOTSTRAP_REPORT.md` 是 2026-07-12 初始脚手架的历史快照，不是当前状态
 来源。
 
-## 2026-07-24 当前协调事实（D-026）
+## 2026-07-24 协调事实（D-026 历史；已由 D-027 取代）
 
 当前唯一动态状态入口是 `docs/HANDOFF.md` 顶部。宿主机在现有
 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1 提交并推送 clean handoff commit 后

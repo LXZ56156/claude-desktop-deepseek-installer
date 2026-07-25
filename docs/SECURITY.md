@@ -12,7 +12,33 @@
   共享系统资源使用显式补偿矩阵，不承诺整机事务式回滚。
 - 未测试能力不能被报告为成功。
 
-## 当前 D-026 安全边界
+## 当前 D-027 安全边界
+
+D-027 简化发布流程，不简化以下安全不变量：
+
+- Live 只在 Windows 11 x64 disposable VM 且有 VM 外部可恢复 clean snapshot，
+  或最终用户明确运行的产品路径。宿主机、CI、TestSafe 和 DryRun 零 Live。
+- 永不定位、Test-Path、枚举、哈希、读取、备份、写入或删除真实
+  `%USERPROFILE%\.claude\settings.json`。
+- API key 只由用户在产品遮罩输入中输入，经 Credential Manager/DPAPI CurrentUser
+  和 owner-only helper 使用；不得进入 argv、环境变量、状态、异常、日志、报告、
+  Git、截图、fixture、evidence 或 Release。输入期间禁止截图、OCR、剪贴板操作。
+- Claude 和 Git 只取可唯一确认的官方来源。下载必须绑定 artifact type、identity、
+  architecture、SHA-256、Authenticode signer/publisher；执行安装前必须重新哈希。
+  任何不唯一、截断、hash/signature/publisher/identity 不匹配都 fail closed。
+- 不读取或修改全局 Git 配置。已有 Git 只有在版本合格、identity 正常且路径唯一时
+  复用；路径歧义 fail closed。官方 Git 安装器的 PATH 变化必须 readback。
+- HKLM managed policy 和 configLibrary 只读。仅写产品拥有的 HKCU `REG_SZ`；
+  ownership、冲突检测、备份、原子写入、readback、补偿和恢复缺一不可。
+- UAC 不可自动越过；取消、NoRestart、重启未完成、网络/安装/API 失败均不得显示成功。
+- destructive Live 场景必须有外部 snapshot 或精确 ownership receipt，不破坏未知状态。
+- `D027_RELEASE_READY` 仍不授权自动 merge、GitHub Release 或 promotion。
+
+PowerShell 7、通用 HostSandbox/Fake/access-ledger、历史 relay 测试和
+P10A/P10B/P11 都不是 D-027 安全证据；真正证据来自 PS5.1 focused 合同、薄 DryRun
+零副作用和 clean snapshot 上的精确候选真实矩阵。
+
+## D-026 安全边界（历史；已由 D-027 取代）
 
 D-026 只改变开发阶段的 writer 和执行地点，不降低产品安全门：
 

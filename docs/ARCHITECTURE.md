@@ -2,7 +2,49 @@
 
 更新日期：2026-07-25
 
-## 定位
+## D-027 当前架构
+
+D-027 采用 Windows 11 x64 + Windows PowerShell 5.1 的窄垂直架构。目标是让用户从
+解压 ZIP 和双击入口开始，依次完成 preflight、Git、Claude、VMP/重启、credential、
+HKCU policy、生命周期和 Chat/Code/Cowork，而不是继续建设通用执行框架。
+
+~~~text
+.cmd (中/英)
+  -> Start-Here.ps1 / PS5.1 orchestrator
+     -> preflight + explicit Live confirmation
+        -> narrow Windows adapters
+           -> Git detect/acquire/verify/install/readback
+           -> Claude acquire/verify/install/readback
+           -> VMP/UAC/checkpoint/resume
+           -> Credential Manager/DPAPI helper
+           -> HKCU policy ownership/backup/readback/compensation
+           -> Claude lifecycle/Diagnose/Repair/Restore
+              -> visible Chat/Code/Cowork acceptance
+~~~
+
+Live adapters 不由默认加载触发，只能在具有外部可恢复 snapshot 的 disposable VM
+或最终用户显式 Live 流程使用。TestSafe/DryRun 是窄旁路：返回计划/安全状态并确保
+零真实进程、网络、注册表和外部写入，不模拟完整 OS。
+
+现有 ExecutionContext/provider/Fake/access-ledger/HostSandbox 不是 D-027 目标架构。
+可局部复用直接有助于上述垂直路径的纯合同和结果类型，但不得为了框架完整性阻塞
+Git/Claude 真实路径，也不得全面重写已可用模块。
+
+候选链为：
+
+~~~text
+clean source commit/tree
+  -> one reproducible candidate ZIP + SHA-256 + length + SBOM
+     -> external restore of clean Windows 11 x64 snapshot
+        -> exact candidate end-to-end acceptance
+           -> D027_RELEASE_READY
+              -> manual merge/release decision
+~~~
+
+任何 source 修复都会废弃旧候选并完整重建/重验。D-026 P10A/P10B/P11 和多环境
+正式链只保留历史。
+
+## D-026 定位与通用 provider 架构（历史；已由 D-027 取代）
 
 本项目独立安装和配置 Claude Desktop，不依赖独立 Claude Code CLI。目标是通过
 Anthropic 官方 Third-Party managed configuration 连接 DeepSeek，固定以 Chat、

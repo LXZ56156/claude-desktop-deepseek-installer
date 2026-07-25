@@ -1,6 +1,6 @@
 # 决策记录
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 本文件记录跨工作包的重要决定。状态为“暂定”的决定需要 artifact 或 VM 证据后
 才能转为“冻结”；撤销决定必须保留历史理由并同步相关文档和测试。“部分撤销”
@@ -43,7 +43,8 @@
 | D-023 | 一次性 Fast Lane 自动诊断恢复 | 撤销 |
 | D-024 | 前台双对话 relay 诊断取代 Automation 激活 | 撤销 |
 | D-025 | Host/VM 只用人工批量报告搬运 | 撤销 |
-| D-026 | Disposable VM acceptance-first 开发租约 | 冻结 |
+| D-026 | Disposable VM acceptance-first 开发租约 | 由 D-027 取代 |
+| D-027 | Windows 11 practical release 简化路线 | 冻结 |
 
 ## D-001：首选 managed configuration
 
@@ -458,7 +459,7 @@ DevelopmentOnly 历史/回归面保留，不产生当前操作权。
 
 ## D-026：Disposable VM acceptance-first 开发租约
 
-**状态：冻结（2026-07-24）**
+**状态：由 D-027 取代（2026-07-25；仅保留历史）**
 
 用户明确要求停止由宿主机逐条接收 VM synthetic 报告再批修的长反馈链，改为在
 disposable VM 内直接实现、测试和修复；真实安装、配置和桌面用户路径先达到
@@ -489,3 +490,60 @@ D-020 至 D-024 的 relay/Automation 设计。
 为了“简化”而降级。API Key 必须由用户在 VM 本地遮罩输入，只经 DPAPI CurrentUser 和
 owner-only helper 使用；任何 Key 即使是低余额测试 Key也不得进入 prompt、Git、参数、
 环境变量、日志、报告、截图、evidence 或 Release。
+
+## D-027：Windows 11 practical release 简化路线
+
+**状态：冻结（2026-07-25）**
+
+用户明确缩小产品范围，停止继续扩展 D-026 的通用测试/隔离框架和正式
+P10A/P10B/P11 链，优先交付一个可在真实用户机器路径工作的 Windows 11 首版。
+D-026 未完成代码以 NON-RELEASE、SUPERSEDED checkpoint
+`ba7b108a1ad931fd64b3b4afad4d1e105c9f2ec2` / tree
+`b0ceb5cb1f388d088c3a65d7571ec75905821b3c` 保存，不是候选或通过证据。
+
+### 范围
+
+- 正式只支持 Windows 11 x64；移除 Windows 10 和 Arm64 首版声明/验收。
+- 产品运行时只支持 Windows PowerShell 5.1。
+- PowerShell 7 只作开发者非阻塞诊断，不是发布门，不维护双引擎结果一致性。
+- disposable VM 加 VM 外部可恢复 clean snapshot 是唯一 Live 隔离环境；同一 VM
+  可通过恢复同一 snapshot 重复不同场景。
+- 不再建设或扩展产品级 HostSandbox、通用 Fake Provider 或通用 access-ledger。
+  TestSafe/DryRun 只是防止 CI 和普通开发命令产生真实副作用的薄层。
+- relay、outbox、scheduler、Automation、旧 onboarding 和全部相关历史测试永久
+  退役；D-027 不运行它们，也不让它们阻塞发布。
+
+### 发布路线
+
+1. 按真实用户垂直路径实现并完成 PS5.1 focused 测试。
+2. 冻结一个 clean source commit/tree。
+3. 从该 source 构建一个候选 ZIP，记录 SHA-256、长度、SBOM 和工具链。
+4. 从 VM 外部恢复 clean Windows 11 x64 snapshot，只验收该精确候选。
+5. 任何 source 修复都使旧候选失效，重新冻结、构建并完整重验。
+6. 全部通过产生 `D027_RELEASE_READY`，但仍停在人工 merge/release/promotion 门。
+
+D-026 的 `READY_FOR_FORMAL_P10A`、P10A facts、P10B 双候选和 P11 不再是 D-027
+发布要求。候选不可在验收中热补丁，clean snapshot 和精确候选 hash 仍不可省略。
+
+### 阻塞门
+
+- Windows PowerShell 5.1 focused Unit/Contract。
+- 六个公开中英文 `.cmd` 入口和稳定退出码。
+- DryRun 零真实进程、网络、注册表和外部写入。
+- release manifest、编码、tracked/release/evidence secret scan。
+- 一个 clean Windows 11 x64 snapshot 上的真实安装、复用/幂等、失败注入、API、
+  Chat/Code/Cowork、Diagnose/Repair/Restore 矩阵。
+
+### 不可删除的安全边界
+
+- 永不定位、Test-Path、枚举、哈希、读取、备份、写入或删除真实
+  `%USERPROFILE%\.claude\settings.json`。
+- API key 只经产品遮罩输入和 Credential Manager/DPAPI CurrentUser；不得进入 argv、
+  环境变量、日志、报告、Git、截图、fixture 或 evidence。
+- Claude 与 Git 只取可确认的官方来源；下载必须验证 artifact identity、SHA-256、
+  Authenticode signer/publisher，并在执行前重新哈希。
+- 不读取或修改全局 Git 配置。HKLM/configLibrary 只读；产品拥有的 HKCU 写入必须有
+  ownership、备份、readback、补偿和恢复。
+- UAC 取消、网络、hash、签名、publisher、安装或密钥失败不得显示成功。
+- destructive Live 只在可恢复 snapshot 或具有精确 ownership receipt 的资源执行。
+- 不自动 merge、release 或 promotion。

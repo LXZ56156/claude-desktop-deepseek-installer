@@ -1,6 +1,10 @@
 # P10A disposable VM 窄校准计划
 
-更新日期：2026-07-24
+更新日期：2026-07-25
+
+> **D-027 历史声明：** P10A calibration 不再是当前发布要求。本文件只保留 D-026
+> 事实与旧 schema，不能阻塞或授权 D-027。当前候选路线见 `RELEASE_PLAN.md` 和
+> `VM_ACCEPTANCE_PLAN.md`。
 
 ## 定位
 

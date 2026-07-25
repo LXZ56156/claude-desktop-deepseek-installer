@@ -1,18 +1,23 @@
 # Release 计划
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 ## 当前状态
 
-项目还没有可发布安装器。`build-release.ps1 -DryRun` 只验证白名单和安全合同，
-不生成对外 Release。D-026 先在 disposable VM 的可写 `VmDevelopment` lane
-实现和反复验证真实用户路径；收敛后冻结精确 commit/calibration 输入并完成 P10A，
-只有受信事实冻结后才由 P10B 构建候选。P11 最终验收只测试精确冻结字节，P12 才
-允许人工决定发布。
+项目还没有可发布安装器。D-027 只面向 Windows 11 x64 + Windows PowerShell 5.1，
+并采用一个候选的实用发布路线：
 
-宿主机与 CI 始终零 Live。历史 relay、outbox、Automation、旧 onboarding 和批量
-报告不是构建或发布前置，不得恢复；其缺失或失败不阻断真实用户路径，但也不得
-把历史 PASS 伪造为候选、Computer Use 或发布证据。
+1. 在 disposable VM 开发真实用户垂直路径，完成 PS5.1 focused 和薄 DryRun 门。
+2. 冻结一个 clean source commit/tree 和支持矩阵。
+3. 从该 source 一次构建候选 ZIP，记录 SHA-256、长度、SBOM、工具链和 package
+   inventory。
+4. 由 VM 外部恢复 clean Windows 11 x64 snapshot，只测试该精确 ZIP。
+5. 任何 source 修复都使候选失效，重新冻结、构建并完整验收。
+6. 完整矩阵通过后标记 `D027_RELEASE_READY`，停在人工 merge/release 门。
+
+D-026 的 P10A calibration、P10B 双候选、P11 和 P12 编号链不再是 D-027 发布要求。
+宿主机与 CI 仍零 Live。relay、outbox、Automation、scheduler、旧 onboarding 和
+全部历史测试永久退役，不运行、不阻塞，也不能冒充候选/Computer Use 证据。
 
 ## 分发原则
 
@@ -22,7 +27,27 @@
 - 不修改、解包再封装或汉化上游签名二进制。
 - 每个 Release 都能从一个干净 commit 重现。
 
-## 构建阶段
+## D-027 候选冻结与验收
+
+构建输入必须是 clean commit/tree；候选必须醒目标记为未发布，并至少生成：
+
+- CandidateId；
+- source commit/tree；
+- ZIP SHA-256 与字节长度；
+- package inventory/content digest；
+- SBOM；
+- Windows PowerShell 5.1、Git、.NET/Windows SDK 等实际构建工具 receipt；
+- 支持矩阵 `Windows 11 x64 only`。
+
+clean snapshot 验收覆盖：无 Git/Claude 首次安装；已有合格版本复用/幂等；
+Git 旧版/损坏/歧义；UAC/VMP/重启；离线/截断/hash/signature/publisher；
+无效/限额/新输入密钥；Chat/Code/Cowork；Diagnose/Repair/Restore/owner-owned
+cleanup。必须从解压后的公开入口运行，不能从源码 dot-source 内部函数。
+
+最终人工门只能发布已验收的精确 CandidateId/hash。不得自动 merge、创建 GitHub
+Release、上传正式资产或 promotion。
+
+## D-026 构建与发布合同（以下余篇均为历史；非 D-027 要求）
 
 1. **VmDevelopment 收敛**
    - VM Codex 是现有开发分支/PR 的临时唯一写入者；宿主机同期停止写入。

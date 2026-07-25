@@ -2,7 +2,44 @@
 
 更新日期：2026-07-25
 
-## 核心原则
+## D-027 发布阻塞矩阵（当前权威）
+
+D-027 只支持 Windows 11 x64 和 Windows PowerShell 5.1。PowerShell 7 只允许作为
+开发者非阻塞诊断；不维护双引擎一致性，不以 PS7 结果否决候选。
+
+代码侧阻塞检查只保留：
+
+1. 受影响模块的 PS5.1 focused Unit/Contract。
+2. 六个公开中英文 `.cmd` 入口、Unicode 输出和稳定进程退出码。
+3. DryRun 证明零真实进程、网络、注册表和 sandbox 外写入。
+4. release manifest、编码、tracked/release/evidence secret scan。
+5. 候选冻结前的 `git diff --check`、clean source commit/tree 和 ZIP inventory。
+
+不再运行 D-026 的 ProductReleaseGate、完整 `scripts/check.ps1`、双引擎 parity、
+HostSandbox 扩展或 HistoricalDiagnostics。relay、outbox、scheduler、Automation、
+旧 onboarding/evidence-plumbing 测试永久退役且不进入 D-027 结果。
+
+唯一发布级真实矩阵在 VM 外部恢复的同一个 clean Windows 11 x64 snapshot 上反复执行：
+
+1. 无 Git、无 Claude：官方 Git 静默安装、官方 Claude 安装、配置和启动。
+2. 已有合格 Git/Claude：正确复用、重复运行幂等。
+3. Git 旧版/损坏/路径歧义：修复或安装；歧义 fail closed。
+4. UAC 取消/批准、VMP 需要重启、重启后继续。
+5. 离线、截断、hash、签名、publisher 不匹配。
+6. 无效/限额密钥和用户新输入密钥的最小真实请求。
+7. Computer Use 可见验证 Chat、Code、Cowork。
+8. Diagnose、Repair、Restore 和仅清理产品拥有资源。
+
+真实矩阵必须从解压后的精确候选 ZIP 入口开始。候选绑定 clean source commit/tree、
+SHA-256、长度和 SBOM；验收中发现 source 缺陷就废弃旧候选，重新冻结/构建/全量重验。
+全部通过才是 `D027_RELEASE_READY`，仍不授权自动 merge/release/promotion。
+
+TestSafe/DryRun 只是薄安全层，不是另一套产品运行时或通用沙盒。destructive Live
+必须有外部可恢复 snapshot 或精确 ownership receipt。永不访问真实
+`%USERPROFILE%\.claude\settings.json`；密钥输入期间不截图/OCR/剪贴板，secret
+findings 必须为 0。
+
+## D-026 核心原则与多层门禁（历史；非当前发布要求）
 
 本地测试不能靠“运行后看起来没出事”证明安全。必须通过 fake provider、独立
 sandbox、静态门和 access ledger，证明受控产品代码没有发起真实 Claude、Git、
