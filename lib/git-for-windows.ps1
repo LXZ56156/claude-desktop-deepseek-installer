@@ -173,16 +173,23 @@ function ConvertFrom-CddsiGitHubReleaseMetadata {
     $tagMatch = [regex]::Match($ReleaseDocument.tag_name, '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.windows\.(?<revision>[1-9][0-9]*)$')
     if (-not $tagMatch.Success) { throw 'Git for Windows release tag does not match vX.windows.N.' }
     $releaseVersion = $tagMatch.Groups['version'].Value
+    $releaseRevision = $tagMatch.Groups['revision'].Value
+    $artifactVersion = '{0}.{1}' -f $releaseVersion, $releaseRevision
+    # Git for Windows omits ".1" from installer file names for windows.1
+    # releases, but appends later revision numbers (for example,
+    # Git-2.55.0.3-64-bit.exe for v2.55.0.windows.3).
+    $installerFileVersion = if ($releaseRevision -ceq '1') { $releaseVersion } else { $artifactVersion }
     $expectedTagUri = 'https://github.com/git-for-windows/git/releases/tag/' + $ReleaseDocument.tag_name
     if ($ReleaseDocument.html_url -cne $expectedTagUri) { throw 'GitHub release URL is not bound to the declared tag.' }
 
     $assetFields = @('name', 'browser_download_url', 'size', 'state', 'content_type', 'digest')
     $assetNamePattern = if ($Architecture -ceq 'x64') {
-        '^Git-' + [regex]::Escape($releaseVersion) + '-64-bit\.exe$'
+        '^Git-' + [regex]::Escape($installerFileVersion) + '-64-bit\.exe$'
     }
     else {
-        '^Git-' + [regex]::Escape($releaseVersion) + '-arm64\.exe$'
+        '^Git-' + [regex]::Escape($installerFileVersion) + '-arm64\.exe$'
     }
+    $installerContentTypes = @('application/executable', 'application/x-msdownload')
     $selectedAssets = @()
     foreach ($asset in @($ReleaseDocument.assets)) {
         if (-not (Test-CddsiExactPropertySet -InputObject $asset -Expected $assetFields)) {
@@ -193,12 +200,20 @@ function ConvertFrom-CddsiGitHubReleaseMetadata {
             $asset.browser_download_url -isnot [string] -or -not (Test-CddsiOfficialArtifactUri -SourceUri $asset.browser_download_url -ExpectedOwner GitForWindows) -or
             ($asset.size -isnot [int] -and $asset.size -isnot [long]) -or [long]$asset.size -lt 1 -or
             $asset.state -isnot [string] -or $asset.state -cne 'uploaded' -or
-            $asset.content_type -isnot [string] -or $asset.content_type -cne 'application/x-msdownload' -or
+            $asset.content_type -isnot [string] -or [string]::IsNullOrWhiteSpace($asset.content_type) -or
             ($null -ne $asset.digest -and $asset.digest -isnot [string])
         ) {
             throw 'GitHub release asset values are invalid.'
         }
-        if ($asset.name -match $assetNamePattern) { $selectedAssets += $asset }
+        if ($asset.name -match $assetNamePattern) {
+            if ($installerContentTypes -cnotcontains $asset.content_type) {
+                throw 'GitHub installer asset content type is invalid.'
+            }
+            if ($asset.digest -isnot [string] -or $asset.digest -notmatch '^sha256:[a-fA-F0-9]{64}$') {
+                throw 'GitHub installer asset requires an exact SHA-256 digest.'
+            }
+            $selectedAssets += $asset
+        }
     }
     if ($selectedAssets.Count -ne 1) { throw 'GitHub release metadata must contain exactly one installer for the requested architecture.' }
     $selected = $selectedAssets[0]
@@ -206,20 +221,16 @@ function ConvertFrom-CddsiGitHubReleaseMetadata {
     if ($selected.browser_download_url -cne ($expectedAssetPrefix + $selected.name)) {
         throw 'GitHub asset URL is not exactly bound to the declared tag and asset name.'
     }
-    $artifactSha256 = $null
-    if ($null -ne $selected.digest) {
-        if ($selected.digest -notmatch '^sha256:[a-fA-F0-9]{64}$') { throw 'GitHub asset digest is invalid.' }
-        $artifactSha256 = $selected.digest.Substring(7).ToLowerInvariant()
-    }
+    $artifactSha256 = $selected.digest.Substring(7).ToLowerInvariant()
 
     $withoutBinding = [pscustomobject][ordered]@{
         SchemaVersion              = 1
-        DescriptorId               = ('git-for-windows-{0}-windows-{1}-{2}' -f $releaseVersion, $tagMatch.Groups['revision'].Value, $Architecture)
+        DescriptorId               = ('git-for-windows-{0}-windows-{1}-{2}' -f $releaseVersion, $releaseRevision, $Architecture)
         ArtifactType               = 'GitForWindowsInstaller'
         SourcePolicy               = 'git_for_windows_official_only'
         SourceUri                  = $selected.browser_download_url
         SourceUriBindingToken      = Get-CddsiSourceUriBindingToken -SourceUri $selected.browser_download_url
-        ReleaseVersion             = $releaseVersion
+        ReleaseVersion             = $artifactVersion
         Architecture               = $Architecture
         Channel                    = 'Installer'
         FileNameToken              = if ($Architecture -ceq 'x64') { '<ARTIFACT_FILE:GIT_X64_INSTALLER>' } else { '<ARTIFACT_FILE:GIT_ARM64_INSTALLER>' }

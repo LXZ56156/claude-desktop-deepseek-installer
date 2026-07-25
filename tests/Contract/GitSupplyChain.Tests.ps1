@@ -61,11 +61,11 @@
 }
 
 Describe 'P4 Git for Windows supply-chain contract' {
-    It 'parses the fixed official repository tag and one installer per architecture' {
+    It 'parses current-shaped official metadata and ignores unrelated release asset MIME types' {
         foreach ($architecture in @('x64', 'arm64')) {
             $descriptor = ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $script:GitFixture -Architecture $architecture
-            $descriptor.ReleaseVersion | Should -BeExactly '2.53.0'
-            $descriptor.DescriptorId | Should -Match '^git-for-windows-2\.53\.0-windows-3-'
+            $descriptor.ReleaseVersion | Should -BeExactly '2.55.0.3'
+            $descriptor.DescriptorId | Should -Match '^git-for-windows-2\.55\.0-windows-3-'
             $descriptor.Architecture | Should -BeExactly $architecture
             $descriptor.ExpectedArtifactSha256 | Should -Match '^[a-f0-9]{64}$'
             $descriptor.MetadataStatus | Should -BeExactly 'UNRESOLVED'
@@ -77,25 +77,52 @@ Describe 'P4 Git for Windows supply-chain contract' {
         }
     }
 
-    It 'rejects draft prerelease wrong-repository tag and duplicate installer metadata' {
+    It 'binds windows.1 tags to the official filename without a .1 suffix' {
+        $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+        $document.tag_name = 'v2.54.0.windows.1'
+        $document.html_url = 'https://github.com/git-for-windows/git/releases/tag/v2.54.0.windows.1'
+        $document.assets = @($document.assets[0])
+        $document.assets[0].name = 'Git-2.54.0-64-bit.exe'
+        $document.assets[0].browser_download_url = 'https://github.com/git-for-windows/git/releases/download/v2.54.0.windows.1/Git-2.54.0-64-bit.exe'
+
+        $descriptor = ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64
+        $descriptor.ReleaseVersion | Should -BeExactly '2.54.0.1'
+        $descriptor.SourceUri | Should -BeExactly $document.assets[0].browser_download_url
+    }
+
+    It 'rejects draft prerelease wrong-repository tag duplicate installer and wrong revision filename' {
         foreach ($property in @('draft', 'prerelease')) {
             $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
             $document.$property = $true
             { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
         }
         $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-        $document.html_url = 'https://github.com/other/repository/releases/tag/v2.53.0.windows.3'
+        $document.html_url = 'https://github.com/other/repository/releases/tag/v2.55.0.windows.3'
         { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
         $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
         $document.assets += $document.assets[0]
         { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
         $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-        $document.tag_name = '2.53.0'
+        $document.tag_name = '2.55.0'
         { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
 
         $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-        $document.assets[0].browser_download_url = 'https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/Git-2.53.0-arm64.exe'
+        $document.assets[0].browser_download_url = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-arm64.exe'
         { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
+
+        $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+        $document.assets[0].name = 'Git-2.55.0-64-bit.exe'
+        $document.assets[0].browser_download_url = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0-64-bit.exe'
+        { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
+    }
+
+    It 'rejects a selected installer with a missing digest or non-executable MIME type' {
+        foreach ($mutation in @('MissingDigest', 'WrongMime')) {
+            $document = $script:GitFixture | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+            if ($mutation -ceq 'MissingDigest') { $document.assets[0].digest = $null }
+            else { $document.assets[0].content_type = 'text/plain' }
+            { ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $document -Architecture x64 } | Should -Throw
+        }
     }
 
     It 'consumes the GitHub latest document only through a declared fake Network observation' {

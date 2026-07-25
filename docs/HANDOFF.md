@@ -1,6 +1,6 @@
 # 新任务交接
 
-更新日期：2026-07-25
+更新日期：2026-07-26
 
 ## 当前动态状态（唯一入口）
 
@@ -8,9 +8,51 @@
 D026_CHECKPOINT=NON_RELEASE_SUPERSEDED /
 D027_SCOPE_HANDOFF_ACTIVE / WINDOWS_11_X64_ONLY /
 WINDOWS_POWERSHELL_5_1_RUNTIME_ONLY /
+GIT_OFFICIAL_METADATA_CURRENT_SHAPE_FIXED /
+GIT_LIVE_DOWNLOAD_AND_INSTALL_STILL_DISABLED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前实现批次
+
+D-027 从用户指定的精确起点开始：commit
+`521b4fb7361f4fadd8b987a60996b3d9bf54c276`、tree
+`157cca551bcd49eac4845ca5d87f60805b004b9f`。开始写入前已确认 local HEAD/tree、
+upstream、remote branch 和 PR #1 head 全部等于该起点，index/worktree clean；
+fetch 后再次确认远端没有未知提交。
+
+首批只修复直接阻塞真实 Git for Windows x64 路径的官方 release metadata 合同：
+
+- 2026-07-26 从官方 `git-for-windows/git` latest release 观察到
+  `v2.55.0.windows.3` 的唯一 x64 installer 为
+  `Git-2.55.0.3-64-bit.exe`，长度 65388144 bytes，GitHub metadata SHA-256 为
+  `af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca`，
+  MIME 为 `application/executable`。
+- parser 现在把 `.windows.N` 精确绑定为四段 artifact version；`windows.1`
+  文件名仍按官方规则省略 `.1`，后续 revision 则必须包含 `.N`。
+- 非 installer 的 ZIP、7z、tar 等 release assets 不再因自身 MIME 污染唯一 installer
+  选择；选中的 installer 仍必须来自精确官方 tag/download URL，且必须有可解析的
+  SHA-256 digest、正长度、uploaded 状态和受限 executable MIME。
+- Windows PowerShell 5.1 focused
+  `tests/Contract/GitSupplyChain.Tests.ps1` 为 8 passed、0 failed、0 skipped、
+  0 inconclusive、0 not-run；覆盖 current-shaped metadata、`windows.1`、非 EXE
+  decoy、duplicate/wrong revision、缺 digest/错误 MIME、未解析 signer 时 fail closed、
+  synthetic TOCTOU rehash 和禁止验签 bypass。
+- Windows PowerShell 5.1 `tests/Contract/Encoding.Tests.ps1` 为 4/4；release
+  `scripts/build-release.ps1 -DryRun` 为
+  `SUCCEEDED/DryRun/Changed=false/CleanupOutcome=Succeeded`，39 个 package files，
+  product process/network/registry、outside write、forbidden access、unexpected
+  ledger、secret findings 和 live provider loaded 均为 0/false。
+- 显式 tracked scan 覆盖 170 个 `git ls-files` 项，secret findings 为 0；当前
+  workspace 顶层没有 evidence/artifact/report/log root，故 evidence files 为 0。
+  release source/staging/ZIP/extracted secret scan 已包含在上述 DryRun 且为 0。
+
+本批没有下载 installer、执行安装、触发 UAC、读取全局 Git 配置或执行任何产品
+Live mutation。真实下载 redirect 约束、Authenticode signer/publisher/PE identity、
+执行前二次 hash/signature/identity、Inno 静默退出码和安装后唯一 PATH/readback
+仍未实现或真实通过；因此状态仍是 `REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED`，
+不得把本批 metadata PASS 当作可安装、候选或发布证据。
 
 D-026 已因 2026-07-25 的明确产品范围决定停止，不是完成、候选、
 `READY_FOR_FORMAL_P10A` 或 `RELEASE_READY`。未完成 tracked WIP 已以

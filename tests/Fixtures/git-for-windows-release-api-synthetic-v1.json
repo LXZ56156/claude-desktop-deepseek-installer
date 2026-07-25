@@ -1,24 +1,40 @@
 {
-  "tag_name": "v2.53.0.windows.3",
+  "tag_name": "v2.55.0.windows.3",
   "draft": false,
   "prerelease": false,
-  "html_url": "https://github.com/git-for-windows/git/releases/tag/v2.53.0.windows.3",
+  "html_url": "https://github.com/git-for-windows/git/releases/tag/v2.55.0.windows.3",
   "assets": [
     {
-      "name": "Git-2.53.0-64-bit.exe",
-      "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/Git-2.53.0-64-bit.exe",
-      "size": 70000000,
+      "name": "Git-2.55.0.3-64-bit.exe",
+      "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe",
+      "size": 65388144,
       "state": "uploaded",
-      "content_type": "application/x-msdownload",
-      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "content_type": "application/executable",
+      "digest": "sha256:af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca"
     },
     {
-      "name": "Git-2.53.0-arm64.exe",
-      "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/Git-2.53.0-arm64.exe",
+      "name": "Git-2.55.0.3-arm64.exe",
+      "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-arm64.exe",
       "size": 70000001,
       "state": "uploaded",
-      "content_type": "application/x-msdownload",
+      "content_type": "application/executable",
       "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "name": "PortableGit-2.55.0.3-64-bit.7z.exe",
+      "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/PortableGit-2.55.0.3-64-bit.7z.exe",
+      "size": 60000000,
+      "state": "uploaded",
+      "content_type": "application/octet-stream",
+      "digest": null
+    },
+    {
+      "name": "Git-2.55.0.3-64-bit.tar.bz2",
+      "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.tar.bz2",
+      "size": 55000000,
+      "state": "uploaded",
+      "content_type": "application/x-bzip2",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     }
   ]
 }
