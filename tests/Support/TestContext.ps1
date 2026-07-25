@@ -39,5 +39,5 @@ function New-CddsiTestExecutionContext {
         CanaryTokens             = @('<CANARY_CLAUDE_CODE_SETTINGS>', '<CANARY_GIT_CONFIG>', '<CANARY_CLAUDE_POLICY>', '<CANARY_CREDENTIAL>')
     }
     $providers = New-CddsiFakeProviderSet -ExpectedCalls $ExpectedCalls -FailureInjections $FailureInjections
-    return New-CddsiExecutionContext -RunId $RunId -Mode $Mode -EnvironmentTier HostSandbox -SandboxRoot $SandboxRoot -Paths $paths -Providers $providers -Policy $policy -AccessLedger (New-CddsiAccessLedger)
+    return New-CddsiExecutionContext -RunId $RunId -Mode $Mode -Stage Scaffold -EnvironmentTier HostSandbox -SandboxRoot $SandboxRoot -Paths $paths -Providers $providers -Policy $policy -AccessLedger (New-CddsiAccessLedger)
 }

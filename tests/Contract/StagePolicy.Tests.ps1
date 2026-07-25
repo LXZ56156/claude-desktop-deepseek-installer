@@ -6,15 +6,20 @@
 
     function New-CddsiSyntheticStageManifest {
         param(
-            [ValidateSet('Scaffold', 'Development', 'VmCalibration', 'VmAcceptance', 'UserLive')]
+            [ValidateSet('Scaffold', 'Development', 'VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive')]
             [string]$Stage = 'VmAcceptance',
-            [string]$ArtifactProfile = ''
+            [string]$ArtifactProfile = '',
+            [ValidateSet(0, 1, 2)]
+            [int]$SchemaVersion = 0
         )
 
         if ([string]::IsNullOrEmpty($ArtifactProfile)) { $ArtifactProfile = $Stage }
+        if ($SchemaVersion -eq 0) {
+            $SchemaVersion = if ($Stage -ceq 'VmDevelopment') { 2 } else { 1 }
+        }
         return [pscustomobject][ordered]@{
-            SchemaVersion   = 1
-            ContractVersion = 'cddsi-stage-manifest-v1'
+            SchemaVersion   = $SchemaVersion
+            ContractVersion = 'cddsi-stage-manifest-v{0}' -f $SchemaVersion
             Stage           = $Stage
             ArtifactProfile = $ArtifactProfile
             ArtifactVersion = '1.2.3-rc.1'
@@ -243,10 +248,21 @@
 }
 
 Describe 'stage manifest contract' {
-    It 'accepts only the exact lifecycle stage and artifact-profile mapping' {
+    It 'keeps v1 on the original five stages and reserves v2 for VmDevelopment' {
         foreach ($stage in @('Scaffold', 'Development', 'VmCalibration', 'VmAcceptance', 'UserLive')) {
-            (Test-CddsiStageManifest -Manifest (New-CddsiSyntheticStageManifest -Stage $stage)) | Should -BeTrue
+            (Test-CddsiStageManifest -Manifest (New-CddsiSyntheticStageManifest -Stage $stage -SchemaVersion 1)) | Should -BeTrue
         }
+        (Test-CddsiStageManifest -Manifest (New-CddsiSyntheticStageManifest -Stage VmDevelopment -SchemaVersion 2)) |
+            Should -BeTrue
+        foreach ($stage in @('Scaffold', 'Development', 'VmCalibration', 'VmAcceptance', 'UserLive')) {
+            (Test-CddsiStageManifest -Manifest (New-CddsiSyntheticStageManifest -Stage $stage -SchemaVersion 2)) |
+                Should -BeFalse
+        }
+
+        $legacyVmDevelopment = New-CddsiSyntheticStageManifest -Stage VmDevelopment
+        $legacyVmDevelopment.SchemaVersion = 1
+        $legacyVmDevelopment.ContractVersion = 'cddsi-stage-manifest-v1'
+        (Test-CddsiStageManifest -Manifest $legacyVmDevelopment) | Should -BeFalse
 
         $manifest = New-CddsiSyntheticStageManifest -Stage VmAcceptance -ArtifactProfile UserLive
         (Test-CddsiStageManifest -Manifest $manifest) | Should -BeFalse
@@ -260,6 +276,9 @@ Describe 'stage manifest contract' {
 
         $manifest = New-CddsiSyntheticStageManifest
         $manifest.SchemaVersion = 2
+        (Test-CddsiStageManifest -Manifest $manifest) | Should -BeFalse
+        $manifest = New-CddsiSyntheticStageManifest -SchemaVersion 2
+        $manifest.ContractVersion = 'cddsi-stage-manifest-v1'
         (Test-CddsiStageManifest -Manifest $manifest) | Should -BeFalse
         $manifest = New-CddsiSyntheticStageManifest
         $manifest.ArtifactSha256 = ('B' * 64)
@@ -309,6 +328,15 @@ Describe 'operation grant contract' {
             -ArtifactProfile VmAcceptance -AllowedOperations @('CalibrateGit'))) | Should -BeFalse
         (Test-CddsiOperationGrant -Grant (New-CddsiSyntheticOperationGrant `
             -ArtifactProfile VmCalibration -AllowedOperations @('CalibrateMsixScope', 'CalibrateUnknown'))) | Should -BeFalse
+        (Test-CddsiOperationGrant -Grant (New-CddsiSyntheticOperationGrant `
+            -ArtifactProfile VmCalibration -AllowedOperations @('LoadLiveProviders'))) | Should -BeFalse
+    }
+
+    It 'grants LoadLiveProviders only as a standard operation including VmDevelopment' {
+        foreach ($artifactProfile in @('VmDevelopment', 'VmAcceptance', 'UserLive')) {
+            (Test-CddsiOperationGrant -Grant (New-CddsiSyntheticOperationGrant `
+                -ArtifactProfile $artifactProfile -AllowedOperations @('LoadLiveProviders'))) | Should -BeTrue
+        }
     }
 
     It 'rejects arbitrary identifier payloads schema drift and invalid lifetime or reuse flags' {
@@ -578,6 +606,31 @@ Describe 'claimed workflow operation authorization' {
             $result.Status | Should -BeExactly 'ACTION_REQUIRED'
             @($result.Data.ReasonCodes) | Should -Contain 'PROFILE_BINDING_MISMATCH'
         }
+    }
+
+    It 'authorizes a bound VmDevelopment v2 manifest through the same CAS-only operation path' {
+        $manifest = New-CddsiSyntheticStageManifest -Stage VmDevelopment
+        $grant = New-CddsiSyntheticOperationGrant -ArtifactProfile VmDevelopment `
+            -AllowedOperations @('LoadLiveProviders')
+        $session = New-CddsiSyntheticAuthorizationSession -Grant $grant
+        $workflow = New-CddsiSyntheticWorkflowState -Manifest $manifest -Grant $grant -Session $session
+        $available = New-CddsiSyntheticAvailableOperationUse -Manifest $manifest -Grant $grant `
+            -Session $session -Workflow $workflow -Operation LoadLiveProviders
+        $confirmation = New-CddsiSyntheticInteractiveConfirmation -Grant $grant -Session $session `
+            -Operation LoadLiveProviders
+        $result = Resolve-CddsiOperationAuthorization -StageManifest $manifest `
+            -OperationGrant $grant -AuthorizationSession $session -WorkflowSessionState $workflow `
+            -OperationUseState $available -Confirmation $confirmation -Operation LoadLiveProviders `
+            -OperationUseId (Get-CddsiSyntheticOperationUseId -Grant $grant -Operation LoadLiveProviders) `
+            -ExpectedRevision 0 -RunId $grant.RunId -NowUtc '2030-01-01T00:10:00Z'
+
+        $result.Status | Should -BeExactly 'SUCCEEDED'
+        $result.Data.AuthorizationProposed | Should -BeTrue
+        $result.Data.Authorized | Should -BeFalse
+        $result.Data.Executable | Should -BeFalse
+        $result.Data.ProviderExecutionAllowedBeforeCommit | Should -BeFalse
+        $result.Data.ProposedOperationUseState.Stage | Should -BeExactly 'VmDevelopment'
+        $result.Data.ProposedOperationUseState.Operation | Should -BeExactly 'LoadLiveProviders'
     }
 
     It 'exposes only pure policy parameters and no system-I/O path' {

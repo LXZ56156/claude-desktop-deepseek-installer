@@ -37,6 +37,7 @@
         return New-CddsiExecutionContext `
             -RunId '00000000-0000-0000-0000-000000000002' `
             -Mode TestSafe `
+            -Stage Scaffold `
             -EnvironmentTier HostSandbox `
             -SandboxRoot $root `
             -Paths $paths `

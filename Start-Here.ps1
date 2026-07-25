@@ -114,14 +114,14 @@ if ($null -eq $Context) {
         ForbiddenResourceTokens = @('<REAL_CLAUDE_CONFIG>', '<REAL_GIT_CONFIG>', '<REAL_REGISTRY>', '<REAL_PROCESS>', '<REAL_NETWORK>')
         CanaryTokens             = @('<CANARY_CLAUDE_CODE_SETTINGS>', '<CANARY_GIT_CONFIG>', '<CANARY_CLAUDE_POLICY>', '<CANARY_CREDENTIAL>')
     }
-    $Context = New-CddsiExecutionContext -RunId '00000000-0000-0000-0000-000000000001' -Mode $mode -EnvironmentTier HostSandbox -SandboxRoot $syntheticRoot -Paths $paths -Providers (New-CddsiFakeProviderSet -ExpectedCalls $expectedCalls) -Policy $policy -AccessLedger (New-CddsiAccessLedger)
+    $Context = New-CddsiExecutionContext -RunId '00000000-0000-0000-0000-000000000001' -Mode $mode -Stage Scaffold -EnvironmentTier HostSandbox -SandboxRoot $syntheticRoot -Paths $paths -Providers (New-CddsiFakeProviderSet -ExpectedCalls $expectedCalls) -Policy $policy -AccessLedger (New-CddsiAccessLedger)
 }
 
 Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $mode | Out-Null
 $pathTokenValues = Get-CddsiExecutionPathTokenValues -ExecutionContext $Context
 Initialize-CddsiScript -ExecutionContext $Context -ScriptName ('start-{0}' -f $Action.ToLowerInvariant()) -Mode $mode -PathTokenValues $pathTokenValues | Out-Null
 
-Write-CddsiLog -ExecutionContext $Context -Level INFO -Message ("动作={0}，模式={1}，阶段={2}" -f $Action, $mode, (Get-CddsiProjectStage)) -PathTokenValues $pathTokenValues
+Write-CddsiLog -ExecutionContext $Context -Level INFO -Message ("动作={0}，模式={1}，阶段={2}" -f $Action, $mode, $Context.Stage) -PathTokenValues $pathTokenValues
 
 switch ($Action) {
     'Install' {

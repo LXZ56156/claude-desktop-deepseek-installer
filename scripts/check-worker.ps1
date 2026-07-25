@@ -1556,6 +1556,7 @@ function New-CddsiWorkerSyntheticContext {
     return New-CddsiExecutionContext `
         -RunId $RunId `
         -Mode $Mode `
+        -Stage Scaffold `
         -EnvironmentTier HostSandbox `
         -SandboxRoot $syntheticRoot `
         -Paths $paths `
@@ -1743,6 +1744,8 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         'LiveAdapterCommandAllowList',
         'LiveAdapterTypePrefixAllowList',
         'LiveAdapterRequiredGateCommands',
+        'LiveAdapterRequiredOperation',
+        'LiveAdapterAllowedBindings',
         'ProductForbiddenCommands',
         'ProductCommandAllowList',
         'ProductForbiddenVariables',
@@ -1791,6 +1794,36 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
     if ($liveAdapterDiff.Count -gt 0) { throw 'Live adapter file allow-list drift.' }
     if ((@($boundary.Rules.LiveAdapterRequiredGateCommands) -join "`n") -cne (@('Assert-CddsiExecutionContext', 'Test-CddsiCommittedOperationUseReceipt') -join "`n")) {
         throw 'Live adapter required-gate command policy drift.'
+    }
+    if ($boundary.Rules.LiveAdapterRequiredOperation -isnot [string] -or
+        $boundary.Rules.LiveAdapterRequiredOperation -cne 'LoadLiveProviders') {
+        throw 'Live adapter required-operation policy drift.'
+    }
+    $expectedLiveBindingTexts = @(
+        'VmDevelopment|VmDevelopment|VmDevelopment'
+        'VmAcceptance|VmAcceptance|VmAcceptance'
+        'UserLive|UserLive|UserLive'
+    )
+    $actualLiveBindingTexts = @()
+    foreach ($binding in @($boundary.Rules.LiveAdapterAllowedBindings)) {
+        if ($null -eq $binding -or
+            (@($binding.Keys | ForEach-Object { [string]$_ } | Sort-Object) -join "`n") -cne
+                (@(@('ArtifactProfile', 'EnvironmentTier', 'Stage') | Sort-Object) -join "`n")) {
+            throw 'Live adapter allowed binding does not match the exact schema.'
+        }
+        foreach ($fieldName in @('EnvironmentTier', 'Stage', 'ArtifactProfile')) {
+            if ($binding[$fieldName] -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$binding[$fieldName])) {
+                throw 'Live adapter allowed binding contains an invalid field.'
+            }
+        }
+        $actualLiveBindingTexts += '{0}|{1}|{2}' -f
+            [string]$binding.EnvironmentTier,
+            [string]$binding.Stage,
+            [string]$binding.ArtifactProfile
+    }
+    if ((@($actualLiveBindingTexts | Sort-Object) -join "`n") -cne
+        (@($expectedLiveBindingTexts | Sort-Object) -join "`n")) {
+        throw 'Live adapter allowed binding policy drift.'
     }
     foreach ($mapRuleName in @('LiveAdapterEntryPoints', 'LiveAdapterCommandAllowList', 'LiveAdapterTypePrefixAllowList')) {
         $ruleKeys = @($boundary.Rules[$mapRuleName].Keys | Sort-Object)
@@ -1994,11 +2027,8 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         }
         $assertGate = @($commands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Assert-CddsiExecutionContext' })[0]
         $receiptGate = @($commands | Where-Object { (Get-CddsiCommandName -CommandAst $_) -ceq 'Test-CddsiCommittedOperationUseReceipt' })[0]
-        if ($assertGate.Extent.Text -notmatch '(?i)-ExpectedMode\s+Live' -or
-            $entryPoint.Extent.Text -notmatch "(?s)EnvironmentTier\s+-cne\s+'VmAcceptance'" -or
-            $entryPoint.Extent.Text -notmatch "(?s)Stage\s+-cne\s+'VmAcceptance'" -or
-            $entryPoint.Extent.Text -notmatch "(?s)ArtifactProfile\s+-cne\s+'VmAcceptance'") {
-            throw "$relative does not statically require the disposable VmAcceptance boundary."
+        if ($assertGate.Extent.Text -notmatch '(?i)-ExpectedMode\s+Live') {
+            throw "$relative does not statically require Live mode."
         }
         foreach ($bindingName in @('StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc')) {
             if ($receiptGate.Extent.Text -notmatch ('(?i)-' + [regex]::Escape($bindingName) + '\s+')) {
@@ -2007,6 +2037,153 @@ Invoke-CheckStep -Name 'Execution files have one exact capability-plane owner' -
         }
         if ($assertGate.Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
             throw "$relative execution-context gate must precede the operation-use gate."
+        }
+
+        $bindingHashtableNodes = @(
+            $entryPoint.FindAll({
+                param($node)
+                if ($node -isnot [System.Management.Automation.Language.HashtableAst]) { return $false }
+                $keys = @($node.KeyValuePairs | ForEach-Object {
+                    if ($_.Item1 -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                        [string]$_.Item1.Value
+                    }
+                } | Sort-Object)
+                return (($keys -join "`n") -ceq ((@('ArtifactProfile', 'EnvironmentTier', 'Stage') | Sort-Object) -join "`n"))
+            }, $true)
+        )
+        $sourceLiveBindingTexts = @()
+        foreach ($bindingNode in $bindingHashtableNodes) {
+            $bindingValues = @{}
+            foreach ($pair in @($bindingNode.KeyValuePairs)) {
+                $key = [string]$pair.Item1.Value
+                $valueNodes = @($pair.Item2.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+                }, $true))
+                if ($valueNodes.Count -ne 1) {
+                    throw "$relative Live binding $key must contain one constant string."
+                }
+                $bindingValues[$key] = [string]$valueNodes[0].Value
+            }
+            $sourceLiveBindingTexts += '{0}|{1}|{2}' -f
+                [string]$bindingValues.EnvironmentTier,
+                [string]$bindingValues.Stage,
+                [string]$bindingValues.ArtifactProfile
+        }
+        if ((@($sourceLiveBindingTexts | Sort-Object) -join "`n") -cne
+            (@($expectedLiveBindingTexts | Sort-Object) -join "`n")) {
+            throw "$relative does not contain the exact three disposable Live bindings."
+        }
+
+        $comparisonTokenKinds = @(
+            [System.Management.Automation.Language.TokenKind]::Ceq,
+            [System.Management.Automation.Language.TokenKind]::Cne
+        )
+        $comparisonNodes = @($entryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+                $comparisonTokenKinds -ccontains $node.Operator
+        }, $true))
+        foreach ($requiredMemberText in @(
+            '$Context.EnvironmentTier',
+            '$Context.Stage',
+            '$StageManifest.Stage',
+            '$StageManifest.ArtifactProfile',
+            '$Context.RunId',
+            '$OperationGrant.RunId'
+        )) {
+            $memberComparisons = @($comparisonNodes | Where-Object {
+                $_.Extent.Text -cmatch [regex]::Escape($requiredMemberText)
+            })
+            if ($memberComparisons.Count -eq 0 -or
+                @($memberComparisons | Where-Object { $_.Extent.StartOffset -lt $receiptGate.Extent.StartOffset }).Count -eq 0) {
+                throw "$relative does not validate $requiredMemberText before the committed receipt gate."
+            }
+        }
+
+        $bindingMatchAssignments = @($entryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                $node.Left.VariablePath.UserPath -ceq 'bindingMatches'
+        }, $true))
+        if ($bindingMatchAssignments.Count -ne 1) {
+            throw "$relative must derive one exact bindingMatches value."
+        }
+        foreach ($requiredMemberText in @(
+            '$Context.EnvironmentTier',
+            '$Context.Stage',
+            '$StageManifest.Stage',
+            '$StageManifest.ArtifactProfile'
+        )) {
+            $escapedRequiredMember = [regex]::Escape($requiredMemberText)
+            if ($bindingMatchAssignments[0].Right.Extent.Text -cnotmatch
+                ('(?:' + $escapedRequiredMember + '\s+-ceq\s+|\s-ceq\s+' +
+                    $escapedRequiredMember + '(?:\s|$))')) {
+                throw "$relative must case-sensitively bind $requiredMemberText inside bindingMatches."
+            }
+        }
+        $bindingFailureBranches = @($entryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$bindingMatches\.Count\s+-ne\s+1' -and
+                @($node.FindAll({
+                    param($child)
+                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
+                }, $true)).Count -eq 1
+        }, $true))
+        if ($bindingFailureBranches.Count -ne 1 -or
+            $bindingFailureBranches[0].Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
+            throw "$relative must fail closed on any non-unique Live binding before the committed receipt gate."
+        }
+
+        $runBindingFailureBranches = @($entryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$Context\.RunId\s+-cne\s+\$OperationGrant\.RunId' -and
+                @($node.FindAll({
+                    param($child)
+                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
+                }, $true)).Count -eq 1
+        }, $true))
+        if ($runBindingFailureBranches.Count -ne 1 -or
+            $runBindingFailureBranches[0].Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
+            throw "$relative must bind Context.RunId to OperationGrant.RunId before the committed receipt gate."
+        }
+
+        $requiredOperation = [string]$boundary.Rules.LiveAdapterRequiredOperation
+        $operationComparisons = @($comparisonNodes | Where-Object {
+            $_.Extent.Text -cmatch '(?<![A-Za-z0-9_:])\$Operation(?![A-Za-z0-9_])' -and
+                $_.Extent.Text -cmatch ("['`"]" + [regex]::Escape($requiredOperation) + "['`"]")
+        })
+        if ($operationComparisons.Count -ne 1 -or
+            $operationComparisons[0].Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
+            throw "$relative must require the exact LoadLiveProviders operation before the committed receipt gate."
+        }
+        $operationFailureBranches = @($entryPoint.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$Operation\s+-cne\s+[''"]LoadLiveProviders[''"]' -and
+                @($node.FindAll({
+                    param($child)
+                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
+                }, $true)).Count -eq 1
+        }, $true))
+        if ($operationFailureBranches.Count -ne 1 -or
+            $operationFailureBranches[0].Extent.StartOffset -ge $receiptGate.Extent.StartOffset) {
+            throw "$relative must fail closed on any non-LoadLiveProviders operation before the committed receipt gate."
+        }
+
+        $notImplementedResults = @($commands | Where-Object {
+            (Get-CddsiCommandName -CommandAst $_) -ceq 'New-CddsiOperationResult' -and
+                $_.Extent.Text -match '(?i)-Status\s+[''"]?ACTION_REQUIRED[''"]?' -and
+                $_.Extent.Text -match '(?i)-ErrorCode\s+[''"]LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED[''"]' -and
+                $_.Extent.Text -match '(?i)-Mode\s+Live(?:\s|$)'
+        })
+        if ($notImplementedResults.Count -ne 1 -or
+            $notImplementedResults[0].Extent.StartOffset -le $receiptGate.Extent.EndOffset -or
+            $notImplementedResults[0].Extent.Text -match '(?i)-Changed\s*:?\s*\$true') {
+            throw "$relative must return one unchanged Live ACTION_REQUIRED result after the committed receipt gate."
         }
 
         $actualLiveCommands = @($commandNames | Where-Object { $forbiddenCommands -ccontains $_ } | Sort-Object -Unique)

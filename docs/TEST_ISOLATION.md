@@ -220,7 +220,8 @@ remote、网络、registry、AppX、VMP、service、credential、用户配置或
 SchemaVersion
 RunId
 Mode
-EnvironmentTier = HostSandbox | CI | VmAcceptance | UserLive
+Stage = Scaffold | Development | VmDevelopment | VmCalibration | VmAcceptance | UserLive
+EnvironmentTier = HostSandbox | CI | VmDevelopment | VmAcceptance | UserLive
 SandboxRoot
 Paths
 Providers
@@ -244,6 +245,13 @@ Provider 至少覆盖：
 规则：
 
 - TestSafe 或自动化 DryRun 缺 Context/fake provider 时立即失败。
+- TestSafe/DryRun 只能使用 `Fake` provider 且 `AllowLiveProvider=false`。
+- Live context 只能使用 `Unloaded` provider，且只接受
+  `VmDevelopment/VmDevelopment`、`VmAcceptance/VmAcceptance`、
+  `UserLive/UserLive` 三个精确 Stage/EnvironmentTier 组合；HostSandbox/CI
+  永远不能构造 Live context。
+- `Unloaded` 不是 provider 实现；任何调度都以 `LIVE_PROVIDER_NOT_LOADED`
+  fail closed，`LIVE_PROVIDER_LOADED` 仍为 false。
 - 不允许从 fake 回退到真实系统。
 - 领域模块不得直接调用系统 cmdlet 或 .NET 系统 API。
 - live adapter 位于独立允许列表，不由本地测试 bootstrap 加载。

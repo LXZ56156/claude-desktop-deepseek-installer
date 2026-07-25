@@ -93,13 +93,15 @@
 
     function New-CddsiSyntheticOrchestratorContext {
         param(
-            [ValidateSet('VmCalibration', 'VmAcceptance', 'UserLive')]
+            [ValidateSet('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive')]
             [string]$Stage = 'VmAcceptance',
             [string]$RunId = '20000000-0000-4000-8000-000000000901'
         )
 
+        $manifestSchemaVersion = if ($Stage -ceq 'VmDevelopment') { 2 } else { 1 }
         $manifest = [pscustomobject][ordered]@{
-            SchemaVersion = 1; ContractVersion = 'cddsi-stage-manifest-v1'
+            SchemaVersion = $manifestSchemaVersion
+            ContractVersion = 'cddsi-stage-manifest-v{0}' -f $manifestSchemaVersion
             Stage = $Stage; ArtifactProfile = $Stage; ArtifactVersion = '1.2.3-rc.1'
             CommitId = ('a' * 40); ArtifactSha256 = ('b' * 64); SidecarSha256 = ('d' * 64)
             ContentDigest = ('c' * 64); CreatedAtUtc = '2030-01-01T00:00:00Z'
@@ -334,7 +336,7 @@
         -Context $script:CanonicalOrchestratorContext -FailureStepId ensure_git
 }
 
-Describe 'bound install plan v2' {
+Describe 'bound install plan v3' {
     It 'binds the exact executable stage contexts and fixed forward plus compensation operations' {
         $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $context.PlanResult.Status | Should -BeExactly 'SUCCEEDED'
@@ -342,17 +344,34 @@ Describe 'bound install plan v2' {
         (Test-CddsiInstallPlan -Plan $context.Plan -StageManifest $context.Manifest `
             -OperationGrant $context.Grant -AuthorizationSession $context.Session `
             -WorkflowSessionState $context.Workflow) | Should -BeTrue
-        $context.Plan.ContractVersion | Should -BeExactly 'cddsi-install-plan-v2'
+        $context.Plan.ContractVersion | Should -BeExactly 'cddsi-install-plan-v3'
         $context.Plan.PlanId | Should -Match '^[a-f0-9]{64}$'
         $context.Plan.PlanId | Should -BeExactly (Get-CddsiInstallPlanBindingToken -Plan $context.Plan)
-        @($context.Plan.Steps).Count | Should -Be 13
-        @($context.Plan.Steps | Where-Object RequiresGrant).Count | Should -Be 11
-        @($context.Grant.AllowedOperations).Count | Should -Be 20
+        @($context.Plan.Steps).Count | Should -Be 14
+        @($context.Plan.Steps | Where-Object RequiresGrant).Count | Should -Be 12
+        @($context.Grant.AllowedOperations).Count | Should -Be 21
         @($context.Grant.AllowedOperations) -join '|' | Should -BeExactly (@(Get-CddsiInstallPlanGrantedOperations) -join '|')
         @($context.Plan.RequestedSurfaces) -join '|' | Should -BeExactly 'Chat|Code|Cowork'
+        $loadStep = @($context.Plan.Steps | Where-Object Id -CEQ 'load_live_providers')
+        $loadStep.Count | Should -Be 1
+        $loadStep[0].Sequence | Should -Be 3
+        $loadStep[0].Operation | Should -BeExactly 'LoadLiveProviders'
+        $loadStep[0].RequiresGrant | Should -BeTrue
+        $loadStep[0].Mutation | Should -BeFalse
+        $loadStep[0].CompensationOperation | Should -BeNullOrEmpty
+        $loadStep[0].Sequence | Should -BeLessThan @($context.Plan.Steps | Where-Object Id -CEQ 'acquire_artifacts')[0].Sequence
     }
 
-    It 'fails closed outside VmAcceptance or UserLive and without exact grant coverage' {
+    It 'accepts VmDevelopment but fails closed on calibration and incomplete grant coverage' {
+        $development = New-CddsiSyntheticOrchestratorContext -Stage VmDevelopment `
+            -RunId '20000000-0000-4000-8000-000000000903'
+        $development.PlanResult.Status | Should -BeExactly 'SUCCEEDED'
+        $development.Plan.Stage | Should -BeExactly 'VmDevelopment'
+        $development.Manifest.SchemaVersion | Should -Be 2
+        (Test-CddsiInstallPlan -Plan $development.Plan -StageManifest $development.Manifest `
+            -OperationGrant $development.Grant -AuthorizationSession $development.Session `
+            -WorkflowSessionState $development.Workflow) | Should -BeTrue
+
         $context = Copy-CddsiSyntheticObject -InputObject $script:CanonicalOrchestratorContext
         $calibrationManifest = Copy-CddsiSyntheticObject -InputObject $context.Manifest
         $calibrationManifest.Stage = 'VmCalibration'
@@ -374,7 +393,9 @@ Describe 'bound install plan v2' {
         foreach ($mutation in @('Run', 'Step', 'UseKey')) {
             $tampered = Copy-CddsiSyntheticObject -InputObject $context.Plan
             if ($mutation -ceq 'Run') { $tampered.RunId = '20000000-0000-4000-8000-000000000999' }
-            elseif ($mutation -ceq 'Step') { $tampered.Steps[5].Operation = 'EnsureClaudeDesktop' }
+            elseif ($mutation -ceq 'Step') {
+                @($tampered.Steps | Where-Object Id -CEQ 'ensure_git')[0].Operation = 'EnsureClaudeDesktop'
+            }
             else { $tampered.Steps[2].OperationUseStateKeySha256 = ('9' * 64) }
             $tampered.PlanId = Get-CddsiInstallPlanBindingToken -Plan $tampered
             (Test-CddsiInstallPlan -Plan $tampered -StageManifest $context.Manifest `
@@ -397,10 +418,10 @@ Describe 'receipt-bound orchestrator trace v2' {
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow `
             -Events $events
         $trace.State | Should -BeExactly 'SUCCEEDED'
-        @($trace.CompletedStepIds).Count | Should -Be 13
+        @($trace.CompletedStepIds).Count | Should -Be 14
         @($trace.AffectedStepIds).Count | Should -Be 9
         $trace.CompensationPlan.Status | Should -BeExactly 'NONE'
-        $trace.EventsProcessed | Should -Be 26
+        $trace.EventsProcessed | Should -Be 28
     }
 
     It 'stops at the primary failure and derives affected steps only from invoked mutation receipts' {
@@ -410,7 +431,7 @@ Describe 'receipt-bound orchestrator trace v2' {
             -StageManifest $context.Manifest -OperationGrant $context.Grant `
             -AuthorizationSession $context.Session -WorkflowSessionState $context.Workflow -Events $events
         $trace.State | Should -BeExactly 'FAILED'
-        @($trace.CompletedStepIds) -join '|' | Should -BeExactly 'preflight|fixed_target|acquire_artifacts|verify_artifacts|ensure_desktop'
+        @($trace.CompletedStepIds) -join '|' | Should -BeExactly 'preflight|fixed_target|load_live_providers|acquire_artifacts|verify_artifacts|ensure_desktop'
         @($trace.AffectedStepIds) -join '|' | Should -BeExactly 'acquire_artifacts|ensure_desktop|ensure_git'
         @($trace.CompletedStepIds) -contains 'prepare_cowork' | Should -BeFalse
         $trace.PrimaryFailureReceipt.ProviderInvocationOccurred | Should -BeTrue

@@ -76,7 +76,7 @@ preflight
 
 所有非纯操作显式接收上下文：
 
-- RunId、Mode、EnvironmentTier。
+- RunId、Mode、Stage、EnvironmentTier。
 - synthetic/live 路径。
 - provider 集合。
 - real-resource policy。
@@ -108,6 +108,10 @@ Feature、Service、Credential、Clock。
 
 - fake/sandbox provider 是本地和 CI 唯一可加载实现。
 - live adapter 使用精确文件 allow-list，不能由默认 bootstrap 加载。
+- VmDevelopment 授权骨架先构造不可执行的 `Unloaded` provider set；只有 package-bound
+  stage manifest、精确 stage/tier/profile、独立 `LoadLiveProviders` 确认和已提交
+  single-use CAS receipt 全部匹配时才能到达 adapter 边界。当前边界仍返回
+  `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`，没有系统能力。
 - D-026 下 live adapter 的实现和首次真实执行只在 disposable VM 的
   `VmDevelopment` stage；最终 acceptance 只消费重新冻结的候选。
 - trusted test harness 使用另一份精确 allow-list，只能创建自有 sandbox、启动

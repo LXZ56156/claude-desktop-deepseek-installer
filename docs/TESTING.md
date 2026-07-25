@@ -492,6 +492,13 @@ token 和 sandbox 相对路径；本机临时控制台可以显示 sandbox 绝�
 源码修改。全部通过只表示“可提交 P12 人工决定”，不授权自动 merge、promotion 或
 release。
 
+VmDevelopment 授权骨架的 focused 合同必须在 PS7 与 PS5.1 同时证明：安全模式只用
+Fake；Host/CI 拒绝 Live；三个 Live stage/tier/profile 组合精确匹配；provider 初始
+为 `Unloaded`；`LoadLiveProviders` 是 install plan v3 的首个受 grant 步骤并使用独立
+确认与 single-use CAS；缺失、错配和 replay 都在 adapter 前失败；即使授权完整，
+adapter 也只返回 `ACTION_REQUIRED/LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`，且真实进程、
+网络、注册表和 provider-loaded 指标全部为零。
+
 ## P1 交付判定（已满足）
 
 - 不增加或加载真实 provider、live adapter 或系统探测。

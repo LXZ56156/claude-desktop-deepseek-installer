@@ -9,7 +9,11 @@ BIOS 虚拟化或 Claude 的安全授权。
 
 ## 当前状态
 
-产品工作流仍是 `Scaffold`，真实安装器尚未实现。2026-07-24 冻结的 D-026 已将
+默认入口仍是 `Scaffold`，真实安装器尚未实现。VmDevelopment 的首个授权骨架已经
+加入显式 `Stage`、三个精确 Live stage/tier 绑定、不可执行的 `Unloaded` provider
+set，以及独立单次 `LoadLiveProviders` grant/CAS；provider 装载仍以
+`LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED` fail closed，默认 bootstrap、Host 和 CI
+不会加载 live adapter。2026-07-24 冻结的 D-026 已将
 开发方式切换为 disposable VM acceptance-first：宿主机在现有
 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1 正常推送 clean handoff commit 后冻结
 产品写入；从该精确 commit/tree 起，VM Codex 成为阶段性唯一写入者，可以直接修改

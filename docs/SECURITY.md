@@ -54,8 +54,11 @@ snapshot/CAS/签名仍是正式证据门，不因 lean relay 改变。
 - TestSafe/DryRun 的潜在修改操作必须 `Changed=false`。
 - 环境变量不能单独授权真实操作。
 - Live 需要独立确认、适用 stage、ExecutionContext 和 operation-specific grant。
-- 当前 handoff 源码的 `Scaffold` stage 无条件拒绝 Live；VM 必须先实现并测试独立
-  `VmDevelopment` stage，不能把环境变量或命令行开关当授权。
+- 默认 `Scaffold` stage 继续无条件拒绝 Live。独立 `VmDevelopment` 授权骨架只允许
+  精确 stage/tier/profile、`Unloaded` provider 和已确认、已 CAS 提交的
+  `LoadLiveProviders` operation；环境变量或 `-Live` 开关不能单独授权。
+- 首批 adapter 边界固定返回 `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`，且
+  `Test-CddsiRealMutationAllowed` 仍为 false；授权骨架通过不等于真实系统写入获准。
 - 开发机和 CI 即使代码未来实现 Live，也不得加载或执行 live provider。
 - D-026 后首次实现与真实系统操作允许在 `VmDevelopment` disposable VM 执行；它必须
   使用 owner-scoped 资源、独立交互确认、失败补偿和可恢复 snapshot，不得加载到宿主机。

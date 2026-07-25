@@ -131,6 +131,7 @@
         'lib/execution-context.ps1' = @(
             'Test-CddsiExactNameSet'
             'Test-CddsiLogicalResourceToken'
+            'New-CddsiUnloadedProviderSet'
             'New-CddsiAccessLedger'
             'Add-CddsiProductAccessLedgerEntry'
             'New-CddsiExecutionContext'
@@ -463,7 +464,8 @@
         'Test-CddsiLogicalResourceToken' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'New-CddsiAccessLedger' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Add-CddsiProductAccessLedgerEntry' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken', 'Allowed', 'Expected', 'IsMutation', 'FailureInjected', 'Outcome'); Mode = $false }
-        'New-CddsiExecutionContext' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'Mode', 'EnvironmentTier', 'SandboxRoot', 'Paths', 'Providers', 'Policy'); Mode = $true }
+        'New-CddsiUnloadedProviderSet' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'New-CddsiExecutionContext' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'Mode', 'Stage', 'EnvironmentTier', 'SandboxRoot', 'Paths', 'Providers', 'Policy'); Mode = $true }
         'Assert-CddsiExecutionContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Get-CddsiExecutionPathTokenValues' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Invoke-CddsiProviderOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken'); Mode = $false }

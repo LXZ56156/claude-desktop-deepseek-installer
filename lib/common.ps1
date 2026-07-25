@@ -147,8 +147,9 @@ function Test-CddsiRealMutationAllowed {
 
     Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
 
-    # P1 remains fail closed. D-013 will later replace this scaffold decision
-    # with package-bound stage-manifest and operation-grant verification.
+    # D-026 now has a package-bound VmDevelopment authorization spine, but this
+    # mutation decision remains false until a separately tested Live provider
+    # implementation consumes the committed operation-use receipt.
     return $false
 }
 
@@ -168,7 +169,7 @@ function Assert-CddsiMutationAllowed {
     )
 
     if (-not (Test-CddsiRealMutationAllowed -ExecutionContext $Context -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges)) {
-        throw ("操作 '{0}' 被安全边界阻断。当前阶段={1}，模式={2}。" -f $Operation, (Get-CddsiProjectStage), $Mode)
+        throw ("操作 '{0}' 被安全边界阻断。当前阶段={1}，模式={2}。" -f $Operation, $Context.Stage, $Mode)
     }
 }
 

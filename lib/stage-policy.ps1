@@ -2,6 +2,7 @@
 # This module never discovers an environment, loads an adapter or performs I/O.
 
 $script:CddsiStandardOperationNames = @(
+    'LoadLiveProviders',
     'AcquireArtifacts',
     'VerifyArtifacts',
     'EnsureClaudeDesktop',
@@ -67,15 +68,32 @@ function Test-CddsiStageManifest {
     ))) {
         return $false
     }
-    if (-not (Test-CddsiSchemaVersionOne -Value $Manifest.SchemaVersion)) { return $false }
-    if ($Manifest.ContractVersion -isnot [string] -or $Manifest.ContractVersion -cne 'cddsi-stage-manifest-v1') { return $false }
+    $schemaVersionOne = (
+        (Test-CddsiSchemaVersionOne -Value $Manifest.SchemaVersion) -and
+        $Manifest.ContractVersion -is [string] -and
+        $Manifest.ContractVersion -ceq 'cddsi-stage-manifest-v1'
+    )
+    $schemaVersionTwo = (
+        ($Manifest.SchemaVersion -is [int] -or $Manifest.SchemaVersion -is [long]) -and
+        [long]$Manifest.SchemaVersion -eq 2 -and
+        $Manifest.ContractVersion -is [string] -and
+        $Manifest.ContractVersion -ceq 'cddsi-stage-manifest-v2'
+    )
+    if (-not $schemaVersionOne -and -not $schemaVersionTwo) { return $false }
 
-    $profiles = @{
-        Scaffold      = 'Scaffold'
-        Development   = 'Development'
-        VmCalibration = 'VmCalibration'
-        VmAcceptance  = 'VmAcceptance'
-        UserLive      = 'UserLive'
+    $profiles = if ($schemaVersionOne) {
+        @{
+            Scaffold      = 'Scaffold'
+            Development   = 'Development'
+            VmCalibration = 'VmCalibration'
+            VmAcceptance  = 'VmAcceptance'
+            UserLive      = 'UserLive'
+        }
+    }
+    else {
+        @{
+            VmDevelopment = 'VmDevelopment'
+        }
     }
     if ($Manifest.Stage -isnot [string] -or -not $profiles.ContainsKey($Manifest.Stage)) { return $false }
     if ($Manifest.ArtifactProfile -isnot [string] -or $Manifest.ArtifactProfile -cne $profiles[$Manifest.Stage]) { return $false }
@@ -126,7 +144,7 @@ function Test-CddsiOperationGrant {
         if ($hash -isnot [string] -or -not [regex]::IsMatch($hash, '^[a-f0-9]{64}$')) { return $false }
     }
     if (@(@($Grant.ArtifactSha256, $Grant.SidecarSha256, $Grant.ContentDigest) | Select-Object -Unique).Count -ne 3) { return $false }
-    if ($Grant.ArtifactProfile -isnot [string] -or @('VmCalibration', 'VmAcceptance', 'UserLive') -cnotcontains $Grant.ArtifactProfile) { return $false }
+    if ($Grant.ArtifactProfile -isnot [string] -or @('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive') -cnotcontains $Grant.ArtifactProfile) { return $false }
 
     foreach ($timestamp in @($Grant.IssuedAtUtc, $Grant.ExpiresAtUtc)) {
         if ($timestamp -isnot [string] -or
@@ -227,7 +245,7 @@ function Test-CddsiGrantClaimState {
         if ($hash -isnot [string] -or -not [regex]::IsMatch($hash, '^[a-f0-9]{64}$')) { return $false }
     }
     if (@(@($ClaimState.ArtifactSha256, $ClaimState.SidecarSha256, $ClaimState.ContentDigest) | Select-Object -Unique).Count -ne 3) { return $false }
-    if ($ClaimState.ArtifactProfile -isnot [string] -or @('VmCalibration', 'VmAcceptance', 'UserLive') -cnotcontains $ClaimState.ArtifactProfile) { return $false }
+    if ($ClaimState.ArtifactProfile -isnot [string] -or @('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive') -cnotcontains $ClaimState.ArtifactProfile) { return $false }
     if ($ClaimState.ExpiresAtUtc -isnot [string] -or
         -not [regex]::IsMatch($ClaimState.ExpiresAtUtc, '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$') -or
         -not (Test-CddsiUtcTimestampValue -Value $ClaimState.ExpiresAtUtc)) {
@@ -311,7 +329,7 @@ function Test-CddsiAuthorizationSession {
         $AuthorizationSession.ContentDigest
     ) | Select-Object -Unique).Count -ne 3) { return $false }
     if ($AuthorizationSession.ArtifactProfile -isnot [string] -or
-        @('VmCalibration', 'VmAcceptance', 'UserLive') -cnotcontains $AuthorizationSession.ArtifactProfile) {
+        @('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive') -cnotcontains $AuthorizationSession.ArtifactProfile) {
         return $false
     }
     foreach ($timestamp in @($AuthorizationSession.ClaimedAtUtc, $AuthorizationSession.ExpiresAtUtc)) {
@@ -614,7 +632,7 @@ function Test-CddsiWorkflowSessionState {
         if (-not (Test-CddsiSchemaVersionOne -Value $WorkflowSessionState.SchemaVersion) -or
             $WorkflowSessionState.ContractVersion -cne 'cddsi-workflow-session-state-v1' -or
             $WorkflowSessionState.State -cnotin @('CLAIMED', 'COMPLETED', 'ABORTED')) { return $false }
-        if ($WorkflowSessionState.Stage -cnotin @('VmCalibration', 'VmAcceptance', 'UserLive') -or
+        if ($WorkflowSessionState.Stage -cnotin @('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive') -or
             $WorkflowSessionState.ArtifactProfile -cne $WorkflowSessionState.Stage) { return $false }
         foreach ($uuid in @($WorkflowSessionState.RunId, $WorkflowSessionState.GrantId, $WorkflowSessionState.Nonce, $WorkflowSessionState.ClaimId)) {
             if (-not (Test-CddsiCanonicalUuidValue -Value $uuid)) { return $false }
@@ -833,7 +851,7 @@ function Test-CddsiOperationUseState {
         if (-not (Test-CddsiSchemaVersionOne -Value $OperationUseState.SchemaVersion) -or
             $OperationUseState.ContractVersion -cne 'cddsi-operation-use-state-v1' -or
             $OperationUseState.State -cnotin @('AVAILABLE', 'CLAIMED', 'COMPLETED', 'ABORTED')) { return $false }
-        if ($OperationUseState.Stage -cnotin @('VmCalibration', 'VmAcceptance', 'UserLive') -or
+        if ($OperationUseState.Stage -cnotin @('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive') -or
             $OperationUseState.ArtifactProfile -cne $OperationUseState.Stage -or
             $script:CddsiGrantedOperationNames -cnotcontains $OperationUseState.Operation) { return $false }
         foreach ($uuid in @($OperationUseState.RunId, $OperationUseState.GrantId, $OperationUseState.Nonce, $OperationUseState.ClaimId, $OperationUseState.ConfirmationId)) {
@@ -1142,7 +1160,7 @@ function Resolve-CddsiOperationAuthorizationBinding {
             $Confirmation.ContentDigest -is [string] -and
             [regex]::IsMatch($Confirmation.ContentDigest, '^[a-f0-9]{64}$') -and
             $Confirmation.ArtifactProfile -is [string] -and
-            @('VmCalibration', 'VmAcceptance', 'UserLive') -ccontains $Confirmation.ArtifactProfile -and
+            @('VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive') -ccontains $Confirmation.ArtifactProfile -and
             $Confirmation.RunId -is [string] -and
             [regex]::IsMatch($Confirmation.RunId, $uuidPattern) -and
             $Confirmation.Nonce -is [string] -and

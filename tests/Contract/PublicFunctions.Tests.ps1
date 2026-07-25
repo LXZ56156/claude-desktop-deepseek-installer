@@ -81,6 +81,7 @@ BeforeAll {
 
     $script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $script:PublicContract = Import-PowerShellDataFile -LiteralPath (Join-Path $script:RepoRoot 'config\public-functions.psd1')
+    $script:ExecutionBoundary = Import-PowerShellDataFile -LiteralPath (Join-Path $script:RepoRoot 'config\execution-boundaries.psd1')
     $script:FunctionAstByName = @{}
     $script:FunctionFileByName = @{}
     $script:DuplicateFunctionNames = @()
@@ -223,13 +224,64 @@ Describe 'public function contracts' {
         }
     }
 
-    It 'keeps logging and provider dispatch explicitly context-bound' {
-        foreach ($name in @('Write-CddsiLog', 'Invoke-CddsiProviderOperation', 'Invoke-CddsiFakeProviderOperation')) {
+    It 'binds Stage explicitly and keeps provider construction separate from context-bound dispatch' {
+        foreach ($name in @(
+            'Write-CddsiLog',
+            'Invoke-CddsiProviderOperation',
+            'Invoke-CddsiFakeProviderOperation',
+            'Invoke-CddsiLiveAdapterOperation'
+        )) {
             $contract = $script:PublicContract.ParameterContracts[$name]
             $contract.Kind | Should -BeExactly 'ContextBound'
             @($contract.Mandatory) -ccontains 'Context' | Should -BeTrue
         }
+        $contextContract = $script:PublicContract.ParameterContracts['New-CddsiExecutionContext']
+        $contextContract.Kind | Should -BeExactly 'Pure'
+        @($contextContract.Mandatory) | Should -Contain 'Stage'
+        @($contextContract.Mandatory | Where-Object { $_ -ceq 'Stage' }).Count | Should -Be 1
+
+        $unloadedContract = $script:PublicContract.ParameterContracts['New-CddsiUnloadedProviderSet']
+        $unloadedContract.Kind | Should -BeExactly 'Pure'
+        @($unloadedContract.Mandatory).Count | Should -Be 0
+        $unloadedContract.Mode | Should -BeFalse
+        @($script:PublicContract.Files['lib/execution-context.ps1'] | Where-Object {
+            $_ -ceq 'New-CddsiUnloadedProviderSet'
+        }).Count | Should -Be 1
+
         $script:PublicContract.ParameterContracts['Initialize-CddsiConsoleEncoding'].Kind |
             Should -BeExactly 'ProcessScoped'
+    }
+
+    It 'passes Stage explicitly at every classified execution-context construction call site' {
+        $classifiedPowerShellFiles = @(
+            $script:ExecutionBoundary.Planes.Keys |
+                ForEach-Object { @($script:ExecutionBoundary.Planes[$_]) } |
+                Where-Object { $_ -match '\.ps1$' } |
+                Sort-Object -Unique
+        )
+        $callSiteCount = 0
+        foreach ($relativePath in $classifiedPowerShellFiles) {
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                (Join-Path $script:RepoRoot $relativePath),
+                [ref]$tokens,
+                [ref]$errors
+            )
+            @($errors).Count | Should -Be 0
+            $calls = @($ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.GetCommandName() -ceq 'New-CddsiExecutionContext'
+            }, $true))
+            foreach ($call in $calls) {
+                $callSiteCount++
+                @($call.CommandElements | Where-Object {
+                    $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+                    $_.ParameterName -ceq 'Stage'
+                }).Count | Should -Be 1
+            }
+        }
+        $callSiteCount | Should -BeGreaterThan 0
     }
 }

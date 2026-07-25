@@ -56,7 +56,7 @@ prompt、Git、命令参数、环境变量、日志、报告、截图、evidence
 | P5 | Credential 生命周期 | 已完成（纯合同） | Key 不进入不允许的持久明文面 |
 | P6 | 配置所有权、备份与恢复 | 已完成（纯合同） | receipt、备份与补偿独立绑定 |
 | P7 | Cowork 与重启续跑 | 已完成（纯合同） | checkpoint/CAS 幂等、无 secret |
-| P8 | Live Adapter 与编排器 | fake 编排器已完成；Live 未实现 | 本机始终无法执行 Live |
+| P8 | Live Adapter 与编排器 | VmDevelopment 授权骨架已实现；Live provider 未实现 | 精确绑定后仍以 `LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED` 终止 |
 | P9 | Chat/Code/Cowork 验收 | synthetic 已完成 | fake/simulated 验收分别通过 |
 | VmDevelopment | Disposable VM acceptance-first 开发租约 | **当前开发路径** | development ZIP 的真实 Live/GUI 用户矩阵达到 `READY_FOR_FORMAL_P10A` |
 | P10A-0A | 旧双机 Fast Lane MVP 前置门 | **RETIRED / SUPERSEDED** | 仅保留历史回归字节；不恢复旧 bundle/bootstrap/automation/relay，也不再作为当前开发门 |
@@ -283,7 +283,7 @@ snapshot receipt、CAS、签名及 P10A/P10B/P11 仍是后续阶段，当前四�
 
 ### 主要实现
 
-- `ExecutionContext`：RunId、Mode、EnvironmentTier、Paths、Policy、Providers、
+- `ExecutionContext`：RunId、Mode、Stage、EnvironmentTier、Paths、Policy、Providers、
   AccessLedger。
 - FileSystem、Environment、Registry、Process、Network、Package、Feature、
   Service、Credential、Clock provider 接口。
@@ -557,12 +557,13 @@ DPAPI adapter、helper 源码、固定 .NET 构建链、SBOM、已签名 PE 均�
 - 任何异常都不会误认为 Cowork ready。
 - D-012 保持成立。
 
-## P8：Live Adapter 与编排器（fake 编排器已完成；Live 未实现）
+## P8：Live Adapter 与编排器（授权骨架已完成；Live provider 未实现）
 
 ### 目标
 
 以完整用户流程、stage/grant/auth/workflow 绑定、receipt trace 与补偿编排为核心。
-fake executor/orchestrator 已实现；真实 adapter 源码仍是未完成交付物。本地只做
+fake executor/orchestrator 和 VmDevelopment provider-load 授权骨架已实现；真实
+adapter/provider 仍是未完成交付物。本地只做
 静态/contract/fake executor 测试；“不在宿主机执行”是强制开发政策，stage/grant
 负责防误触但不声称能在同一 Windows 用户权限下证明 VM 身份。
 
@@ -571,14 +572,15 @@ fake executor/orchestrator 已实现；真实 adapter 源码仍是未完成交�
 - 真实网络、MSIX/Git 获取与安装 adapter。
 - HKCU managed policy、DPAPI、credential helper adapter；HKLM/local 只读检测。
 - VMP、service、Desktop lifecycle adapter。
-- 顶层 orchestrator：preflight → fixed all-surfaces target → acquire → verify →
-  ensure Git → Cowork preparation → credential → backup → config → lifecycle →
-  acceptance → report；没有 capability selector。
+- 顶层 install plan v3：preflight → fixed all-surfaces target →
+  `LoadLiveProviders`（首个受 grant 步骤）→ acquire → verify → ensure Desktop/Git →
+  Cowork preparation → credential → backup → config → lifecycle → acceptance →
+  report；没有 capability selector。
 - P10A VM evidence 冻结的单一 MSIX scope；运行时不 fallback、不双装、不静默
   迁移。
 - 独立许可、确认、回滚和取消。
-- `Scaffold → Development → VmAcceptance → UserLive` stage manifest 和
-  operation grant 验证。
+- `Scaffold → Development → VmDevelopment → VmAcceptance → UserLive` 主开发/候选
+  stage manifest 和 operation grant 验证；`VmCalibration` 是 P10A 的独立校准路径。
 
 ### 测试
 

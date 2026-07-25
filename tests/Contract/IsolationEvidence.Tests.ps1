@@ -36,8 +36,9 @@
             CanaryTokens             = @('<CANARY:CLAUDE_SETTINGS>', '<CANARY:GIT_CONFIG>')
         }
         return New-CddsiExecutionContext `
-             -RunId '00000000-0000-0000-0000-000000000003' `
+            -RunId '00000000-0000-0000-0000-000000000003' `
             -Mode $Mode `
+            -Stage Scaffold `
             -EnvironmentTier HostSandbox `
             -SandboxRoot $root `
             -Paths $paths `

@@ -197,6 +197,26 @@
             'Test-CddsiCommittedOperationUseReceipt'
         )
 
+        LiveAdapterRequiredOperation = 'LoadLiveProviders'
+
+        LiveAdapterAllowedBindings = @(
+            @{
+                EnvironmentTier = 'VmDevelopment'
+                Stage           = 'VmDevelopment'
+                ArtifactProfile = 'VmDevelopment'
+            }
+            @{
+                EnvironmentTier = 'VmAcceptance'
+                Stage           = 'VmAcceptance'
+                ArtifactProfile = 'VmAcceptance'
+            }
+            @{
+                EnvironmentTier = 'UserLive'
+                Stage           = 'UserLive'
+                ArtifactProfile = 'UserLive'
+            }
+        )
+
         ProductForbiddenCommands = @(
             'Get-ChildItem'
             'Get-Item'

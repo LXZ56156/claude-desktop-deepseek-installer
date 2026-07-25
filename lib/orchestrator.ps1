@@ -8,17 +8,18 @@ function Get-CddsiInstallPlanStepDefinitions {
     return @(
         [pscustomobject][ordered]@{ Sequence = 1;  Id = 'preflight';           Operation = 'InspectReadiness';      RequiresGrant = $false; Mutation = $false; CompensationOperation = $null },
         [pscustomobject][ordered]@{ Sequence = 2;  Id = 'fixed_target';        Operation = 'ResolveFixedTarget';    RequiresGrant = $false; Mutation = $false; CompensationOperation = $null },
-        [pscustomobject][ordered]@{ Sequence = 3;  Id = 'acquire_artifacts';   Operation = 'AcquireArtifacts';      RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RemoveAcquiredArtifacts' },
-        [pscustomobject][ordered]@{ Sequence = 4;  Id = 'verify_artifacts';    Operation = 'VerifyArtifacts';       RequiresGrant = $true;  Mutation = $false; CompensationOperation = $null },
-        [pscustomobject][ordered]@{ Sequence = 5;  Id = 'ensure_desktop';      Operation = 'EnsureClaudeDesktop';   RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreClaudeDesktopState' },
-        [pscustomobject][ordered]@{ Sequence = 6;  Id = 'ensure_git';          Operation = 'EnsureGit';             RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreGitState' },
-        [pscustomobject][ordered]@{ Sequence = 7;  Id = 'prepare_cowork';      Operation = 'PrepareCowork';         RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreCoworkState' },
-        [pscustomobject][ordered]@{ Sequence = 8;  Id = 'persist_credential';  Operation = 'PersistCredential';     RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreCredentialState' },
-        [pscustomobject][ordered]@{ Sequence = 9;  Id = 'backup_policy';       Operation = 'BackupManagedPolicy';   RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RemoveManagedPolicyBackup' },
-        [pscustomobject][ordered]@{ Sequence = 10; Id = 'write_policy';        Operation = 'WriteManagedPolicy';    RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreManagedPolicy' },
-        [pscustomobject][ordered]@{ Sequence = 11; Id = 'restart_desktop';     Operation = 'RestartDesktop';        RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreDesktopLifecycle' },
-        [pscustomobject][ordered]@{ Sequence = 12; Id = 'acceptance';          Operation = 'InvokeAcceptance';      RequiresGrant = $true;  Mutation = $false; CompensationOperation = $null },
-        [pscustomobject][ordered]@{ Sequence = 13; Id = 'report';              Operation = 'WriteReport';           RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RemoveReport' }
+        [pscustomobject][ordered]@{ Sequence = 3;  Id = 'load_live_providers'; Operation = 'LoadLiveProviders';     RequiresGrant = $true;  Mutation = $false; CompensationOperation = $null },
+        [pscustomobject][ordered]@{ Sequence = 4;  Id = 'acquire_artifacts';   Operation = 'AcquireArtifacts';      RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RemoveAcquiredArtifacts' },
+        [pscustomobject][ordered]@{ Sequence = 5;  Id = 'verify_artifacts';    Operation = 'VerifyArtifacts';       RequiresGrant = $true;  Mutation = $false; CompensationOperation = $null },
+        [pscustomobject][ordered]@{ Sequence = 6;  Id = 'ensure_desktop';      Operation = 'EnsureClaudeDesktop';   RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreClaudeDesktopState' },
+        [pscustomobject][ordered]@{ Sequence = 7;  Id = 'ensure_git';          Operation = 'EnsureGit';             RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreGitState' },
+        [pscustomobject][ordered]@{ Sequence = 8;  Id = 'prepare_cowork';      Operation = 'PrepareCowork';         RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreCoworkState' },
+        [pscustomobject][ordered]@{ Sequence = 9;  Id = 'persist_credential';  Operation = 'PersistCredential';     RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreCredentialState' },
+        [pscustomobject][ordered]@{ Sequence = 10; Id = 'backup_policy';       Operation = 'BackupManagedPolicy';   RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RemoveManagedPolicyBackup' },
+        [pscustomobject][ordered]@{ Sequence = 11; Id = 'write_policy';        Operation = 'WriteManagedPolicy';    RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreManagedPolicy' },
+        [pscustomobject][ordered]@{ Sequence = 12; Id = 'restart_desktop';     Operation = 'RestartDesktop';        RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RestoreDesktopLifecycle' },
+        [pscustomobject][ordered]@{ Sequence = 13; Id = 'acceptance';          Operation = 'InvokeAcceptance';      RequiresGrant = $true;  Mutation = $false; CompensationOperation = $null },
+        [pscustomobject][ordered]@{ Sequence = 14; Id = 'report';              Operation = 'WriteReport';           RequiresGrant = $true;  Mutation = $true;  CompensationOperation = 'RemoveReport' }
     )
 }
 
@@ -39,7 +40,7 @@ function Get-CddsiInstallPlanBindingToken {
     param([Parameter(Mandatory = $true)]$Plan)
 
     $values = @(
-        'cddsi-install-plan-binding-v2', $Plan.SchemaVersion, $Plan.ContractVersion,
+        'cddsi-install-plan-binding-v3', $Plan.SchemaVersion, $Plan.ContractVersion,
         $Plan.RunId, $Plan.Stage, $Plan.ArtifactProfile, $Plan.ArtifactSha256,
         $Plan.SidecarSha256, $Plan.ContentDigest, $Plan.GrantId, $Plan.ClaimId,
         $Plan.AuthorizationSessionRevision, $Plan.WorkflowSessionStateKeySha256,
@@ -78,7 +79,7 @@ function Test-CddsiInstallPlan {
             'WorkflowSessionReceiptBindingToken', 'InstallScope', 'RequestedSurfaces', 'Steps'
         ))) { return $false }
         if (-not (Test-CddsiSchemaVersionOne -Value $Plan.SchemaVersion) -or
-            $Plan.ContractVersion -cne 'cddsi-install-plan-v2' -or
+            $Plan.ContractVersion -cne 'cddsi-install-plan-v3' -or
             $Plan.PlanId -isnot [string] -or $Plan.PlanId -notmatch '^[a-f0-9]{64}$' -or
             $Plan.InstallScope -cnotin @('PerUser', 'MachineWide') -or
             $Plan.RequestedSurfaces -isnot [System.Array] -or
@@ -87,7 +88,7 @@ function Test-CddsiInstallPlan {
             -OperationGrant $OperationGrant -AuthorizationSession $AuthorizationSession `
             -WorkflowSessionState $WorkflowSessionState) -or
             $WorkflowSessionState.State -cne 'CLAIMED' -or
-            @('VmAcceptance', 'UserLive') -cnotcontains $StageManifest.Stage) { return $false }
+            @('VmDevelopment', 'VmAcceptance', 'UserLive') -cnotcontains $StageManifest.Stage) { return $false }
         if ($Plan.RunId -cne $OperationGrant.RunId -or $Plan.Stage -cne $StageManifest.Stage -or
             $Plan.ArtifactProfile -cne $OperationGrant.ArtifactProfile -or
             $Plan.ArtifactSha256 -cne $OperationGrant.ArtifactSha256 -or
@@ -156,7 +157,7 @@ function New-CddsiInstallPlan {
             -OperationGrant $OperationGrant -AuthorizationSession $AuthorizationSession `
             -WorkflowSessionState $WorkflowSessionState) -or
         $WorkflowSessionState.State -cne 'CLAIMED' -or
-        @('VmAcceptance', 'UserLive') -cnotcontains $StageManifest.Stage -or
+        @('VmDevelopment', 'VmAcceptance', 'UserLive') -cnotcontains $StageManifest.Stage -or
         $OperationGrant.RunId -cne $RunId -or
         (@($OperationGrant.AllowedOperations) -join '|') -cne (@(Get-CddsiInstallPlanGrantedOperations) -join '|')) {
         return New-CddsiOperationResult -Operation 'CreateInstallPlan' -Status 'ACTION_REQUIRED' `
@@ -185,7 +186,7 @@ function New-CddsiInstallPlan {
         }
     }
     $plan = [pscustomobject][ordered]@{
-        SchemaVersion = 1; ContractVersion = 'cddsi-install-plan-v2'; PlanId = $null
+        SchemaVersion = 1; ContractVersion = 'cddsi-install-plan-v3'; PlanId = $null
         RunId = $RunId; Stage = $StageManifest.Stage; ArtifactProfile = $OperationGrant.ArtifactProfile
         ArtifactSha256 = $OperationGrant.ArtifactSha256; SidecarSha256 = $OperationGrant.SidecarSha256
         ContentDigest = $OperationGrant.ContentDigest; GrantId = $OperationGrant.GrantId

@@ -29,6 +29,21 @@ Describe 'Live adapter static isolation boundary' {
             @($script:Boundary.Rules[$ruleName].Keys).Count | Should -Be 1
             @($script:Boundary.Rules[$ruleName].Keys)[0] | Should -BeExactly $script:LiveRelative
         }
+        $script:Boundary.Rules.LiveAdapterRequiredOperation | Should -BeExactly 'LoadLiveProviders'
+        $bindingTexts = @(
+            $script:Boundary.Rules.LiveAdapterAllowedBindings |
+                ForEach-Object {
+                    (@($_.Keys | ForEach-Object { [string]$_ } | Sort-Object) -join "`n") |
+                        Should -BeExactly ((@('ArtifactProfile', 'EnvironmentTier', 'Stage') | Sort-Object) -join "`n")
+                    '{0}|{1}|{2}' -f $_.EnvironmentTier, $_.Stage, $_.ArtifactProfile
+                } |
+                Sort-Object
+        )
+        ($bindingTexts -join "`n") | Should -BeExactly ((@(
+            'UserLive|UserLive|UserLive'
+            'VmAcceptance|VmAcceptance|VmAcceptance'
+            'VmDevelopment|VmDevelopment|VmDevelopment'
+        ) | Sort-Object) -join "`n")
     }
 
     It 'contains declarations only and cannot dot-source import or dynamically invoke code' {
@@ -49,7 +64,7 @@ Describe 'Live adapter static isolation boundary' {
         @($script:LiveAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.UsingStatementAst] }, $true)).Count | Should -Be 0
     }
 
-    It 'requires the VM acceptance context and committed operation-use gate before any provider capability' {
+    It 'requires one exact Live binding and LoadLiveProviders receipt before returning the stable disabled result' {
         $functions = @($script:LiveAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
         $functions.Count | Should -Be 1
         $functions[0].Name | Should -BeExactly 'Invoke-CddsiLiveAdapterOperation'
@@ -79,12 +94,140 @@ Describe 'Live adapter static isolation boundary' {
         $receiptGate.Count | Should -Be 1
         $assertGate[0].Extent.Text | Should -Match '(?i)-ExpectedMode\s+Live'
         $assertGate[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
-        $functions[0].Extent.Text | Should -Match "(?s)EnvironmentTier\s+-cne\s+'VmAcceptance'"
-        $functions[0].Extent.Text | Should -Match "(?s)Stage\s+-cne\s+'VmAcceptance'"
-        $functions[0].Extent.Text | Should -Match "(?s)ArtifactProfile\s+-cne\s+'VmAcceptance'"
         foreach ($bindingName in @('StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc')) {
             $receiptGate[0].Extent.Text | Should -Match ('(?i)-' + [regex]::Escape($bindingName) + '\s+')
         }
+
+        $bindingHashtableNodes = @(
+            $functions[0].FindAll({
+                param($node)
+                if ($node -isnot [System.Management.Automation.Language.HashtableAst]) { return $false }
+                $keys = @($node.KeyValuePairs | ForEach-Object {
+                    if ($_.Item1 -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                        [string]$_.Item1.Value
+                    }
+                } | Sort-Object)
+                return (($keys -join "`n") -ceq ((@('ArtifactProfile', 'EnvironmentTier', 'Stage') | Sort-Object) -join "`n"))
+            }, $true)
+        )
+        $sourceBindingTexts = @()
+        foreach ($bindingNode in $bindingHashtableNodes) {
+            $bindingValues = @{}
+            foreach ($pair in @($bindingNode.KeyValuePairs)) {
+                $valueNodes = @($pair.Item2.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+                }, $true))
+                $valueNodes.Count | Should -Be 1
+                $bindingValues[[string]$pair.Item1.Value] = [string]$valueNodes[0].Value
+            }
+            $sourceBindingTexts += '{0}|{1}|{2}' -f
+                $bindingValues.EnvironmentTier,
+                $bindingValues.Stage,
+                $bindingValues.ArtifactProfile
+        }
+        (@($sourceBindingTexts | Sort-Object) -join "`n") |
+            Should -BeExactly ((@(
+                'UserLive|UserLive|UserLive'
+                'VmAcceptance|VmAcceptance|VmAcceptance'
+                'VmDevelopment|VmDevelopment|VmDevelopment'
+            ) | Sort-Object) -join "`n")
+
+        $comparisonTokenKinds = @(
+            [System.Management.Automation.Language.TokenKind]::Ceq,
+            [System.Management.Automation.Language.TokenKind]::Cne
+        )
+        $comparisonNodes = @($functions[0].FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+                $comparisonTokenKinds -ccontains $node.Operator
+        }, $true))
+        foreach ($requiredMemberText in @(
+            '$Context.EnvironmentTier',
+            '$Context.Stage',
+            '$StageManifest.Stage',
+            '$StageManifest.ArtifactProfile',
+            '$Context.RunId',
+            '$OperationGrant.RunId'
+        )) {
+            $memberComparisons = @($comparisonNodes | Where-Object {
+                $_.Extent.Text -cmatch [regex]::Escape($requiredMemberText)
+            })
+            $memberComparisons.Count | Should -BeGreaterThan 0
+            @($memberComparisons | Where-Object {
+                $_.Extent.StartOffset -lt $receiptGate[0].Extent.StartOffset
+            }).Count | Should -BeGreaterThan 0
+        }
+
+        $bindingMatchAssignments = @($functions[0].FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                $node.Left.VariablePath.UserPath -ceq 'bindingMatches'
+        }, $true))
+        $bindingMatchAssignments.Count | Should -Be 1
+        foreach ($requiredMemberText in @(
+            '$Context.EnvironmentTier',
+            '$Context.Stage',
+            '$StageManifest.Stage',
+            '$StageManifest.ArtifactProfile'
+        )) {
+            $escapedRequiredMember = [regex]::Escape($requiredMemberText)
+            $bindingMatchAssignments[0].Right.Extent.Text |
+                Should -Match ('(?:' + $escapedRequiredMember + '\s+-ceq\s+|\s-ceq\s+' +
+                    $escapedRequiredMember + '(?:\s|$))')
+        }
+        $bindingFailureBranches = @($functions[0].FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$bindingMatches\.Count\s+-ne\s+1' -and
+                @($node.FindAll({
+                    param($child)
+                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
+                }, $true)).Count -eq 1
+        }, $true))
+        $bindingFailureBranches.Count | Should -Be 1
+        $bindingFailureBranches[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
+
+        $runBindingFailureBranches = @($functions[0].FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$Context\.RunId\s+-cne\s+\$OperationGrant\.RunId' -and
+                @($node.FindAll({
+                    param($child)
+                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
+                }, $true)).Count -eq 1
+        }, $true))
+        $runBindingFailureBranches.Count | Should -Be 1
+        $runBindingFailureBranches[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
+
+        $operationComparisons = @($comparisonNodes | Where-Object {
+            $_.Extent.Text -cmatch '(?<![A-Za-z0-9_:])\$Operation(?![A-Za-z0-9_])' -and
+                $_.Extent.Text -cmatch "['`"]LoadLiveProviders['`"]"
+        })
+        $operationComparisons.Count | Should -Be 1
+        $operationComparisons[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
+        $operationFailureBranches = @($functions[0].FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text -cmatch '\$Operation\s+-cne\s+[''"]LoadLiveProviders[''"]' -and
+                @($node.FindAll({
+                    param($child)
+                    $child -is [System.Management.Automation.Language.ThrowStatementAst]
+                }, $true)).Count -eq 1
+        }, $true))
+        $operationFailureBranches.Count | Should -Be 1
+        $operationFailureBranches[0].Extent.StartOffset | Should -BeLessThan $receiptGate[0].Extent.StartOffset
+
+        $notImplementedResults = @($commands | Where-Object {
+            $_.GetCommandName() -ceq 'New-CddsiOperationResult' -and
+                $_.Extent.Text -match '(?i)-Status\s+[''"]?ACTION_REQUIRED[''"]?' -and
+                $_.Extent.Text -match '(?i)-ErrorCode\s+[''"]LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED[''"]' -and
+                $_.Extent.Text -match '(?i)-Mode\s+Live(?:\s|$)'
+        })
+        $notImplementedResults.Count | Should -Be 1
+        $notImplementedResults[0].Extent.StartOffset | Should -BeGreaterThan $receiptGate[0].Extent.EndOffset
+        $notImplementedResults[0].Extent.Text | Should -Not -Match '(?i)-Changed\s*:?\s*\$true'
 
         $forbiddenCommands = @($script:Boundary.Rules.ProductForbiddenCommands)
         $actualSystemCommands = @(

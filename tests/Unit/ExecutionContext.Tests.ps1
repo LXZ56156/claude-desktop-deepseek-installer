@@ -28,9 +28,11 @@
     }
 
     function New-ExecutionContextTestPolicy {
+        param([bool]$AllowLiveProvider = $false)
+
         return [ordered]@{
             SchemaVersion            = 1
-            AllowLiveProvider        = $false
+            AllowLiveProvider        = $AllowLiveProvider
             ForbiddenResourceTokens = @('<CLAUDE_SETTINGS>', '<GIT_GLOBAL_CONFIG>')
             CanaryTokens             = @('<CANARY:CLAUDE_SETTINGS>', '<CANARY:GIT_CONFIG>')
         }
@@ -40,17 +42,27 @@
         param(
             [ValidateSet('TestSafe', 'DryRun', 'Live')]
             [string]$Mode = 'TestSafe',
+            [ValidateSet('Scaffold', 'Development', 'VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive')]
+            [string]$Stage = 'Scaffold',
+            [ValidateSet('HostSandbox', 'CI', 'VmDevelopment', 'VmAcceptance', 'UserLive')]
+            [string]$EnvironmentTier = 'HostSandbox',
+            [AllowNull()]$Providers = $null,
+            [bool]$AllowLiveProvider = $false,
             [string]$SandboxRoot = 'C:\Synthetic Temp\cddsi-test-00000000-0000-0000-0000-000000000001'
         )
 
+        if ($null -eq $Providers) {
+            $Providers = New-CddsiFakeProviderSet
+        }
         return New-CddsiExecutionContext `
             -RunId '00000000-0000-0000-0000-000000000001' `
             -Mode $Mode `
-            -EnvironmentTier HostSandbox `
+            -Stage $Stage `
+            -EnvironmentTier $EnvironmentTier `
             -SandboxRoot $SandboxRoot `
             -Paths (New-ExecutionContextTestPaths -SandboxRoot $SandboxRoot) `
-            -Providers (New-CddsiFakeProviderSet) `
-            -Policy (New-ExecutionContextTestPolicy)
+            -Providers $Providers `
+            -Policy (New-ExecutionContextTestPolicy -AllowLiveProvider $AllowLiveProvider)
     }
 }
 
@@ -61,6 +73,7 @@ Describe 'P1 execution context contract' {
             'SchemaVersion',
             'RunId',
             'Mode',
+            'Stage',
             'EnvironmentTier',
             'SandboxRoot',
             'Paths',
@@ -68,6 +81,8 @@ Describe 'P1 execution context contract' {
             'Policy',
             'AccessLedger'
         )
+        $context.SchemaVersion | Should -Be 2
+        $context.Stage | Should -BeExactly 'Scaffold'
         @($context.Paths.PSObject.Properties.Name) | Should -Be @(
             'Home', 'UserProfile', 'LocalAppData', 'AppData', 'ProgramData',
             'Temp', 'Download', 'State', 'Backup', 'Report', 'Credential',
@@ -85,6 +100,20 @@ Describe 'P1 execution context contract' {
             $context.Providers.$name.IsLive | Should -BeFalse
         }
         $names.Count | Should -Be 10
+    }
+
+    It 'defines an exact non-executable unloaded provider set' {
+        $providers = New-CddsiUnloadedProviderSet
+        $providers.Kind | Should -BeExactly 'Unloaded'
+        @($providers.ExpectedCalls).Count | Should -Be 0
+        @($providers.FailureInjections).Count | Should -Be 0
+        $providers.Cursor | Should -Be 0
+        @($providers.MutationSpy).Count | Should -Be 0
+        foreach ($name in @('FileSystem', 'Environment', 'Registry', 'Process', 'Network', 'Package', 'Feature', 'Service', 'Credential', 'Clock')) {
+            $providers.$name.Name | Should -BeExactly $name
+            $providers.$name.Kind | Should -BeExactly 'Unloaded'
+            $providers.$name.IsLive | Should -BeFalse
+        }
     }
 
     It 'creates an exact in-memory product AccessLedger' {
@@ -126,10 +155,51 @@ Describe 'P1 execution context contract' {
         { Assert-CddsiExecutionContext -ExecutionContext $context } | Should -Throw
     }
 
-    It 'rejects mode mismatch and every P1 Live context' {
+    It 'requires a canonical lowercase context run identifier' {
+        $context = New-ExecutionContextFixture
+        $context.RunId = 'ABCDEFAB-0000-4000-8000-000000000001'
+        { Assert-CddsiExecutionContext -ExecutionContext $context } | Should -Throw
+    }
+
+    It 'rejects mode mismatch and allows only unloaded exact-pair Live contexts' {
         $context = New-ExecutionContextFixture -Mode DryRun
         { Assert-CddsiExecutionContext -ExecutionContext $context -ExpectedMode TestSafe } | Should -Throw
+
+        foreach ($binding in @(
+            @{ Stage = 'VmDevelopment'; EnvironmentTier = 'VmDevelopment' },
+            @{ Stage = 'VmAcceptance'; EnvironmentTier = 'VmAcceptance' },
+            @{ Stage = 'UserLive'; EnvironmentTier = 'UserLive' }
+        )) {
+            $liveContext = New-ExecutionContextFixture -Mode Live -Stage $binding.Stage `
+                -EnvironmentTier $binding.EnvironmentTier -Providers (New-CddsiUnloadedProviderSet) `
+                -AllowLiveProvider $true
+            (Assert-CddsiExecutionContext -ExecutionContext $liveContext -ExpectedMode Live) | Should -BeTrue
+            $liveContext.AccessLedger.LiveProviderLoaded | Should -BeFalse
+            {
+                Invoke-CddsiProviderOperation -ExecutionContext $liveContext -Provider Environment `
+                    -Operation Inspect -ResourceToken '<ENVIRONMENT>'
+            } | Should -Throw '*LIVE_PROVIDER_NOT_LOADED*'
+        }
+
         { New-ExecutionContextFixture -Mode Live } | Should -Throw
+        foreach ($forbiddenTier in @('HostSandbox', 'CI')) {
+            {
+                New-ExecutionContextFixture -Mode Live -Stage VmDevelopment -EnvironmentTier $forbiddenTier `
+                    -Providers (New-CddsiUnloadedProviderSet) -AllowLiveProvider $true
+            } | Should -Throw
+        }
+        {
+            New-ExecutionContextFixture -Mode Live -Stage VmAcceptance -EnvironmentTier VmDevelopment `
+                -Providers (New-CddsiUnloadedProviderSet) -AllowLiveProvider $true
+        } | Should -Throw
+        {
+            New-ExecutionContextFixture -Mode Live -Stage VmDevelopment -EnvironmentTier VmDevelopment `
+                -Providers (New-CddsiFakeProviderSet) -AllowLiveProvider $true
+        } | Should -Throw
+        {
+            New-ExecutionContextFixture -Mode TestSafe -Stage VmDevelopment -EnvironmentTier VmDevelopment `
+                -Providers (New-CddsiUnloadedProviderSet) -AllowLiveProvider $true
+        } | Should -Throw
     }
 
     It 'rejects paths outside SandboxRoot' {
@@ -140,6 +210,7 @@ Describe 'P1 execution context contract' {
             New-CddsiExecutionContext `
                 -RunId '00000000-0000-0000-0000-000000000001' `
                 -Mode TestSafe `
+                -Stage Scaffold `
                 -EnvironmentTier HostSandbox `
                 -SandboxRoot $root `
                 -Paths $paths `
@@ -155,6 +226,7 @@ Describe 'P1 execution context contract' {
             New-CddsiExecutionContext `
                 -RunId '00000000-0000-0000-0000-000000000001' `
                 -Mode TestSafe `
+                -Stage Scaffold `
                 -EnvironmentTier HostSandbox `
                 -SandboxRoot 'C:\Synthetic Temp\cddsi-test-00000000-0000-0000-0000-000000000001' `
                 -Paths (New-ExecutionContextTestPaths) `
@@ -173,6 +245,7 @@ Describe 'P1 execution context contract' {
                 New-CddsiExecutionContext `
                     -RunId '00000000-0000-0000-0000-000000000001' `
                     -Mode TestSafe `
+                    -Stage Scaffold `
                     -EnvironmentTier HostSandbox `
                     -SandboxRoot $root `
                     -Paths (New-ExecutionContextTestPaths -SandboxRoot $root) `

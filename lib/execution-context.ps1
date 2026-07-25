@@ -161,6 +161,29 @@ function Add-CddsiProductAccessLedgerEntry {
     return $entry
 }
 
+function New-CddsiUnloadedProviderSet {
+    [CmdletBinding()]
+    param()
+
+    $providerSet = [ordered]@{
+        SchemaVersion = 1
+        Kind          = 'Unloaded'
+    }
+    foreach ($providerName in $script:CddsiProviderNames) {
+        $providerSet[$providerName] = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            Name          = $providerName
+            Kind          = 'Unloaded'
+            IsLive        = $false
+        }
+    }
+    $providerSet['ExpectedCalls'] = @()
+    $providerSet['FailureInjections'] = @()
+    $providerSet['Cursor'] = 0
+    $providerSet['MutationSpy'] = [System.Collections.ArrayList]@()
+    return [pscustomobject]$providerSet
+}
+
 function New-CddsiExecutionContext {
     [CmdletBinding()]
     param(
@@ -172,7 +195,11 @@ function New-CddsiExecutionContext {
         [string]$Mode = 'TestSafe',
 
         [Parameter(Mandatory = $true)]
-        [ValidateSet('HostSandbox', 'CI', 'VmAcceptance', 'UserLive')]
+        [ValidateSet('Scaffold', 'Development', 'VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive')]
+        [string]$Stage,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('HostSandbox', 'CI', 'VmDevelopment', 'VmAcceptance', 'UserLive')]
         [string]$EnvironmentTier,
 
         [Parameter(Mandatory = $true)]
@@ -218,9 +245,10 @@ function New-CddsiExecutionContext {
     }
 
     $context = [pscustomobject][ordered]@{
-        SchemaVersion   = 1
+        SchemaVersion   = 2
         RunId           = $RunId
         Mode            = $Mode
+        Stage           = $Stage
         EnvironmentTier = $EnvironmentTier
         SandboxRoot     = $SandboxRoot
         Paths           = [pscustomobject]$pathObject
@@ -252,6 +280,7 @@ function Assert-CddsiExecutionContext {
         'SchemaVersion',
         'RunId',
         'Mode',
+        'Stage',
         'EnvironmentTier',
         'SandboxRoot',
         'Paths',
@@ -262,13 +291,16 @@ function Assert-CddsiExecutionContext {
     if (-not (Test-CddsiExactNameSet -Actual $contextNames -Expected $requiredContextNames)) {
         throw 'ExecutionContext does not match the exact schema.'
     }
-    if (($Context.SchemaVersion -isnot [int] -and $Context.SchemaVersion -isnot [long]) -or [long]$Context.SchemaVersion -ne 1) {
+    if (($Context.SchemaVersion -isnot [int] -and $Context.SchemaVersion -isnot [long]) -or [long]$Context.SchemaVersion -ne 2) {
         throw 'ExecutionContext.SchemaVersion is unsupported.'
     }
 
     $parsedRunId = [guid]::Empty
     if ($Context.RunId -isnot [string] -or -not [guid]::TryParse($Context.RunId, [ref]$parsedRunId) -or $parsedRunId -eq [guid]::Empty) {
         throw 'ExecutionContext.RunId must be a non-empty GUID.'
+    }
+    if ($Context.RunId -cne $parsedRunId.ToString('D')) {
+        throw 'ExecutionContext.RunId must be a canonical lowercase GUID.'
     }
 
     $allowedModes = @('TestSafe', 'DryRun', 'Live')
@@ -279,7 +311,12 @@ function Assert-CddsiExecutionContext {
         throw 'ExecutionContext.Mode does not match ExpectedMode.'
     }
 
-    $allowedTiers = @('HostSandbox', 'CI', 'VmAcceptance', 'UserLive')
+    $allowedStages = @('Scaffold', 'Development', 'VmDevelopment', 'VmCalibration', 'VmAcceptance', 'UserLive')
+    if ($Context.Stage -isnot [string] -or $allowedStages -cnotcontains $Context.Stage) {
+        throw 'ExecutionContext.Stage is invalid.'
+    }
+
+    $allowedTiers = @('HostSandbox', 'CI', 'VmDevelopment', 'VmAcceptance', 'UserLive')
     if ($Context.EnvironmentTier -isnot [string] -or $allowedTiers -cnotcontains $Context.EnvironmentTier) {
         throw 'ExecutionContext.EnvironmentTier is invalid.'
     }
@@ -352,12 +389,6 @@ function Assert-CddsiExecutionContext {
     if (($Context.Providers.SchemaVersion -isnot [int] -and $Context.Providers.SchemaVersion -isnot [long]) -or [long]$Context.Providers.SchemaVersion -ne 1) {
         throw 'ExecutionContext.Providers.SchemaVersion is unsupported.'
     }
-    if ($Context.Providers.Kind -cne 'Fake') {
-        throw 'P1 permits only the Fake provider set.'
-    }
-    if ($Context.Mode -ceq 'Live' -or $Context.Policy.AllowLiveProvider) {
-        throw 'P1 forbids Live execution and live-provider authorization.'
-    }
     if ($Context.Providers.Cursor -isnot [int] -or $Context.Providers.Cursor -lt 0 -or $Context.Providers.Cursor -gt @($Context.Providers.ExpectedCalls).Count) {
         throw 'ExecutionContext.Providers.Cursor is invalid.'
     }
@@ -376,8 +407,35 @@ function Assert-CddsiExecutionContext {
         if (($providerContract.SchemaVersion -isnot [int] -and $providerContract.SchemaVersion -isnot [long]) -or [long]$providerContract.SchemaVersion -ne 1) {
             throw ("ExecutionContext.Providers.{0} has an invalid schema version." -f $providerName)
         }
-        if ($providerContract.Name -cne $providerName -or $providerContract.Kind -cne 'Fake' -or $providerContract.IsLive -isnot [bool] -or $providerContract.IsLive) {
-            throw ("ExecutionContext.Providers.{0} must be a non-live Fake provider." -f $providerName)
+        if ($providerContract.Name -cne $providerName -or $providerContract.Kind -cne $Context.Providers.Kind -or
+            $providerContract.IsLive -isnot [bool] -or $providerContract.IsLive) {
+            throw ("ExecutionContext.Providers.{0} must match the non-live provider-set kind." -f $providerName)
+        }
+    }
+
+    if ($Context.Mode -in @('TestSafe', 'DryRun')) {
+        if ($Context.Providers.Kind -cne 'Fake' -or $Context.Policy.AllowLiveProvider) {
+            throw 'TestSafe and DryRun require the non-live Fake provider set and deny live-provider authorization.'
+        }
+    }
+    else {
+        $liveStageTiers = @{
+            VmDevelopment = 'VmDevelopment'
+            VmAcceptance  = 'VmAcceptance'
+            UserLive      = 'UserLive'
+        }
+        if (-not $liveStageTiers.ContainsKey($Context.Stage) -or
+            $Context.EnvironmentTier -cne $liveStageTiers[$Context.Stage]) {
+            throw 'Live requires an exact authorized stage and environment-tier pair.'
+        }
+        if (-not $Context.Policy.AllowLiveProvider -or $Context.Providers.Kind -cne 'Unloaded') {
+            throw 'Live context construction requires explicit provider-load permission and the Unloaded provider set.'
+        }
+        if (@($Context.Providers.ExpectedCalls).Count -ne 0 -or
+            @($Context.Providers.FailureInjections).Count -ne 0 -or
+            $Context.Providers.Cursor -ne 0 -or
+            @($Context.Providers.MutationSpy).Count -ne 0) {
+            throw 'The Unloaded provider set must not contain executable fake-provider state.'
         }
     }
 
@@ -413,7 +471,7 @@ function Assert-CddsiExecutionContext {
         }
     }
     if ($Context.AccessLedger.LiveProviderLoaded -isnot [bool] -or $Context.AccessLedger.LiveProviderLoaded) {
-        throw 'P1 requires LIVE_PROVIDER_LOADED = false.'
+        throw 'The authorization-spine context requires LIVE_PROVIDER_LOADED = false.'
     }
 
     return $true
@@ -477,8 +535,11 @@ function Invoke-CddsiProviderOperation {
         default { throw 'Provider is not supported.' }
     }
 
+    if ($providerContract.Kind -ceq 'Unloaded' -and -not $providerContract.IsLive) {
+        throw 'LIVE_PROVIDER_NOT_LOADED'
+    }
     if ($providerContract.Kind -cne 'Fake' -or $providerContract.IsLive) {
-        throw 'Only non-live Fake providers may execute in P1.'
+        throw 'Only non-live Fake providers may execute through the default provider dispatcher.'
     }
 
     return Invoke-CddsiFakeProviderOperation -ExecutionContext $Context -Provider $Provider -Operation $Operation -ResourceToken $ResourceToken -Arguments $Arguments

@@ -10,10 +10,13 @@ VM_SOLE_WRITER_ON_EXISTING_BRANCH_AND_PR1 / NAMED_PRODUCT_RELEASE_GATE_ACTIVE /
 HISTORICAL_DIAGNOSTICS_INDEPENDENT /
 NAMED_GATE_FAILURE_EVIDENCE_FIX_DUAL_ENGINE_PASSED /
 PERSISTED_EVIDENCE_TIMESTAMP_ROUNDTRIP_FIX_DUAL_ENGINE_PASSED /
-FINAL_TRACKED_BYTES_FROZEN_FOR_RETEST /
+PRODUCT_GATE_COMMIT_PUSHED_AND_CI_PASSED /
+VMDEVELOPMENT_AUTHORIZATION_SPINE_ACTIVE /
+LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED /
+VMDEVELOPMENT_AUTHORIZATION_SPINE_FINAL_GATES_PASSED /
 EXTERNAL_SNAPSHOT_RECEIPT_MISSING / LIVE_MUTATIONS_NOT_STARTED /
 REAL_INSTALL_AND_COMPUTER_USE_REQUIRED /
-RELAY_PERMANENTLY_RETIRED / AUTOMATION_PAUSED_OR_ABSENT / PRODUCT_STILL_SCAFFOLD /
+RELAY_PERMANENTLY_RETIRED / AUTOMATION_PAUSED_OR_ABSENT / DEFAULT_ENTRY_STILL_SCAFFOLD /
 RELEASE_READY_NOT_YET_REACHED / P12_MANUAL_ONLY。**
 
 2026-07-24 用户冻结 D-026，结束“VM 永远只读、用户搬回报告、宿主机逐轮批修”的
@@ -30,6 +33,59 @@ force push、改写历史或自动 rebase；remote 出现非预期提交时必�
 detached commit 未被覆盖，保存在
 `refs/cddsi-frozen/d0c2ad515abe54955a3a0dc361d2f50037dc82e5`。
 
+首个 VM 写入批次已经普通 fast-forward 推送到同一分支和 PR #1：commit
+`dc296604f4a1f86982beb18707a75a56f54c0c45`，tree
+`6105e95c6bfc7e7c4c87829dc03ba309f6c7d3a5`。PR 的 `quality` 与
+`release-contract` 两个 GitHub Actions 均为 `success`。该批建立具名
+ProductReleaseGate，不含 Live mutation。
+
+当前下一批建立 VmDevelopment 授权骨架：ExecutionContext schema v2 增加显式 Stage，
+安全模式只接受 Fake；Live 只接受三个精确 stage/tier 组合和不可执行的
+`Unloaded` provider set。stage manifest v1 保持原五阶段兼容，VmDevelopment 必须使用
+v2；独立 `LoadLiveProviders` 确认/single-use CAS 是 install plan v3 的首个受 grant
+步骤。live adapter 不在默认 bootstrap 中，完整授权后仍只返回
+`ACTION_REQUIRED/LIVE_PROVIDER_LOAD_NOT_IMPLEMENTED`。本批不装载 provider，
+`Test-CddsiRealMutationAllowed` 仍为 false，也不执行安装、注册表、AppX、VMP、服务、
+进程、Credential Manager 或网络请求。
+
+该授权骨架在本段交接更新前的 tracked bytes 已完成双引擎 focused 和完整门禁。
+PS7 7.6.3 与
+Windows PowerShell 5.1.26100.8875 对 8 个相关文件各执行 128/128，通过且
+failed/skipped/not-run/inconclusive 均为 0。最终具名组合门为
+`PASSED`，ProductReleaseGate 为 `PASSED`，PS7/PS5.1 各 378/378；
+HistoricalDiagnostics 为 `COMPLETED/FAILED_TESTS` 且
+`ReleaseBlocking=false`，PS7 为 272 total / 270 passed / 2 failed，PS5.1 为
+272 / 271 / 1，全部失败仍来自永久退役的 FastLaneGitOutbox H02。Product evidence
+SHA-256 为
+`306268010d2dd83c94b88e4e4edd38a3cd78fb6bee7f3fd8311576eaa6a4ebf4`，
+Historical evidence SHA-256 为
+`31ed268a0a12e8b0623f9c0a2d87cc405bbe76babd2fd7f3f1e37c25870768c2`；
+Product 29 Pester files / 8 shards / 18 workers / 21 processes / 48 ledger，
+Historical 13 / 9 / 20 / 23 / 52。最终 repository snapshot 为 170 files /
+33 directories，SHA-256
+`eecd64c640c5a7e76542affc734dfc43c53e52cf752560a051dcb3aa0c440cc4`；
+所有 cleanup 成功，仓库在测试中未改变。
+
+同一份交接更新前 tracked bytes 上，独立 `scripts/build-release.ps1 -DryRun` 为
+`ReleaseSimulation/DryRun/SUCCEEDED/Changed=false`，package/ZIP/extract 均为
+39 files，四层 secret findings 均为 0，Live provider 未装载、forbidden access
+和 outside writes 均为 0；stdout SHA-256 为
+`edfbf480b1b46e8728eda88e7ba61078bdb223037d074131cf509c54067cdd7b`。
+legacy `scripts/check.ps1` 继续如实 `FAILED_SAFE`：H02 为 25 total / 24 passed /
+1 failed，失败是退役 outbox 的注入状态持久化场景被固定
+`FAST_LANE_RUNTIME_LIMIT` 抢先终止；在此之前 40 个测试文件累计 596 passed，
+0 skipped/not-run/inconclusive，cleanup 为 `SucceededAfterFailure`，仓库未变。
+未扩大 timeout、未降低断言、未 skip，也未调试或复活退役通信机制。
+
+该次显式扫描使用仓库 scanner 对 170 个 tracked files、39 个 DryRun release
+files 和 5 个本轮持久化 evidence/log files 执行，三类 secret findings 均为 0。
+首次 tracked 文件枚举因 Git 的中文路径 quoting 安全失败，随后以
+`core.quotepath=false` 重跑全部 170 项；没有跳过文件或把失败当通过。
+这 5 个文件是 VM owner-scoped 临时诊断，不是可上传的正式脱敏 evidence：
+其中两个 CLIXML stderr 含 Windows 用户名、主机名和用户目录绝对路径，虽然不含
+scanner 识别的 secret，path hygiene 仍未通过。它们不得提交、上传或提升；正式
+evidence 必须重新产生安全脱敏副本。
+
 当前产品仍是 `Scaffold`，入口仍 fail closed，尚未实现真实安装器。D-026 不把
 synthetic PASS 当作产品完成：VM 必须优先实现并用不可 promotion 的 development ZIP
 反复验证真实安装、配置、API、重复运行、诊断、修复、恢复、UAC/人工重启，并使用
@@ -44,6 +100,47 @@ Computer Use 能力可用；但尚无 guest 外部可恢复 clean snapshot recei
 Computer Use 还没有形成产品 GUI PASS，D-026 的 Live grant 也没有使用。本轮只允许
 repo 源码、文档、fake、TestSafe、DryRun 和隔离测试；未执行安装、注册表、AppX、
 VMP、服务、Credential Manager 或其他真实系统写入。
+
+Computer Use 已通过真实桌面只读探测：可列出并观察当前 Windows 应用，只观察到
+Explorer/Notepad，未观察到正在运行或可见的 Claude Desktop；该探测没有确认软件
+安装状态。因此当前证据只证明 Computer Use 通道可用，不能证明 Claude Chat、Code
+或 Cowork 已验收；密钥输入期间也没有截图、OCR、剪贴板或输入框读取。真实 GUI
+路径必须等 NON-PROMOTABLE VmDevelopment ZIP、Claude Desktop 实装和外部可恢复
+snapshot receipt 就绪后执行。
+
+本轮复用工具 receipt（均为规范绝对路径；未临时安装 Pester 或其他工具）：
+
+- PowerShell 7：`C:\Program Files\PowerShell\7\pwsh.exe`，
+  7.6.3.500，SHA-256
+  `8737aa78bdbe2941083c2c3674da3a9c3ab4cabd2cac040d39d1d0c19f9fc20d`，
+  Authenticode valid，Microsoft Corporation；来源为现有 Microsoft-signed
+  PowerShell 安装；精确官方 release metadata：
+  `https://github.com/PowerShell/PowerShell/releases/tag/v7.6.3`。
+- Windows PowerShell：`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`，
+  10.0.26100.8875，SHA-256
+  `7600ffe12da441fe89d035b13801e8e91d064bc544a27b19a5cf49f6ab8b18f5`，
+  Authenticode valid，Microsoft Windows；来源为 Windows 11 inbox component。
+  精确官方组件 metadata：
+  `https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1`。
+- Git for Windows：`C:\Program Files\Git\cmd\git.exe`，
+  2.54.0.windows.1，SHA-256
+  `81ef35ae005ca9318018d18e3327578ce939fb99feaad6b2d7c8ab15f3de8db5`，
+  Authenticode valid，Johannes Schindelin / The Git Development Community；
+  来源为现有正式签名 Git for Windows 安装；精确官方 immutable release metadata：
+  `https://github.com/git-for-windows/git/releases/tag/v2.54.0.windows.1`。测试中通过
+  `GIT_CONFIG_NOSYSTEM=1`、`GIT_CONFIG_GLOBAL=NUL` 隔离系统/全局配置。
+- VMware Tools：`C:\Program Files\VMware\VMware Tools\vmtoolsd.exe`，
+  13.1.0 build-25218885，SHA-256
+  `33f934d107f430452eed263eb8266c75c2de68ea8ad310ebf09b245acd1ceee7`，
+  Authenticode valid，Broadcom Inc.；来源为现有 Broadcom-signed VMware Tools。
+  精确官方 build metadata：
+  `https://knowledge.broadcom.com/external/article/304809/build-numbers-and-versions-of-vmware-too.html`。
+- Pester：只使用仓库 vendored 5.6.1，经 `scripts/bootstrap-dev.ps1` 校验，
+  vendored tree SHA-256
+  `b4992fea36787bda13b0301e2c459a03910ada99c73fd5b3ed9943470fd84460`；
+  锁定的官方 metadata 为
+  `https://www.powershellgallery.com/packages/Pester/5.6.1` 和
+  `https://github.com/Pester/Pester`；未访问 PSGallery、未安装替代 Pester。
 
 发布必过门从现在起以产品行为、供应链验签、凭据、所有权/补偿、Release inventory/
 secret、真实用户路径和 Computer Use 为准。已退役的 relay/outbox/Automation 传输与
@@ -130,10 +227,13 @@ ReleaseFacts 窄 profile 的 16 个 `It` 和生产库未改变；优化后 PS7/P
 509 秒内通过原 900 秒 hard limit。本段更新时一轮 legacy `AllBlocking` 已因上述
 源码审查结果失效；它不作为终态 evidence，并由原 owner-marked harness 自行清理。
 
-提交前必须在最终内容上重新运行具名组合入口、Release DryRun、legacy 单列、
-encoding/diff 与 tracked/release/evidence secret scans。最终 commit/tree、PR head
-和 CI 只能在普通 fast-forward push 后外部核验，不能在 tracked 文档中自引用尚未
-生成的 commit。
+上述具名组合入口、Release DryRun、legacy 单列、双引擎 focused 与扫描结果均绑定
+本次交接更新前的 tracked bytes。本段更新后必须在不再修改 tracked bytes 的前提下
+重跑完整具名组合门（包含嵌套 DryRun）、legacy 单列、encoding/diff 与
+tracked/release/evidence secret scans，并 fetch 确认远端仍为本批 parent
+`dc296604f4a1f86982beb18707a75a56f54c0c45`；最终 commit/tree、PR head 和 CI
+只能在普通 fast-forward push 后外部核验，不能在 tracked 文档中自引用尚未生成的
+commit。
 
 用户已确认撤销此前暴露的测试 API Key，本文件不复述；本轮未搜索、未使用，也未把
 它写入 Git、参数、环境变量、脚本、日志、状态、报告、截图、evidence 或 Release。

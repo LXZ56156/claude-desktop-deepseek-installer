@@ -76,11 +76,19 @@ Describe 'common safety helpers' {
         { Resolve-CddsiExecutionMode -TestSafe -Live } | Should -Throw
     }
 
-    It 'keeps all real mutation disabled during scaffold stage' {
+    It 'keeps real mutation disabled after the VmDevelopment authorization spine' {
         Mock Assert-CddsiExecutionContext { return $true }
-        $context = [pscustomobject]@{ Mode = 'Live' }
+        $context = [pscustomobject]@{ Mode = 'Live'; Stage = 'VmDevelopment' }
         (Test-CddsiRealMutationAllowed -ExecutionContext $context -Mode Live -AcknowledgeRealChanges) | Should -BeFalse
-        { Assert-CddsiMutationAllowed -ExecutionContext $context -Operation 'probe' -Mode Live -AcknowledgeRealChanges } | Should -Throw
+        $caught = $null
+        try {
+            Assert-CddsiMutationAllowed -ExecutionContext $context -Operation 'probe' -Mode Live -AcknowledgeRealChanges
+        }
+        catch {
+            $caught = $_
+        }
+        $caught | Should -Not -BeNullOrEmpty
+        $caught.Exception.Message | Should -Match '阶段=VmDevelopment'
     }
 
     It 'returns an exact D-019 result and derives Success only from SUCCEEDED' {

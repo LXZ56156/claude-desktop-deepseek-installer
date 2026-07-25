@@ -37,7 +37,9 @@
 租约，可以在同一分支/PR 内修改源码、测试、文档和构建定义，正常 commit 并
 fast-forward push。不得创建重复 PR、force push、改写历史或自动 rebase。
 
-当前产品仍是 `Scaffold`。D-026 将真实用户路径置于完成门首位：VM 先从不可 promotion
+默认入口仍是 `Scaffold`；VmDevelopment 已开始建立显式 Stage、精确 Live
+stage/tier/profile 绑定、`Unloaded` provider set 和独立 `LoadLiveProviders`
+grant/CAS，但真实 provider 装载仍 fail closed，不能称为可用安装器。D-026 将真实用户路径置于完成门首位：VM 先从不可 promotion
 的 development ZIP 实测安装、配置、API、重复运行、诊断、修复、恢复、UAC/重启，并
 用 Computer Use 实际验证 Claude Desktop 的 Chat、Code、Cowork，取得
 `READY_FOR_FORMAL_P10A`；P11 再对最终候选精确字节重复正式矩阵。宿主机和 CI 仍不执行
