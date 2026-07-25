@@ -9,9 +9,10 @@ sandbox、静态门和 access ledger，证明受控产品代码没有发起真�
 registry、AppX、VMP、进程或网络访问。HostSandbox 不是 OS 权限隔离；不受信任
 代码和 live adapter 只在 disposable VM。
 
-完整保护合同见 `TEST_ISOLATION.md`。P1 质量入口已固定为 owner-marked
-HostSandbox、双 PowerShell 引擎、精确工具授权和机器可读证据；该整套质量门已于
-2026-07-14 实际通过，后续工作包必须持续保持全绿。
+完整保护合同见 `TEST_ISOLATION.md`。当前发布质量入口固定为
+`scripts/invoke-release-gates.ps1`，由 owner-marked HostSandbox、双 PowerShell
+引擎、精确工具授权、ProductReleaseGate、独立 HistoricalDiagnostics 和机器可读
+证据组成。2026-07-14 的 P1 通过是历史快照；后续工作包必须以当前具名门重新证明。
 
 ## 测试层级
 
@@ -232,22 +233,45 @@ $windowsPowerShellSha256 = (Get-FileHash -LiteralPath $windowsPowerShell -Algori
 $gitSha256 = (Get-FileHash -LiteralPath $git -Algorithm SHA256).Hash
 
 .\scripts\bootstrap-dev.ps1
-$evidence = .\scripts\check.ps1 `
+$evidence = .\scripts\invoke-release-gates.ps1 `
     -PowerShell7Executable $pwsh7 `
     -PowerShell7Sha256 $pwsh7Sha256 `
     -WindowsPowerShellExecutable $windowsPowerShell `
     -WindowsPowerShellSha256 $windowsPowerShellSha256 `
     -GitExecutable $git `
     -GitSha256 $gitSha256 `
+    -ProcessTimeoutSeconds 900 `
     -PassThru
 
-if ($evidence.Scenario -cne 'Quality' -or $evidence.CLEANUP_OUTCOME -cne 'Succeeded') {
-    throw 'Isolated quality evidence is not clean.'
+if (
+    $evidence.Status -cne 'PASSED' -or
+    $evidence.ProductGateStatus -cne 'PASSED' -or
+    $evidence.HistoricalStatus -cne 'COMPLETED' -or
+    $evidence.HistoricalDiagnosticResult -notin @('PASSED', 'FAILED_TESTS') -or
+    $evidence.HistoricalReleaseBlocking
+) {
+    throw 'Named release-gate evidence is not clean and complete.'
 }
 
-$releaseEvidence = .\scripts\build-release.ps1 -DryRun
-if ($releaseEvidence.Status -cne 'SUCCEEDED' -or $releaseEvidence.Changed -ne $false) {
-    throw 'Release Simulation evidence is not clean.'
+$product = $evidence.ProductReleaseGateEvidence
+$historical = $evidence.HistoricalDiagnosticEvidence
+if (
+    $product.QualitySet -cne 'ProductReleaseBlocking' -or
+    $product.ExpectedPesterFileCount -ne 29 -or
+    $product.ExpectedWorkerCount -ne 18 -or
+    $product.ExpectedProcessCount -ne 21 -or
+    $product.ExpectedLedgerEntryCount -ne 48 -or
+    $product.ReleaseDryRunEvidence.Operation -cne 'ReleaseSimulation' -or
+    $product.ReleaseDryRunEvidence.Mode -cne 'DryRun' -or
+    $product.ReleaseDryRunEvidence.Status -cne 'SUCCEEDED' -or
+    $historical.QualitySet -cne 'HistoricalDiagnostic' -or
+    $historical.ExpectedPesterFileCount -ne 13 -or
+    $historical.ExpectedWorkerCount -ne 20 -or
+    $historical.ExpectedProcessCount -ne 23 -or
+    $historical.ExpectedLedgerEntryCount -ne 52 -or
+    $historical.ReleaseBlocking
+) {
+    throw 'Named release-gate topology or nested evidence is invalid.'
 }
 ~~~
 
@@ -265,33 +289,73 @@ if ($releaseEvidence.Status -cne 'SUCCEEDED' -or $releaseEvidence.Changed -ne $f
 - Release manifest 与 DryRun。
 - 文档索引、隔离合同、实施计划和 HANDOFF 可发现性。
 
-双引擎质量门的执行拓扑固定为每个引擎 1 个 Static worker 加 13 个
-`QualityShards`。分片由 `config/dev-dependencies.psd1` 冻结，42 个 test files 精确
-覆盖一次；父进程只传 `ShardId`，逐份验证 strict UTF-8 role evidence 后再聚合。
-每个 worker 都实际输出中文/emoji/非 BMP round-trip marker，父进程同时验证 stdout
-与 stderr。成功 evidence 精确为 31 个 trusted process、68 条最终 harness ledger 和
-两个 engine aggregate。
+D-026 分类合同位于 `config/product-release-gate.psd1`，当前
+`EnforcementPhase=NamedProductReleaseGate`。它把 release manifest 中全部 47 个
+`tests/` 资产精确一归属：Product 34 个（29 个 Pester、4 个 synthetic fixture、
+1 个 support script），Historical 13 个（全部为 Pester）；42 个 Pester 入口精确为
+29 + 13，集合互斥且并集与 `QualityShards` 相同。
+`OperatorCoordinationBoundary`、IsolationEvidence、VmCalibration、CandidateBuild 和
+Release Simulation 始终属于 Product。
+
+`scripts/quality-set-policy.ps1` 从同一分类和冻结 shard policy 派生三个互不混淆的
+执行 profile：
+
+| QualitySet | Pester files | Shards | Workers | Trusted processes | Harness ledger |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ProductReleaseBlocking` | 29 | 8 | 18 | 21 | 48 |
+| `HistoricalDiagnostic` | 13 | 9 | 20 | 23 | 52 |
+| legacy `AllBlocking` | 42 | 13 | 28 | 31 | 68 |
+
+具名 ProductReleaseGate、独立 HistoricalDiagnostics 以及 CI/Release 绑定现已启用。
+产品测试必须全部 clean；历史集合必须全部执行，普通完整 test-level failure 可如实
+成为 `FAILED_TESTS` 且 `ReleaseBlocking=false`。timeout、crash、missing、skip、
+not-run、inconclusive、基础设施或分类漂移始终阻塞。每个 profile 在每个引擎运行
+1 个 Static worker 和其选中的 shards；父进程只传 `ShardId`，逐份验证 strict UTF-8
+role evidence 后聚合为两个 engine aggregate。
 
 `ProcessTimeoutSeconds` 是每个冻结 worker 的上限，不是整套双引擎的一刀切预算。
 超时杀死可用进程树并有界 drain，外部 stderr 输出
 `CDDSI_SAFE_FAILURE_EVIDENCE_V3=<json>`；JSON 包含当前 engine/role/shard、已完成
-worker 计划前缀、test-file 与 passed counts。非超时 Pester 失败另含最多 32 个由
-worker/parent 双重绑定到 tracked static `It` 源码的 repo-relative path、source line
-和测试名；不包含任意错误正文。部分证据只能诊断，不能冒充 PASS。
+worker 计划前缀、test-file 与 passed counts。measurement rules v6 要求非超时
+Pester 失败全量保留 `FailedCount` 个安全条目，`FailedTestEvidenceTruncated` 必须
+恒为 false；每一项都由 worker/parent 双重绑定到 tracked static `It` 源码的
+repo-relative path、source line、测试名及正数 ErrorRecord count，不包含任意错误
+正文。部分证据只能诊断，不能冒充 PASS。
 
-`check.ps1` 只接受绝对工具路径与对应 SHA-256，并由 HostSandbox runner 间接
-运行 Pester 和 Git；不继承真实用户 HOME/AppData/Temp、Git 配置或一般
-`PSModulePath`。它已经覆盖 Windows PowerShell 5.1，因此禁止在外部再直接导入
+共同入口失败时必须在两条 child path 都已尝试后生成
+`CddsiNamedReleaseGateFailureEvidence`，并向 stderr 写出
+`CDDSI_NAMED_GATE_FAILURE_EVIDENCE_V1=<json>`。Product 与 Historical 各自记录
+`PASSED` 或 `FAILED_CLOSED`；合法 HostSandbox safe evidence 以完整嵌套对象和
+canonical SHA-256 绑定。缺失 evidence 显式为 `UNAVAILABLE`，不安全或 schema
+漂移显式为 `REJECTED_UNSAFE`。不得转发原始异常正文、绝对路径、secret，也不得以
+固定条数或 JSON 长度上限静默省略合法失败证据。
+
+持久化成功 evidence 再加载时，PowerShell 7 的默认 `ConvertFrom-Json` 会把规范
+`ZipEntryTimestampUtc` 物化为 `System.DateTime`，Windows PowerShell 5.1 则保留
+字符串。验证器只接受逐字等于 `1980-01-01T00:00:00Z` 的字符串，或
+`Kind=Utc` 且 ticks 精确对应同一时刻的 `DateTime`；Local、Unspecified、
+`DateTimeOffset`、相邻 tick 和非规范等价文本一律 fail closed。无论 loader 表示为何，
+所有 nested canonical SHA-256 和 outer binding 仍必须重新计算并精确匹配。
+
+GitHub Actions 的 240 分钟只是在 Windows runner 上容纳顺序执行 Product、
+Release DryRun 与 Historical 的 job-level envelope；每个 worker 的
+`ProcessTimeoutSeconds=900` 不变，不能把外层预算解释为扩大产品 timeout。
+
+`check.ps1` 保留为 legacy `AllBlocking` 诊断：它仍只接受绝对工具路径与对应
+SHA-256，并由 HostSandbox runner 间接运行全部 42 个 Pester 和 Git；不继承真实用户
+HOME/AppData/Temp、Git 配置或一般 `PSModulePath`。它必须单独运行并如实报告，但不是
+具名产品发布门。它已经覆盖 Windows PowerShell 5.1，因此禁止在外部再直接导入
 Pester 运行一遍。
 
 HostSandbox 内需要构造本地 bare repository 的测试必须消费父 harness 传入并由
 worker 再验 hash 的固定 Git grant，不能依赖 worker `PATH`。该 grant 只允许本地
 fixture/CAS 质量验证，不授权网络 remote；缺少固定 binding 时正式 worker 失败。
 
-`build-release.ps1` 必须在同一工作流的 clean quality evidence 之后运行，只接受
-`-DryRun`。省略 `-DryRun`、传入 `-SkipQualityGate` 或指定输出目录都必须
-fail closed；Release Simulation 只在自有 sandbox 中暂存、打 ZIP、解压、比对并
-清理，不发布产物。
+`build-release.ps1 -DryRun` 由 ProductReleaseGate 在产品质量 evidence clean 且外层
+repository snapshot 未变后嵌套调用。省略 `-DryRun`、传入 `-SkipQualityGate` 或指定
+输出目录都必须 fail closed；Release Simulation 只在自有 sandbox 中暂存、打 ZIP、
+解压、比对并清理，不发布产物。直接运行 DryRun 可用于定向诊断，但不能替代
+`invoke-release-gates.ps1`。
 
 ## Git 隔离
 
@@ -413,8 +477,10 @@ token 和 sandbox 相对路径；本机临时控制台可以显示 sandbox 绝�
 
 1. 先更新测试和故障矩阵。
 2. 运行适用的 L0-L3。
-3. 取得 clean `check.ps1 -PassThru` 证据，再运行 Release DryRun；隔离
-   `git diff --check` 已由 check 质量门执行。
+3. 运行 `invoke-release-gates.ps1 -PassThru`；Product 必须 `PASSED`，Historical
+   必须 `COMPLETED` 且结果只能是 `PASSED|FAILED_TESTS`、
+   `ReleaseBlocking=false`。Release DryRun 已嵌套在 Product evidence 中。
+   legacy `check.ps1 -PassThru` 另行执行并如实报告。
 4. 检查 manifest、secret、docs 和 HANDOFF。
 5. 记录通过数量、失败/跳过/未运行；任何 skipped/not-run/inconclusive 都不算干净。
 

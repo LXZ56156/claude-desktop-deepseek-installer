@@ -22,7 +22,7 @@
     IsolationEvidenceSuites = @(
         @{
             RelativePath      = 'tests/Contract/IsolationEvidence.Tests.ps1'
-            ExpectedTestCount = 18
+            ExpectedTestCount = 20
         }
         @{
             RelativePath      = 'tests/Unit/FakeProviders.Tests.ps1'

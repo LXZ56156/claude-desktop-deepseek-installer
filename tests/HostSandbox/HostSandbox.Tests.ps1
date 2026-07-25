@@ -1,10 +1,188 @@
 ﻿BeforeAll {
     $script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $script:RunnerPath = Join-Path $script:RepoRoot 'scripts\invoke-host-sandbox.ps1'
+    $script:WorkerPath = Join-Path $script:RepoRoot 'scripts\check-worker.ps1'
+    $script:GateCommonPath = Join-Path $script:RepoRoot 'scripts\release-gate-common.ps1'
     . $script:RunnerPath -ImportOnly
+    . $script:GateCommonPath
+    . $script:WorkerPath `
+        -RepositoryRoot $script:RepoRoot `
+        -SandboxRoot (Join-Path ([System.IO.Path]::GetTempPath()) 'cddsi-worker-builder-only') `
+        -RunId '00000000-0000-0000-0000-000000000100' `
+        -RepositoryInventoryPath (Join-Path $script:RepoRoot 'scripts\release-manifest.psd1') `
+        -BoundaryManifestPath (Join-Path $script:RepoRoot 'config\execution-boundaries.psd1') `
+        -DependencyManifestPath (Join-Path $script:RepoRoot 'vendor\dev-dependencies.lock.psd1') `
+        -EngineId PowerShell7 `
+        -EngineExecutablePath (Join-Path $PSHOME 'powershell.exe') `
+        -EngineGrantSha256 ('0' * 64 -join '') `
+        -GitExecutablePath 'C:\cddsi-synthetic-tools\git.exe' `
+        -GitGrantSha256 ('0' * 64 -join '') `
+        -EvidenceBuilderOnly
 
     function New-HostSandboxTestLedger {
         return New-Object System.Collections.Generic.List[object]
+    }
+
+    function New-CddsiHistoricalPesterCompletionFixture {
+        $runtimeError = [System.Management.Automation.ErrorRecord]::new(
+            [System.InvalidOperationException]::new('synthetic runtime failure'),
+            'SyntheticRuntimeFailure',
+            [System.Management.Automation.ErrorCategory]::InvalidOperation,
+            $null
+        )
+        return [pscustomobject][ordered]@{
+            Result                 = 'Failed'
+            TotalCount             = [long]2
+            PassedCount            = [long]1
+            FailedCount            = [long]1
+            SkippedCount           = [long]0
+            NotRunCount            = [long]0
+            InconclusiveCount      = [long]0
+            FailedBlocksCount      = [long]0
+            FailedContainersCount  = [long]0
+            Tests                  = @(
+                [pscustomobject][ordered]@{
+                    Result      = 'Passed'
+                    ErrorRecord = @()
+                },
+                [pscustomobject][ordered]@{
+                    Result      = 'Failed'
+                    ErrorRecord = @($runtimeError)
+                }
+            )
+        }
+    }
+
+    function New-CddsiGateAggregateWorkerFixture {
+        param(
+            [Parameter(Mandatory = $true)]
+            [ValidateSet('PowerShell7', 'WindowsPowerShell')]
+            [string]$Engine,
+
+            [Parameter(Mandatory = $true)]
+            $QualitySetPolicy,
+
+            [string]$SandboxBindingSha256 = ('8' * 64 -join ''),
+
+            [string]$FailedShardId = '',
+
+            [AllowNull()]$FailedTest
+        )
+
+        $runId = '00000000-0000-0000-0000-000000000120'
+        $sameRepositoryManifestSha256 = ('2' * 64 -join '')
+        $dependency = Import-PowerShellDataFile -LiteralPath (
+            Join-Path $script:RepoRoot 'config\dev-dependencies.psd1')
+        $boundary = Import-PowerShellDataFile -LiteralPath (
+            Join-Path $script:RepoRoot 'config\execution-boundaries.psd1')
+        $accessLedger = [pscustomobject][ordered]@{
+            ContextCount                  = 2L
+            TestSafeContextCount          = 1L
+            DryRunContextCount            = 1L
+            EntryCount                    = 2L
+            ForbiddenResourceAccessCount  = 0L
+            OutsideSandboxWriteCount      = 0L
+            ProductLiveProcessSpawnCount  = 0L
+            ProductNetworkRequestCount    = 0L
+            RealRegistryAccessCount       = 0L
+            UnexpectedLedgerEntryCount    = 0L
+        }
+        $mutationSpyCounts = [pscustomobject][ordered]@{
+            FileSystem = 0L
+            Environment = 0L
+            Registry = 0L
+            Network = 0L
+            Process = 0L
+            AppX = 0L
+            Feature = 0L
+            Service = 0L
+            Credential = 0L
+            Restart = 0L
+        }
+        $staticEvidence = [pscustomobject][ordered]@{
+            SchemaVersion         = 1L
+            EvidenceType         = 'CddsiWorkerStaticEvidence'
+            RunId                = $runId
+            Engine               = $Engine
+            SandboxBindingSha256 = $SandboxBindingSha256
+            Measurements         = [pscustomobject][ordered]@{
+                AstSyntaxErrorCount      = 0L
+                LiveAdapterFileCount     = [long]@($boundary.Planes.LiveAdapters).Count
+                SecretFindingCount       = 0L
+                RepositoryContentChanged = $false
+                LiveProviderLoaded       = $false
+                AccessLedger             = $accessLedger
+                MutationSpyCounts        = $mutationSpyCounts
+            }
+            Provenance           = [pscustomobject][ordered]@{
+                MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v6'
+                RepositoryInventorySha256       = ('1' * 64 -join '')
+                InitialRepositoryManifestSha256 = $sameRepositoryManifestSha256
+                FinalRepositoryManifestSha256   = $sameRepositoryManifestSha256
+                ExecutionBoundaryManifestSha256 = ('3' * 64 -join '')
+                DependencyManifestSha256        = [string]$QualitySetPolicy.DependencyManifestSha256
+                PesterTreeSha256                = [string]$dependency.Pester.ExpectedTreeSha256
+                EngineGrantSha256               = ('4' * 64 -join '')
+                QualityShardPolicySha256        = [string]$QualitySetPolicy.CanonicalSha256
+            }
+        }
+        $shardEvidence = New-Object System.Collections.Generic.List[object]
+        foreach ($profileShard in @($QualitySetPolicy.QualityShards)) {
+            $isFailedShard = [string]$profileShard.ShardId -ceq $FailedShardId
+            if ($isFailedShard -and $null -eq $FailedTest) {
+                throw 'Synthetic failed shard requires failed-test evidence.'
+            }
+            $requiredSuites = @($dependency.IsolationEvidenceSuites | Where-Object {
+                @($profileShard.Paths) -ccontains ([string]$_.RelativePath).Replace('\', '/')
+            } | ForEach-Object {
+                [pscustomobject][ordered]@{
+                    RelativePath = ([string]$_.RelativePath).Replace('\', '/')
+                    TestCount    = [long]$_.ExpectedTestCount
+                    Result       = 'Passed'
+                }
+            })
+            $shardEvidence.Add([pscustomobject][ordered]@{
+                SchemaVersion         = 2L
+                EvidenceType         = 'CddsiWorkerPesterShardEvidence'
+                RunId                = $runId
+                Engine               = $Engine
+                ShardId              = [string]$profileShard.ShardId
+                SandboxBindingSha256 = $SandboxBindingSha256
+                ShardPathsSha256     = [string]$profileShard.PathsSha256
+                TestFiles            = [string[]]@($profileShard.Paths)
+                Pester               = [pscustomobject][ordered]@{
+                    Result                      = $(if ($isFailedShard) { 'Failed' } else { 'Passed' })
+                    TotalCount                  = 1L
+                    PassedCount                 = $(if ($isFailedShard) { 0L } else { 1L })
+                    FailedCount                 = $(if ($isFailedShard) { 1L } else { 0L })
+                    FailedBlocksCount           = 0L
+                    FailedContainersCount       = 0L
+                    FailedTests                 = $(if ($isFailedShard) { @($FailedTest) } else { @() })
+                    FailedTestEvidenceTruncated = $false
+                    SkippedCount                = 0L
+                    NotRunCount                 = 0L
+                    InconclusiveCount           = 0L
+                    DurationMilliseconds        = 1L
+                }
+                RequiredSuiteResults = $requiredSuites
+                Provenance           = [pscustomobject][ordered]@{
+                    MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v6'
+                    RepositoryInventorySha256       = ('1' * 64 -join '')
+                    InitialRepositoryManifestSha256 = $sameRepositoryManifestSha256
+                    FinalRepositoryManifestSha256   = $sameRepositoryManifestSha256
+                    DependencyManifestSha256        = [string]$QualitySetPolicy.DependencyManifestSha256
+                    PesterTreeSha256                = [string]$dependency.Pester.ExpectedTreeSha256
+                    EngineGrantSha256               = ('4' * 64 -join '')
+                    QualityShardPolicySha256        = [string]$QualitySetPolicy.CanonicalSha256
+                }
+            })
+        }
+        return Merge-CddsiWorkerIsolationEvidence `
+            -Engine $Engine `
+            -StaticEvidence $staticEvidence `
+            -ShardEvidence $shardEvidence.ToArray() `
+            -QualityShardPolicy $QualitySetPolicy `
+            -DependencyManifestPath (Join-Path $script:RepoRoot 'config\dev-dependencies.psd1')
     }
 }
 
@@ -290,6 +468,7 @@ Describe 'P1 trusted HostSandbox harness' {
                         RelativePath = 'tests/HostSandbox/HostSandbox.Tests.ps1'
                         StartLine = 279L
                         Name = 'creates an exact machine-readable safe failure envelope'
+                        ErrorRecordCount = 1L
                     }
                 )
             }
@@ -369,6 +548,7 @@ Describe 'P1 trusted HostSandbox harness' {
             RelativePath = 'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
             StartLine = 2800L
             Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+            ErrorRecordCount = 1L
         }
 
         (Assert-CddsiSafeFailedTestSummary `
@@ -387,6 +567,95 @@ Describe 'P1 trusted HostSandbox harness' {
                 -FailedTests @($forged) `
                 -RepositoryRoot $script:RepoRoot `
                 -AllowedRelativePaths @($failedTest.RelativePath)
+        } | Should -Throw
+    }
+
+    It 'validates persisted failed-test evidence through exact entry 33 at every consumer' {
+        $newFailedTest = {
+            [pscustomobject][ordered]@{
+                RelativePath = 'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
+                StartLine = 2800L
+                Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+                ErrorRecordCount = 1L
+            }
+        }
+        $complete = @(1..33 | ForEach-Object { & $newFailedTest })
+
+        {
+            Assert-CddsiSafeFailedTestSummary `
+                -FailedTests $complete `
+                -FailedCount 33L `
+                -Truncated $false
+        } | Should -Not -Throw
+        {
+            Assert-CddsiFailedTestSourceBinding `
+                -FailedTests $complete `
+                -RepositoryRoot $script:RepoRoot `
+                -AllowedRelativePaths @($complete[0].RelativePath)
+        } | Should -Not -Throw
+        {
+            Assert-CddsiGateFailedTestSummary `
+                -FailedTests $complete `
+                -FailedCount 33L `
+                -Truncated $false `
+                -AllowedRelativePaths @($complete[0].RelativePath) `
+                -RepositoryRoot $script:RepoRoot `
+                -Label 'synthetic 33-entry shard'
+        } | Should -Not -Throw
+
+        {
+            Assert-CddsiSafeFailedTestSummary `
+                -FailedTests $complete `
+                -FailedCount 33L `
+                -Truncated $true
+        } | Should -Throw
+        {
+            Assert-CddsiGateFailedTestSummary `
+                -FailedTests $complete `
+                -FailedCount 33L `
+                -Truncated $true `
+                -AllowedRelativePaths @($complete[0].RelativePath) `
+                -RepositoryRoot $script:RepoRoot `
+                -Label 'synthetic 33-entry shard'
+        } | Should -Throw
+
+        $missingErrorRecordCount = @(1..33 | ForEach-Object { & $newFailedTest })
+        $missingErrorRecordCount[32].PSObject.Properties.Remove('ErrorRecordCount')
+        {
+            Assert-CddsiSafeFailedTestSummary `
+                -FailedTests $missingErrorRecordCount `
+                -FailedCount 33L `
+                -Truncated $false
+        } | Should -Throw
+
+        $zeroErrorRecordCount = @(1..33 | ForEach-Object { & $newFailedTest })
+        $zeroErrorRecordCount[32].ErrorRecordCount = 0L
+        {
+            Assert-CddsiGateFailedTestSummary `
+                -FailedTests $zeroErrorRecordCount `
+                -FailedCount 33L `
+                -Truncated $false `
+                -AllowedRelativePaths @($zeroErrorRecordCount[0].RelativePath) `
+                -RepositoryRoot $script:RepoRoot `
+                -Label 'synthetic 33-entry shard'
+        } | Should -Throw
+
+        $forgedSource = @(1..33 | ForEach-Object { & $newFailedTest })
+        $forgedSource[32].Name = 'forged entry 33 source binding'
+        {
+            Assert-CddsiFailedTestSourceBinding `
+                -FailedTests $forgedSource `
+                -RepositoryRoot $script:RepoRoot `
+                -AllowedRelativePaths @($forgedSource[0].RelativePath)
+        } | Should -Throw
+        {
+            Assert-CddsiGateFailedTestSummary `
+                -FailedTests $forgedSource `
+                -FailedCount 33L `
+                -Truncated $false `
+                -AllowedRelativePaths @($forgedSource[0].RelativePath) `
+                -RepositoryRoot $script:RepoRoot `
+                -Label 'synthetic 33-entry shard'
         } | Should -Throw
     }
 
@@ -452,6 +721,416 @@ Describe 'P1 trusted HostSandbox harness' {
         ($drift -join ', ') | Should -Not -Match [regex]::Escape($secret)
     }
 
+    It 'accepts a complete historical Failed result with a non-assertion test error record' {
+        $result = New-CddsiHistoricalPesterCompletionFixture
+        $result.Tests[1].ErrorRecord[0].FullyQualifiedErrorId |
+            Should -BeExactly 'SyntheticRuntimeFailure'
+        $result.Tests[1].ErrorRecord[0].FullyQualifiedErrorId |
+            Should -Not -BeExactly 'PesterAssertionFailed'
+
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $result) | Should -BeTrue
+    }
+
+    It 'rejects Passed and every incomplete historical Pester terminal state' {
+        $passed = New-CddsiHistoricalPesterCompletionFixture
+        $passed.Result = 'Passed'
+        $passed.PassedCount = [long]2
+        $passed.FailedCount = [long]0
+        $passed.Tests[1].Result = 'Passed'
+        $passed.Tests[1].ErrorRecord = @()
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $passed) | Should -BeFalse
+
+        foreach ($countName in @('SkippedCount', 'NotRunCount', 'InconclusiveCount')) {
+            $incomplete = New-CddsiHistoricalPesterCompletionFixture
+            $incomplete.$countName = [long]1
+            (Test-CddsiHistoricalPesterCompletion -PesterResult $incomplete) |
+                Should -BeFalse -Because ($countName + ' must remain zero')
+        }
+
+        foreach ($countName in @('FailedBlocksCount', 'FailedContainersCount')) {
+            $infrastructureFailure = New-CddsiHistoricalPesterCompletionFixture
+            $infrastructureFailure.$countName = [long]1
+            (Test-CddsiHistoricalPesterCompletion -PesterResult $infrastructureFailure) |
+                Should -BeFalse -Because ($countName + ' is not a completed test-level failure')
+        }
+    }
+
+    It 'rejects missing failed-test error evidence, count drift, and nonterminal test results' {
+        $missingErrorRecord = New-CddsiHistoricalPesterCompletionFixture
+        $missingErrorRecord.Tests[1].ErrorRecord = @()
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $missingErrorRecord) | Should -BeFalse
+
+        $nullErrorRecord = New-CddsiHistoricalPesterCompletionFixture
+        $nullErrorRecord.Tests[1].ErrorRecord = @($null)
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $nullErrorRecord) | Should -BeFalse
+
+        $testCountDrift = New-CddsiHistoricalPesterCompletionFixture
+        $testCountDrift.TotalCount = [long]3
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $testCountDrift) | Should -BeFalse
+
+        $summaryCountDrift = New-CddsiHistoricalPesterCompletionFixture
+        $summaryCountDrift.PassedCount = [long]2
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $summaryCountDrift) | Should -BeFalse
+
+        $failedCountDrift = New-CddsiHistoricalPesterCompletionFixture
+        $failedCountDrift.FailedCount = [long]2
+        $failedCountDrift.PassedCount = [long]0
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $failedCountDrift) | Should -BeFalse
+
+        $nonterminalTest = New-CddsiHistoricalPesterCompletionFixture
+        $nonterminalTest.Tests[0].Result = 'Skipped'
+        (Test-CddsiHistoricalPesterCompletion -PesterResult $nonterminalTest) | Should -BeFalse
+    }
+
+    It 'defaults QualitySet to AllBlocking and exposes only the three named sets' {
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            $script:WorkerPath,
+            [ref]$tokens,
+            [ref]$errors
+        )
+        @($errors).Count | Should -Be 0
+
+        $qualitySetParameters = @($ast.ParamBlock.Parameters | Where-Object {
+            $_.Name.VariablePath.UserPath -ceq 'QualitySet'
+        })
+        $qualitySetParameters.Count | Should -Be 1
+        $qualitySet = $qualitySetParameters[0]
+        $qualitySet.DefaultValue.SafeGetValue() | Should -BeExactly 'AllBlocking'
+        $validateSet = @($qualitySet.Attributes | Where-Object {
+            $_.TypeName.Name -ceq 'ValidateSet'
+        })
+        $validateSet.Count | Should -Be 1
+        @($validateSet[0].PositionalArguments | ForEach-Object { $_.SafeGetValue() }) |
+            Should -Be @('AllBlocking', 'ProductReleaseBlocking', 'HistoricalDiagnostic')
+    }
+
+    It 'keeps FAILED_TESTS evidence truthful and scoped only to HistoricalDiagnostic' {
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            $script:WorkerPath,
+            [ref]$tokens,
+            [ref]$errors
+        )
+        @($errors).Count | Should -Be 0
+
+        $historicalAssignments = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -ceq '$historicalFailedCompletion'
+        }, $true))
+        $historicalAssignments.Count | Should -Be 1
+        $historicalAssignments[0].Right.Extent.Text |
+            Should -Match ([regex]::Escape('$QualitySet') + "\s+-ceq\s+'HistoricalDiagnostic'")
+        $historicalAssignments[0].Right.Extent.Text |
+            Should -Match 'Test-CddsiHistoricalPesterCompletion'
+
+        $acceptanceAssignments = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -ceq '$accepted'
+        }, $true))
+        $acceptanceAssignments.Count | Should -Be 1
+        $acceptanceAssignments[0].Right.Extent.Text |
+            Should -Match ([regex]::Escape('$cleanPester -or $historicalFailedCompletion'))
+
+        $measurementAssignments = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -ceq '$pesterMeasurement'
+        }, $true))
+        $measurementAssignments.Count | Should -Be 1
+        $measurementAssignments[0].Right.Extent.Text |
+            Should -Match ('Result\s*=\s*' + [regex]::Escape('[string]$result.Result'))
+
+        $diagnosticBranches = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                @($node.Clauses | Where-Object {
+                    $_.Item1.Extent.Text.Trim() -ceq '$historicalFailedCompletion'
+                }).Count -eq 1 -and
+                $node.Extent.Text -match 'FAILED_TESTS'
+        }, $true))
+        $diagnosticBranches.Count | Should -Be 1
+        $diagnosticBranches[0].Extent.Text | Should -Match '\[DIAGNOSTIC\]'
+    }
+
+    It 'preserves profile-bound shard completion evidence and rejects aggregate tampering' {
+        $policy = Get-CddsiQualitySetPolicy `
+            -RepositoryRoot $script:RepoRoot `
+            -QualitySet ProductReleaseBlocking
+        $aggregate = New-CddsiGateAggregateWorkerFixture `
+            -Engine PowerShell7 `
+            -QualitySetPolicy $policy
+
+        $summary = Assert-CddsiGateWorkerEvidence `
+            -WorkerEvidence $aggregate `
+            -Engine PowerShell7 `
+            -RunId ([string]$aggregate.RunId) `
+            -QualitySetPolicy $policy `
+            -RepositoryRoot $script:RepoRoot
+        $summary.Result | Should -BeExactly 'Passed'
+        $summary.TotalCount | Should -Be @($policy.QualityShards).Count
+        $aggregate.Provenance.QualityShardPolicySha256 |
+            Should -BeExactly $policy.CanonicalSha256
+        @($aggregate.Measurements.ShardCompletionEvidence | ForEach-Object ShardId) |
+            Should -Be @($policy.QualityShards | ForEach-Object ShardId)
+        @($aggregate.Measurements.ShardCompletionEvidence | ForEach-Object ShardPathsSha256) |
+            Should -Be @($policy.QualityShards | ForEach-Object PathsSha256)
+
+        foreach ($tamper in @(
+            [pscustomobject]@{ Target = 'Shard'; Name = 'PassedCount'; Value = -1L },
+            [pscustomobject]@{ Target = 'Shard'; Name = 'TotalCount'; Value = 2L },
+            [pscustomobject]@{ Target = 'Shard'; Name = 'FailedBlocksCount'; Value = 1L },
+            [pscustomobject]@{ Target = 'Shard'; Name = 'FailedContainersCount'; Value = 1L },
+            [pscustomobject]@{ Target = 'Shard'; Name = 'ShardPathsSha256'; Value = ('9' * 64 -join '') },
+            [pscustomobject]@{ Target = 'Provenance'; Name = 'QualityShardPolicySha256'; Value = ('9' * 64 -join '') }
+        )) {
+            $tampered = ($aggregate | ConvertTo-Json -Depth 100) | ConvertFrom-Json
+            if ($tamper.Target -ceq 'Shard') {
+                $tampered.Measurements.ShardCompletionEvidence[0].($tamper.Name) = $tamper.Value
+            }
+            else {
+                $tampered.Provenance.($tamper.Name) = $tamper.Value
+            }
+            {
+                Assert-CddsiGateWorkerEvidence `
+                    -WorkerEvidence $tampered `
+                    -Engine PowerShell7 `
+                    -RunId ([string]$tampered.RunId) `
+                    -QualitySetPolicy $policy `
+                    -RepositoryRoot $script:RepoRoot
+            } | Should -Throw -Because ($tamper.Target + '.' + $tamper.Name + ' must fail closed')
+        }
+    }
+
+    It 'keeps only complete historical test-level failure report-only in aggregate evidence' {
+        $policy = Get-CddsiQualitySetPolicy `
+            -RepositoryRoot $script:RepoRoot `
+            -QualitySet HistoricalDiagnostic
+        $failedTest = [pscustomobject][ordered]@{
+            RelativePath     = 'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
+            StartLine        = 2800L
+            Name             = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+            ErrorRecordCount = 1L
+        }
+        $aggregate = New-CddsiGateAggregateWorkerFixture `
+            -Engine PowerShell7 `
+            -QualitySetPolicy $policy `
+            -FailedShardId H02 `
+            -FailedTest $failedTest
+
+        $summary = Assert-CddsiGateWorkerEvidence `
+            -WorkerEvidence $aggregate `
+            -Engine PowerShell7 `
+            -RunId ([string]$aggregate.RunId) `
+            -QualitySetPolicy $policy `
+            -RepositoryRoot $script:RepoRoot
+        $summary.Result | Should -BeExactly 'Failed'
+        $summary.FailedCount | Should -Be 1
+        $aggregate.Measurements.Pester.FailedBlocksCount | Should -Be 0
+        $aggregate.Measurements.Pester.FailedContainersCount | Should -Be 0
+
+        $infrastructureFailure = ($aggregate | ConvertTo-Json -Depth 100) | ConvertFrom-Json
+        $h02 = @($infrastructureFailure.Measurements.ShardCompletionEvidence | Where-Object {
+            [string]$_.ShardId -ceq 'H02'
+        })[0]
+        $h02.FailedBlocksCount = 1L
+        {
+            Assert-CddsiGateWorkerEvidence `
+                -WorkerEvidence $infrastructureFailure `
+                -Engine PowerShell7 `
+                -RunId ([string]$infrastructureFailure.RunId) `
+                -QualitySetPolicy $policy `
+                -RepositoryRoot $script:RepoRoot
+        } | Should -Throw
+    }
+
+    It 'requires source-bound failed-test summaries and one shared engine sandbox binding' {
+        $failedTest = [pscustomobject][ordered]@{
+            RelativePath    = 'tests/HostSandbox/FastLaneGitOutbox.Tests.ps1'
+            StartLine       = 2800L
+            Name            = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+            ErrorRecordCount = 1L
+        }
+        {
+            Assert-CddsiGateFailedTestSummary `
+                -FailedTests @($failedTest) `
+                -FailedCount 1L `
+                -Truncated $false `
+                -AllowedRelativePaths @($failedTest.RelativePath) `
+                -RepositoryRoot $script:RepoRoot `
+                -Label 'synthetic shard'
+        } | Should -Not -Throw
+
+        foreach ($tamper in @(
+            [pscustomobject]@{ Name = 'ErrorRecordCount'; Value = 0L },
+            [pscustomobject]@{ Name = 'StartLine'; Value = -1L },
+            [pscustomobject]@{ Name = 'Name'; Value = 'forged It name' }
+        )) {
+            $forged = $failedTest.PSObject.Copy()
+            $forged.($tamper.Name) = $tamper.Value
+            {
+                Assert-CddsiGateFailedTestSummary `
+                    -FailedTests @($forged) `
+                    -FailedCount 1L `
+                    -Truncated $false `
+                    -AllowedRelativePaths @($failedTest.RelativePath) `
+                    -RepositoryRoot $script:RepoRoot `
+                    -Label 'synthetic shard'
+            } | Should -Throw
+        }
+
+        $sharedBinding = ('8' * 64 -join '')
+        {
+            Assert-CddsiGateWorkerSandboxBinding -WorkerEvidence @(
+                [pscustomobject]@{ SandboxBindingSha256 = $sharedBinding },
+                [pscustomobject]@{ SandboxBindingSha256 = $sharedBinding }
+            )
+        } | Should -Not -Throw
+        {
+            Assert-CddsiGateWorkerSandboxBinding -WorkerEvidence @(
+                [pscustomobject]@{ SandboxBindingSha256 = $sharedBinding },
+                [pscustomobject]@{ SandboxBindingSha256 = ('9' * 64 -join '') }
+            )
+        } | Should -Throw
+    }
+
+    It 'fails closed on negative, total-drift, block, and container role evidence' {
+        $ledger = New-HostSandboxTestLedger
+        $sandbox = New-CddsiOwnedSandbox `
+            -TempBase $TestDrive `
+            -RunId '00000000-0000-0000-0000-000000000121' `
+            -Ledger $ledger
+        try {
+            $policy = Get-CddsiQualitySetPolicy `
+                -RepositoryRoot $script:RepoRoot `
+                -QualitySet ProductReleaseBlocking
+            $profileShard = @($policy.QualityShards | Where-Object {
+                [string]$_.ShardId -ceq 'H01'
+            })[0]
+            $inventoryPath = Join-Path $sandbox.Paths.State 'role-reader-inventory.json'
+            $inventory = [pscustomobject][ordered]@{
+                SchemaVersion               = 1L
+                RunId                       = [string]$sandbox.RunId
+                RepositoryRootBindingSha256 = Get-CddsiSha256Text -Text (
+                    [System.IO.Path]::GetFullPath($script:RepoRoot).TrimEnd('\').ToUpperInvariant())
+                Paths                       = @('tests/HostSandbox/HostSandbox.Tests.ps1')
+            }
+            [System.IO.File]::WriteAllText(
+                $inventoryPath,
+                (($inventory | ConvertTo-Json -Depth 10) + "`n"),
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+            $inventoryMeasurement = Get-CddsiRepositoryInventoryMeasurement `
+                -InventoryPath $inventoryPath `
+                -RepositoryRoot $script:RepoRoot `
+                -Sandbox $sandbox
+            $grantSha256 = ('4' * 64 -join '')
+            $descriptor = [pscustomobject][ordered]@{
+                Engine     = 'PowerShell7'
+                WorkerRole = 'PesterShard'
+                ShardId    = 'H01'
+                Grant      = [pscustomobject]@{ Sha256 = $grantSha256 }
+                Leaf       = Get-CddsiWorkerEvidenceLeaf `
+                    -Engine PowerShell7 `
+                    -Role PesterShard `
+                    -SelectedShardId H01
+            }
+            $dependencyPath = Join-Path $script:RepoRoot 'config\dev-dependencies.psd1'
+            $dependency = Import-PowerShellDataFile -LiteralPath $dependencyPath
+            $sameRepositoryManifestSha256 = [string]$inventoryMeasurement.ManifestSha256
+            $roleEvidence = [pscustomobject][ordered]@{
+                SchemaVersion         = 2L
+                EvidenceType         = 'CddsiWorkerPesterShardEvidence'
+                RunId                = [string]$sandbox.RunId
+                Engine               = 'PowerShell7'
+                ShardId              = 'H01'
+                SandboxBindingSha256 = Get-CddsiSha256Text -Text (
+                    [System.IO.Path]::GetFullPath($sandbox.Root).ToUpperInvariant())
+                ShardPathsSha256     = [string]$profileShard.PathsSha256
+                TestFiles            = [string[]]@($profileShard.Paths)
+                Pester               = [pscustomobject][ordered]@{
+                    Result                      = 'Passed'
+                    TotalCount                  = 1L
+                    PassedCount                 = 1L
+                    FailedCount                 = 0L
+                    FailedBlocksCount           = 0L
+                    FailedContainersCount       = 0L
+                    FailedTests                 = @()
+                    FailedTestEvidenceTruncated = $false
+                    SkippedCount                = 0L
+                    NotRunCount                 = 0L
+                    InconclusiveCount           = 0L
+                    DurationMilliseconds        = 1L
+                }
+                RequiredSuiteResults = @()
+                Provenance           = [pscustomobject][ordered]@{
+                    MeasurementRuleVersion          = 'cddsi-worker-measurement-rules-v6'
+                    RepositoryInventorySha256       = [string]$inventoryMeasurement.InventorySha256
+                    InitialRepositoryManifestSha256 = $sameRepositoryManifestSha256
+                    FinalRepositoryManifestSha256   = $sameRepositoryManifestSha256
+                    DependencyManifestSha256        = (Get-FileHash -LiteralPath $dependencyPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    PesterTreeSha256                = [string]$dependency.Pester.ExpectedTreeSha256
+                    EngineGrantSha256               = $grantSha256
+                    QualityShardPolicySha256        = [string]$policy.CanonicalSha256
+                }
+            }
+            $evidencePath = Join-Path $sandbox.Paths.Evidence $descriptor.Leaf
+            $writeEvidence = {
+                param($Value)
+                [System.IO.File]::WriteAllText(
+                    $evidencePath,
+                    (($Value | ConvertTo-Json -Depth 100) + "`n"),
+                    (New-Object System.Text.UTF8Encoding($false))
+                )
+            }
+            & $writeEvidence $roleEvidence
+            {
+                Read-CddsiWorkerRoleEvidence `
+                    -Descriptor $descriptor `
+                    -Sandbox $sandbox `
+                    -RepositoryRoot $script:RepoRoot `
+                    -RepositoryInventoryPath $inventoryPath `
+                    -BoundaryManifestPath (Join-Path $script:RepoRoot 'config\execution-boundaries.psd1') `
+                    -DependencyManifestPath $dependencyPath `
+                    -QualityShardPolicy $policy `
+                    -Ledger $ledger `
+                    -ReadMode CleanCompletion
+            } | Should -Not -Throw
+
+            foreach ($tamper in @(
+                [pscustomobject]@{ Name = 'TotalCount'; Value = -1L },
+                [pscustomobject]@{ Name = 'TotalCount'; Value = 2L },
+                [pscustomobject]@{ Name = 'FailedBlocksCount'; Value = 1L },
+                [pscustomobject]@{ Name = 'FailedContainersCount'; Value = 1L }
+            )) {
+                $forged = ($roleEvidence | ConvertTo-Json -Depth 100) | ConvertFrom-Json
+                $forged.Pester.($tamper.Name) = $tamper.Value
+                & $writeEvidence $forged
+                {
+                    Read-CddsiWorkerRoleEvidence `
+                        -Descriptor $descriptor `
+                        -Sandbox $sandbox `
+                        -RepositoryRoot $script:RepoRoot `
+                        -RepositoryInventoryPath $inventoryPath `
+                        -BoundaryManifestPath (Join-Path $script:RepoRoot 'config\execution-boundaries.psd1') `
+                        -DependencyManifestPath $dependencyPath `
+                        -QualityShardPolicy $policy `
+                        -Ledger $ledger `
+                        -ReadMode CleanCompletion
+                } | Should -Throw -Because ($tamper.Name + ' must fail closed')
+            }
+        }
+        finally {
+            if (Test-Path -LiteralPath $sandbox.Root) {
+                Remove-CddsiOwnedSandbox -Sandbox $sandbox -Ledger $ledger
+            }
+        }
+    }
+
     It 'rejects any extra successful harness ledger entry and Data drift' {
         $runId = '00000000-0000-0000-0000-000000000111'
         $ledger = New-HostSandboxTestLedger
@@ -494,6 +1173,70 @@ Describe 'P1 trusted HostSandbox harness' {
         $withDevelopmentFile.Hash | Should -Not -BeExactly $withEmptyDirectory.Hash
         $withDevelopmentFile.FileCount | Should -BeGreaterThan $withEmptyDirectory.FileCount
         $withDevelopmentFile.Scope | Should -BeExactly 'WorkingTreeExcludingDotGit'
+    }
+
+    It 'validates only canonical persisted ZIP timestamp representations' {
+        $canonicalText = '1980-01-01T00:00:00Z'
+        $canonicalUtc = [datetime]::SpecifyKind(
+            [datetime]::ParseExact(
+                '1980-01-01T00:00:00',
+                'yyyy-MM-ddTHH:mm:ss',
+                [Globalization.CultureInfo]::InvariantCulture
+            ),
+            [System.DateTimeKind]::Utc
+        )
+        $defaultRoundTrip = (
+            ('{"ZipEntryTimestampUtc":"' + $canonicalText + '"}') |
+                ConvertFrom-Json
+        ).ZipEntryTimestampUtc
+
+        (
+            Test-CddsiGateCanonicalZipEntryTimestamp -Value $canonicalText
+        ) | Should -BeTrue
+        (
+            Test-CddsiGateCanonicalZipEntryTimestamp -Value $canonicalUtc
+        ) | Should -BeTrue
+        (
+            Test-CddsiGateCanonicalZipEntryTimestamp -Value $defaultRoundTrip
+        ) | Should -BeTrue
+
+        foreach ($rejected in @(
+            '1980-01-01T00:00:00.0000000Z',
+            '1980-01-01T00:00:00+00:00',
+            '1980-01-01t00:00:00z',
+            ' 1980-01-01T00:00:00Z',
+            [datetime]::SpecifyKind(
+                $canonicalUtc,
+                [System.DateTimeKind]::Local
+            ),
+            [datetime]::SpecifyKind(
+                $canonicalUtc,
+                [System.DateTimeKind]::Unspecified
+            ),
+            $canonicalUtc.AddTicks(1),
+            ([datetimeoffset]'1980-01-01T00:00:00Z'),
+            624511296000000000L,
+            [pscustomobject]@{ Ticks = 624511296000000000L },
+            $null
+        )) {
+            (
+                Test-CddsiGateCanonicalZipEntryTimestamp -Value $rejected
+            ) | Should -BeFalse
+        }
+
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $textHash = Get-CddsiGateCanonicalObjectSha256 -Value (
+                [pscustomobject][ordered]@{
+                    ZipEntryTimestampUtc = $canonicalText
+                }
+            )
+            $roundTripHash = Get-CddsiGateCanonicalObjectSha256 -Value (
+                [pscustomobject][ordered]@{
+                    ZipEntryTimestampUtc = $defaultRoundTrip
+                }
+            )
+            $roundTripHash | Should -BeExactly $textHash
+        }
     }
 
     It 'contains ProcessStartInfo orchestration and no policy-bypass switches' {

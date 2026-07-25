@@ -310,10 +310,31 @@
             -OsImage $os -MsixCandidates $candidates -Selection $selection -Git $git `
             -DesktopBehavior $behavior -Readiness $readiness -Cleanup $cleanup
         $session = New-CddsiReleaseFactsSessionFixture -OperationEvidenceRecords $records -Variant $Variant
-        $evidence = New-CddsiVmCalibrationEvidence -ExpectedSession $session `
-            -ExpectedSessionAnchorToken $session.SessionAnchorToken -ValidationTimeUtc $script:ReleaseFactsValidationTimeUtc `
-            -ObservationStartedAtUtc '2026-07-14T00:03:00Z' -OsImage $os -MsixCandidates $candidates `
-            -Git $git -DesktopBehavior $behavior -Cleanup $cleanup
+        $sessionReference = New-CddsiVmCalibrationSessionReference -ExpectedSession $session `
+            -ExpectedSessionAnchorToken $session.SessionAnchorToken `
+            -ValidationTimeUtc $script:ReleaseFactsValidationTimeUtc
+        $operationReceipts = New-CddsiVmCalibrationOperationReceiptReferences `
+            -ExpectedSession $session -OperationEvidenceRecords $records
+        $evidence = [pscustomobject][ordered]@{
+            SchemaVersion           = 2
+            Purpose                 = 'P10A_VM_CALIBRATION_ONLY'
+            SessionBinding          = $sessionReference
+            ObservationStartedAtUtc = '2026-07-14T00:03:00Z'
+            CompletedAtUtc          = $session.WorkflowSessionState.OccurredAtUtc
+            OsImage                 = $os
+            MsixCandidates          = @($candidates)
+            Selection               = $selection
+            Git                     = $git
+            DesktopBehavior         = $behavior
+            Readiness               = $readiness
+            Cleanup                 = $cleanup
+            OperationReceipts       = $operationReceipts
+            EvidenceBindingToken    = $null
+        }
+        $evidence.EvidenceBindingToken = Get-CddsiVmCalibrationEvidenceBindingToken -Evidence $evidence
+        if ($Variant -eq 1) {
+            $script:ReleaseFactsCanonicalOperationEvidenceRecords = @($records)
+        }
         $available = New-CddsiVmCalibrationConsumptionState -ExpectedSession $session `
             -ExpectedSessionAnchorToken $session.SessionAnchorToken `
             -StoreAuthorityPublicKey $script:ReleaseFactsConsumptionAuthority.PublicKey `
@@ -333,15 +354,10 @@
             -Signer $script:ReleaseFactsConsumptionAuthority.Signer `
             -CommitId '93000000-0000-4000-8000-000000000004' `
             -CommittedAtUtc $script:ReleaseFactsValidationTimeUtc
-        $ready = Resolve-CddsiVmCalibrationConsumption -Evidence $evidence -ExpectedSession $session `
-            -ExpectedSessionAnchorToken $session.SessionAnchorToken -ConsumptionState $consumed `
-            -StoreAuthorityPublicKey $script:ReleaseFactsConsumptionAuthority.PublicKey `
-            -ConsumptionId $script:ReleaseFactsConsumptionId `
-            -TransactionId $script:ReleaseFactsConsumptionTransactionId `
-            -ProposalNonce $script:ReleaseFactsConsumptionProposalNonce `
-            -CommittedConsumptionReceipt $receipt -ExpectedRevision 1 `
-            -ValidationTimeUtc $script:ReleaseFactsValidationTimeUtc
-        if ($ready.Status -cne 'READY_TO_FREEZE') { throw 'Synthetic P10A consumption receipt is not committed.' }
+        if ($consumed.State -cne 'CONSUMED' -or [long]$consumed.Revision -ne 1 -or
+            $receipt.NewStateBindingToken -cne $consumed.StateBindingToken) {
+            throw 'Synthetic P10A consumption proposal or receipt state is inconsistent.'
+        }
         return [pscustomobject][ordered]@{
             Session = $session; Evidence = $evidence; AvailableConsumptionState = $available
             CommittedConsumptionState = $consumed; CommittedConsumptionReceipt = $receipt
@@ -493,6 +509,13 @@ Describe 'P10B frozen release facts attack resistance' {
         $script:CommittedFreezeReceipt = New-CddsiReleaseFactsCommitReceiptFixture -CommitProposal $script:Proposal.CommitProposal `
             -Signer $script:ReleaseFactsFreezeAuthority.Signer `
             -CommitId '94000000-0000-4000-8000-000000000004' -CommittedAtUtc $script:ReleaseFactsFreezeTimeUtc
+        $script:ValidFrozen = Resolve-CddsiReleaseFactsFixture -Bundle $script:Bundle `
+            -FreezeState $script:Proposal.ProposedFreezeState -ExpectedRevision 1 `
+            -CommittedFreezeReceipt $script:CommittedFreezeReceipt `
+            -ValidationTimeUtc $script:ReleaseFactsReplayTimeUtc
+        if ($script:ValidFrozen.Status -cne 'FROZEN' -or -not $script:ValidFrozen.CanUseFrozenFacts) {
+            throw 'Synthetic committed release facts did not produce a reusable frozen baseline.'
+        }
     }
 
     It 'rejects a stale CAS revision' {
@@ -580,9 +603,10 @@ Describe 'P10B frozen release facts attack resistance' {
     }
 
     It 'rejects cross-session use of evidence, consumption and freeze receipts' {
-        $other = New-CddsiReleaseFactsBundleFixture -Variant 2
+        $otherSession = New-CddsiReleaseFactsSessionFixture `
+            -OperationEvidenceRecords $script:ReleaseFactsCanonicalOperationEvidenceRecords -Variant 2
         $bundle = [pscustomobject]@{
-            Session = $other.Session; Evidence = $script:Bundle.Evidence
+            Session = $otherSession; Evidence = $script:Bundle.Evidence
             CommittedConsumptionState = $script:Bundle.CommittedConsumptionState
             CommittedConsumptionReceipt = $script:Bundle.CommittedConsumptionReceipt
         }
@@ -625,10 +649,7 @@ Describe 'P10B frozen release facts attack resistance' {
     }
 
     It 'rejects MSIX flavor and scope reinterpretation even with a recomputed token' {
-        $frozen = Resolve-CddsiReleaseFactsFixture -Bundle $script:Bundle `
-            -FreezeState $script:Proposal.ProposedFreezeState -ExpectedRevision 1 `
-            -CommittedFreezeReceipt $script:CommittedFreezeReceipt `
-            -ValidationTimeUtc $script:ReleaseFactsReplayTimeUtc
+        $frozen = $script:ValidFrozen
         foreach ($mutation in @('FLAVOR', 'SCOPE')) {
             $facts = Copy-CddsiReleaseFactsFixture -Value $frozen.FrozenReleaseFacts
             if ($mutation -ceq 'FLAVOR') { $facts.Msix.Flavor = 'Offline' }
@@ -653,10 +674,7 @@ Describe 'P10B frozen release facts attack resistance' {
     }
 
     It 'rejects Git, helper and status reinterpretation with recomputed tokens' {
-        $frozen = Resolve-CddsiReleaseFactsFixture -Bundle $script:Bundle `
-            -FreezeState $script:Proposal.ProposedFreezeState -ExpectedRevision 1 `
-            -CommittedFreezeReceipt $script:CommittedFreezeReceipt `
-            -ValidationTimeUtc $script:ReleaseFactsReplayTimeUtc
+        $frozen = $script:ValidFrozen
         foreach ($mutation in @('GIT', 'HELPER', 'FAILED')) {
             $facts = Copy-CddsiReleaseFactsFixture -Value $frozen.FrozenReleaseFacts
             if ($mutation -ceq 'GIT') { $facts.Git.Version = '9.9.9.windows.9' }

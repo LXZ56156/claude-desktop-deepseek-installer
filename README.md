@@ -22,14 +22,18 @@ BIOS 虚拟化或 Claude 的安全授权。
 诊断、修复、恢复、UAC/人工重启，并由 Computer Use 实际打开 Claude Desktop 验证
 Chat、Code、Cowork；P11 再对最终候选精确字节重复该矩阵。
 进程存在、配置存在或 synthetic PASS 不能代替 GUI PASS。已退役的 relay/outbox/
-Automation 传输和旧 evidence-plumbing 回归只作为非阻塞历史诊断保留，不得伪造
-PASS，也不得用来掩盖产品失败；正式候选的 clean snapshot、CAS、签名和 P10A/P11
-evidence 仍是 P12 前置。
+Automation 传输和旧 evidence-plumbing 回归已由具名 ProductReleaseGate、精确分类
+合同、独立 HistoricalDiagnostics 和 CI/Release 绑定隔离。产品集合始终阻塞发布；
+历史集合必须完整执行并如实报告 `PASSED` 或 `FAILED_TESTS`，只有完整的 test-level
+失败为 report-only。timeout、crash、missing、skip、not-run、inconclusive、基础设施
+或分类漂移仍 fail closed。历史结果不得伪造 PASS，也不得用来掩盖产品失败；正式
+候选的 clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。
 
 API Key 只允许用户在 disposable VM 的遮罩输入框或安全终端中本地输入；Codex 不
-读取、不转述、不截图，产品只经 DPAPI CurrentUser 和 owner-only helper 使用。已经
-贴入对话的测试 Key 视为已暴露并应轮换，不得复制到 prompt、Git、参数、环境变量、
-脚本、日志、报告、截图、evidence 或 Release。
+读取、不转述、不截图，产品只经 DPAPI CurrentUser 和 owner-only helper 使用。此前
+暴露的测试 Key 已由用户确认撤销，本轮未搜索或使用；后续真实验收只接受产品遮罩
+输入框内新轮换、限额的 Key，不得复制到 Git、参数、环境变量、脚本、日志、报告、
+截图、evidence 或 Release。
 
 realtime relay、Cloudflare、WebSocket watcher、control repo、Codex Automation、
 scheduler、`codex exec resume` 和旧 onboarding/bootstrap/canary/finalization 永久
@@ -137,14 +141,23 @@ P1 Sandbox Foundation 已完成；后续每个工作包必须持续保持其隔�
 ## 开发验证
 
 标准验证必须显式绑定 PowerShell 7、Windows PowerShell 和 Git 的绝对路径及
-SHA-256；完整命令见 `docs/TESTING.md` 的“P1 标准检查”。`scripts/check.ps1`
-在 HostSandbox 内运行双引擎 Pester、隔离 Git inventory、working-tree/cached
-`diff --check` 并返回 machine-readable evidence。只有 clean quality evidence 后
-才能运行 `scripts/build-release.ps1 -DryRun`。
+SHA-256；完整命令见 `docs/TESTING.md` 的“P1 标准检查”。发布标准入口是
+`scripts/invoke-release-gates.ps1 -PassThru`：它先尝试阻塞发布的
+`ProductReleaseBlocking`，再独立尝试 `HistoricalDiagnostic`，即使产品路径失败也
+不会省略历史执行；任一基础设施失败最终硬失败。失败时共同入口只输出具名、安全的
+组合 evidence，分别绑定 Product/Historical 子路径的完整 HostSandbox 失败对象，不
+转发原始异常文本，也不按条数或 JSON 长度静默截断。ProductReleaseGate 在三个外层
+repository snapshot 之间运行产品质量门和嵌套 Release DryRun。
 
 D-026 要求把发布必过的产品行为/供应链/凭据/恢复/Release/真实用户路径与已退役
-operator 历史诊断分层；分层落地前不得把旧 H02 时限失败误报为产品失败，也不得把
-历史门移除当作产品已经可发布。
+operator 历史诊断分层。`config/product-release-gate.psd1` 以
+`EnforcementPhase=NamedProductReleaseGate` 覆盖全部 47 个 tracked 测试资产：
+Product 34（运行时 29 个 Pester），Historical 13。运行拓扑精确为 Product
+29 tests / 8 shards / 18 workers / 21 processes / 48 ledger，Historical
+13 / 9 / 20 / 23 / 52。`scripts/check.ps1` 保留为 42 tests / 13 shards /
+28 workers / 31 processes / 68 ledger 的 legacy `AllBlocking` 诊断并单独报告，
+不再是具名产品发布门。不得把旧 H02 时限失败误报为产品失败，也不得把历史门移除
+当作产品已经可发布。
 
 `scripts/bootstrap-dev.ps1` 只校验仓库固定 Pester tree，不下载、安装或修改用户
 PowerShell 配置。依赖缺失或漂移时普通质量门 fail closed；不得退回继承真实

@@ -10,7 +10,7 @@ permissions:
 jobs:
   release-contract:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     env:
       POWERSHELL_UPDATECHECK: 'Off'
       POWERSHELL_TELEMETRY_OPTOUT: '1'
@@ -78,154 +78,72 @@ jobs:
         shell: pwsh -NoLogo -NoProfile -NonInteractive -File {0}
         run: ./scripts/bootstrap-dev.ps1
 
-      - name: Run isolated source quality gate
+      - name: Run named product gate and independent historical diagnostics
         shell: pwsh -NoLogo -NoProfile -NonInteractive -File {0}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          $evidence = ./scripts/check.ps1 `
+          $result = ./scripts/invoke-release-gates.ps1 `
             -PowerShell7Executable $env:CDDSI_PWSH7_PATH `
             -PowerShell7Sha256 $env:CDDSI_PWSH7_SHA256 `
             -WindowsPowerShellExecutable $env:CDDSI_WINDOWS_POWERSHELL_PATH `
             -WindowsPowerShellSha256 $env:CDDSI_WINDOWS_POWERSHELL_SHA256 `
             -GitExecutable $env:CDDSI_GIT_PATH `
             -GitSha256 $env:CDDSI_GIT_SHA256 `
+            -ProcessTimeoutSeconds 900 `
             -PassThru
-          $qualityZeroMetrics = @(
-            'FORBIDDEN_RESOURCE_ACCESS_COUNT'
-            'OUTSIDE_SANDBOX_WRITE_COUNT'
-            'PRODUCT_LIVE_PROCESS_SPAWN_COUNT'
-            'PRODUCT_NETWORK_REQUEST_COUNT'
-            'REAL_REGISTRY_ACCESS_COUNT'
-            'UNAPPROVED_HARNESS_PROCESS_COUNT'
-            'UNAPPROVED_HARNESS_NETWORK_COUNT'
-            'SECRET_FINDINGS'
-            'UNEXPECTED_LEDGER_ENTRY_COUNT'
-          )
-          $qualityFalseFlags = @('LIVE_PROVIDER_LOADED', 'REPOSITORY_CONTENT_CHANGED')
-          $qualityTrueFlags = @('SAFE_FAILURE_DISCLOSURE', 'HARNESS_LEDGER_EXACT')
-          $expectedQualityPropertySet = 'CLEANUP_OUTCOME,FORBIDDEN_RESOURCE_ACCESS_COUNT,HARNESS_LEDGER,HARNESS_LEDGER_EXACT,LIVE_PROVIDER_LOADED,MUTATION_SPY_COUNTS,OUTSIDE_SANDBOX_WRITE_COUNT,PRODUCT_LIVE_PROCESS_SPAWN_COUNT,PRODUCT_NETWORK_REQUEST_COUNT,REAL_REGISTRY_ACCESS_COUNT,REPOSITORY_AFTER_DIRECTORY_COUNT,REPOSITORY_AFTER_FILE_COUNT,REPOSITORY_AFTER_SHA256,REPOSITORY_BEFORE_DIRECTORY_COUNT,REPOSITORY_BEFORE_FILE_COUNT,REPOSITORY_BEFORE_SHA256,REPOSITORY_CONTENT_CHANGED,REPOSITORY_SNAPSHOT_SCOPE,RunId,SAFE_FAILURE_DISCLOSURE,Scenario,SchemaVersion,SECRET_FINDINGS,TRUSTED_HARNESS_PROCESS_COUNT,TRUSTED_PROCESS_ACTUAL_COUNT,TRUSTED_PROCESS_EXPECTED_COUNT,TRUSTED_PROCESS_SEQUENCE,UNAPPROVED_HARNESS_NETWORK_COUNT,UNAPPROVED_HARNESS_PROCESS_COUNT,UNEXPECTED_LEDGER_ENTRY_COUNT,WORKER_EVIDENCE'
-          $actualQualityPropertySet = @($evidence.PSObject.Properties.Name | Sort-Object) -join ','
-          if ($null -eq $evidence -or $actualQualityPropertySet -cne $expectedQualityPropertySet -or
-              $evidence.SchemaVersion -ne 2 -or $evidence.Scenario -cne 'Quality' -or
-              $evidence.CLEANUP_OUTCOME -cne 'Succeeded') {
-            throw 'The isolated quality gate did not return the exact completion evidence.'
+
+          $expectedPropertySet = 'BindingSha256,ContractVersion,EvidenceType,HistoricalDiagnosticEvidence,HistoricalDiagnosticEvidenceSha256,HistoricalDiagnosticResult,HistoricalReleaseBlocking,HistoricalStatus,ProductGateEvidenceSha256,ProductGateStatus,ProductReleaseGateEvidence,SchemaVersion,Status'
+          $actualPropertySet = @($result.PSObject.Properties.Name | Sort-Object) -join ','
+          if ($actualPropertySet -cne $expectedPropertySet -or
+              $result.SchemaVersion -ne 1 -or
+              $result.EvidenceType -cne 'CddsiNamedReleaseGateRunEvidence' -or
+              $result.ContractVersion -cne 'D-026' -or
+              $result.Status -cne 'PASSED' -or
+              $result.ProductGateStatus -cne 'PASSED' -or
+              $result.HistoricalStatus -cne 'COMPLETED' -or
+              $result.HistoricalDiagnosticResult -notin @('PASSED', 'FAILED_TESTS') -or
+              $result.HistoricalReleaseBlocking -isnot [bool] -or
+              $result.HistoricalReleaseBlocking) {
+            throw 'Named release-gate run evidence is invalid.'
           }
-          foreach ($metric in $qualityZeroMetrics) {
-            if ([long]$evidence.$metric -ne 0) {
-              throw "Quality isolation metric is not zero: $metric"
+          foreach ($hashName in @(
+            'BindingSha256'
+            'ProductGateEvidenceSha256'
+            'HistoricalDiagnosticEvidenceSha256'
+          )) {
+            if ([string]$result.$hashName -notmatch '^[a-f0-9]{64}$') {
+              throw "Named release-gate hash is invalid: $hashName"
             }
-          }
-          foreach ($flag in $qualityFalseFlags) {
-            if ([bool]$evidence.$flag) {
-              throw "Quality isolation flag is not false: $flag"
-            }
-          }
-          foreach ($flag in $qualityTrueFlags) {
-            if ([bool]$evidence.$flag -ne $true) {
-              throw "Quality isolation flag is not true: $flag"
-            }
-          }
-          $expectedMutationSpySet = 'AppX,Credential,Environment,Feature,FileSystem,Network,Process,Registry,Restart,Service'
-          $actualMutationSpySet = @($evidence.MUTATION_SPY_COUNTS.PSObject.Properties.Name | Sort-Object) -join ','
-          if ($actualMutationSpySet -cne $expectedMutationSpySet) {
-            throw 'Quality mutation-spy schema drift.'
-          }
-          foreach ($property in $evidence.MUTATION_SPY_COUNTS.PSObject.Properties) {
-            if ([long]$property.Value -ne 0) {
-              throw "Quality mutation-spy count is not zero: $($property.Name)"
-            }
-          }
-          $expectedWorkerEngineSet = 'PowerShell7,WindowsPowerShell'
-          $actualWorkerEngineSet = @($evidence.WORKER_EVIDENCE | ForEach-Object Engine | Sort-Object) -join ','
-          if ($actualWorkerEngineSet -cne $expectedWorkerEngineSet) {
-            throw 'Quality worker engine set is incomplete.'
-          }
-          $expectedTrustedProcessSequence = 'GitInventory,QualityStaticPowerShell7,QualityShardPowerShell7C01,QualityShardPowerShell7C02,QualityShardPowerShell7C03,QualityShardPowerShell7C04,QualityShardPowerShell7C05,QualityShardPowerShell7C06,QualityShardPowerShell7C07,QualityShardPowerShell7C08,QualityShardPowerShell7U01,QualityShardPowerShell7U02,QualityShardPowerShell7H01,QualityShardPowerShell7H02,QualityShardPowerShell7H03,QualityStaticWindowsPowerShell,QualityShardWindowsPowerShellC01,QualityShardWindowsPowerShellC02,QualityShardWindowsPowerShellC03,QualityShardWindowsPowerShellC04,QualityShardWindowsPowerShellC05,QualityShardWindowsPowerShellC06,QualityShardWindowsPowerShellC07,QualityShardWindowsPowerShellC08,QualityShardWindowsPowerShellU01,QualityShardWindowsPowerShellU02,QualityShardWindowsPowerShellH01,QualityShardWindowsPowerShellH02,QualityShardWindowsPowerShellH03,GitDiffCheck,GitCachedDiffCheck'
-          $actualTrustedProcessSequence = @($evidence.TRUSTED_PROCESS_SEQUENCE | ForEach-Object RuleId) -join ','
-          if ($actualTrustedProcessSequence -cne $expectedTrustedProcessSequence -or
-              $evidence.TRUSTED_PROCESS_EXPECTED_COUNT -ne 31 -or
-              $evidence.TRUSTED_PROCESS_ACTUAL_COUNT -ne $evidence.TRUSTED_PROCESS_EXPECTED_COUNT -or
-              $evidence.TRUSTED_PROCESS_ACTUAL_COUNT -ne $evidence.TRUSTED_HARNESS_PROCESS_COUNT) {
-            throw 'Quality trusted-process evidence drift.'
-          }
-          $expectedHarnessLedgerSequence = 'ValidateToolGrant,ValidateToolGrant,ValidateToolGrant,CreateSandbox,WriteOwnerMarker,CreateSyntheticEnvironment,GitInventory,WriteRepositoryInventory,QualityStaticPowerShell7,ReadWorkerEvidence,QualityShardPowerShell7C01,ReadWorkerEvidence,QualityShardPowerShell7C02,ReadWorkerEvidence,QualityShardPowerShell7C03,ReadWorkerEvidence,QualityShardPowerShell7C04,ReadWorkerEvidence,QualityShardPowerShell7C05,ReadWorkerEvidence,QualityShardPowerShell7C06,ReadWorkerEvidence,QualityShardPowerShell7C07,ReadWorkerEvidence,QualityShardPowerShell7C08,ReadWorkerEvidence,QualityShardPowerShell7U01,ReadWorkerEvidence,QualityShardPowerShell7U02,ReadWorkerEvidence,QualityShardPowerShell7H01,ReadWorkerEvidence,QualityShardPowerShell7H02,ReadWorkerEvidence,QualityShardPowerShell7H03,ReadWorkerEvidence,QualityStaticWindowsPowerShell,ReadWorkerEvidence,QualityShardWindowsPowerShellC01,ReadWorkerEvidence,QualityShardWindowsPowerShellC02,ReadWorkerEvidence,QualityShardWindowsPowerShellC03,ReadWorkerEvidence,QualityShardWindowsPowerShellC04,ReadWorkerEvidence,QualityShardWindowsPowerShellC05,ReadWorkerEvidence,QualityShardWindowsPowerShellC06,ReadWorkerEvidence,QualityShardWindowsPowerShellC07,ReadWorkerEvidence,QualityShardWindowsPowerShellC08,ReadWorkerEvidence,QualityShardWindowsPowerShellU01,ReadWorkerEvidence,QualityShardWindowsPowerShellU02,ReadWorkerEvidence,QualityShardWindowsPowerShellH01,ReadWorkerEvidence,QualityShardWindowsPowerShellH02,ReadWorkerEvidence,QualityShardWindowsPowerShellH03,ReadWorkerEvidence,GitDiffCheck,GitCachedDiffCheck,ScanSandboxArtifacts,CleanupSandbox'
-          $actualHarnessLedgerSequence = @($evidence.HARNESS_LEDGER | ForEach-Object RuleId) -join ','
-          if ($evidence.HARNESS_LEDGER.Count -ne 68 -or
-              $actualHarnessLedgerSequence -cne $expectedHarnessLedgerSequence) {
-            throw 'Quality trusted-harness ledger drift.'
-          }
-          if ($evidence.REPOSITORY_SNAPSHOT_SCOPE -cne 'WorkingTreeExcludingDotGit' -or
-              $evidence.REPOSITORY_BEFORE_SHA256 -cne $evidence.REPOSITORY_AFTER_SHA256 -or
-              $evidence.REPOSITORY_BEFORE_FILE_COUNT -ne $evidence.REPOSITORY_AFTER_FILE_COUNT -or
-              $evidence.REPOSITORY_BEFORE_DIRECTORY_COUNT -ne $evidence.REPOSITORY_AFTER_DIRECTORY_COUNT) {
-            throw 'Quality repository snapshot evidence drift.'
           }
 
-      - name: Validate the exact release package in DryRun mode
-        shell: pwsh -NoLogo -NoProfile -NonInteractive -File {0}
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $result = ./scripts/build-release.ps1 -DryRun
-          $releaseZeroMetrics = @(
-            'SourceSecretFindings'
-            'StagingSecretFindings'
-            'ZipSecretFindings'
-            'ExtractSecretFindings'
-            'TrustedHarnessProcessCount'
-            'TrustedHarnessNetworkCount'
-            'FORBIDDEN_RESOURCE_ACCESS_COUNT'
-            'OUTSIDE_SANDBOX_WRITE_COUNT'
-            'PRODUCT_LIVE_PROCESS_SPAWN_COUNT'
-            'PRODUCT_NETWORK_REQUEST_COUNT'
-            'REAL_REGISTRY_ACCESS_COUNT'
-            'UNAPPROVED_HARNESS_PROCESS_COUNT'
-            'UNAPPROVED_HARNESS_NETWORK_COUNT'
-            'SECRET_FINDINGS'
-            'UNEXPECTED_LEDGER_ENTRY_COUNT'
-          )
-          $releaseTrueFlags = @(
-            'ZipInventoryExact'
-            'ExtractInventoryExact'
-            'ContentHashesExact'
-            'SpecialPathValidated'
-            'HarnessLedgerExact'
-          )
-          $releaseFalseFlags = @(
-            'Changed'
-            'SourcePackageChanged'
-            'LIVE_PROVIDER_LOADED'
-            'REPOSITORY_CONTENT_CHANGED'
-          )
-          $expectedReleasePropertySet = 'Changed,CleanupOutcome,ContentHashesExact,ExtractFileCount,ExtractInventoryExact,ExtractSecretFindings,FORBIDDEN_RESOURCE_ACCESS_COUNT,HarnessLedgerExact,LIVE_PROVIDER_LOADED,Mode,Operation,OUTSIDE_SANDBOX_WRITE_COUNT,PackageFileCount,PRODUCT_LIVE_PROCESS_SPAWN_COUNT,PRODUCT_NETWORK_REQUEST_COUNT,REAL_REGISTRY_ACCESS_COUNT,REPOSITORY_CONTENT_CHANGED,RepositoryDirectoryCount,RepositoryFileCount,SchemaVersion,SECRET_FINDINGS,SourcePackageChanged,SourceSecretFindings,SpecialPathValidated,StagingSecretFindings,Status,TrustedHarnessFileSystemCount,TrustedHarnessNetworkCount,TrustedHarnessProcessCount,UNAPPROVED_HARNESS_NETWORK_COUNT,UNAPPROVED_HARNESS_PROCESS_COUNT,UNEXPECTED_LEDGER_ENTRY_COUNT,ZipCompression,ZipDeterministic,ZipEntryCount,ZipEntryOrder,ZipEntryTimestampUtc,ZipInventoryExact,ZipSecretFindings'
-          $actualReleasePropertySet = @($result.PSObject.Properties.Name | Sort-Object) -join ','
-          if ($null -eq $result -or $actualReleasePropertySet -cne $expectedReleasePropertySet -or
-              $result.SchemaVersion -ne 1 -or $result.Operation -cne 'ReleaseSimulation' -or
-              $result.Mode -cne 'DryRun' -or $result.Status -cne 'SUCCEEDED' -or
-              $result.CleanupOutcome -cne 'Succeeded') {
-            throw 'Release DryRun did not return the exact completion evidence.'
+          $product = $result.ProductReleaseGateEvidence
+          if ($product.Status -cne 'PASSED' -or
+              $product.EnforcementPhase -cne 'NamedProductReleaseGate' -or
+              $product.QualitySet -cne 'ProductReleaseBlocking' -or
+              $product.ReleaseBlocking -isnot [bool] -or
+              -not $product.ReleaseBlocking -or
+              $product.ExpectedPesterFileCount -ne 29 -or
+              $product.ExpectedWorkerCount -ne 18 -or
+              $product.ExpectedProcessCount -ne 21 -or
+              $product.ExpectedLedgerEntryCount -ne 48 -or
+              $product.ProductQualityEvidence.CLEANUP_OUTCOME -cne 'Succeeded' -or
+              $product.ReleaseDryRunEvidence.Status -cne 'SUCCEEDED' -or
+              $product.ReleaseDryRunEvidence.Operation -cne 'ReleaseSimulation' -or
+              $product.ReleaseDryRunEvidence.Mode -cne 'DryRun') {
+            throw 'ProductReleaseGate evidence is invalid.'
           }
-          foreach ($metric in $releaseZeroMetrics) {
-            if ([long]$result.$metric -ne 0) {
-              throw "Release isolation metric is not zero: $metric"
-            }
-          }
-          foreach ($flag in $releaseTrueFlags) {
-            if ([bool]$result.$flag -ne $true) {
-              throw "Release evidence flag is not true: $flag"
-            }
-          }
-          foreach ($flag in $releaseFalseFlags) {
-            if ([bool]$result.$flag) {
-              throw "Release evidence flag is not false: $flag"
-            }
-          }
-          if ($result.PackageFileCount -le 0 -or
-              $result.ZipEntryCount -ne $result.PackageFileCount -or
-              $result.ExtractFileCount -ne $result.PackageFileCount -or
-              $result.RepositoryFileCount -le 0 -or
-              $result.RepositoryDirectoryCount -le 0 -or
-              $result.TrustedHarnessFileSystemCount -ne 16) {
-            throw 'Release inventory or trusted-harness count drift.'
+
+          $historical = $result.HistoricalDiagnosticEvidence
+          if ($historical.Status -cne 'COMPLETED' -or
+              $historical.DiagnosticResult -cne $result.HistoricalDiagnosticResult -or
+              $historical.QualitySet -cne 'HistoricalDiagnostic' -or
+              $historical.ReleaseBlocking -isnot [bool] -or
+              $historical.ReleaseBlocking -or
+              $historical.ExpectedPesterFileCount -ne 13 -or
+              $historical.ExpectedWorkerCount -ne 20 -or
+              $historical.ExpectedProcessCount -ne 23 -or
+              $historical.ExpectedLedgerEntryCount -ne 52 -or
+              $historical.CoreQualityEvidence.CLEANUP_OUTCOME -cne 'Succeeded') {
+            throw 'Historical diagnostic evidence is invalid.'
           }

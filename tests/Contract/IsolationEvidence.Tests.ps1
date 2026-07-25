@@ -111,7 +111,7 @@
         }
         $sameRepositoryManifestSha256 = ('b' * 64) -join ''
         $provenance = [pscustomobject][ordered]@{
-            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v4'
+            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v6'
             RepositoryInventorySha256 = ('a' * 64) -join ''
             InitialRepositoryManifestSha256 = $sameRepositoryManifestSha256
             FinalRepositoryManifestSha256 = $sameRepositoryManifestSha256
@@ -133,6 +133,27 @@
 }
 
 Describe 'P1 isolation evidence contract' {
+    It 'accepts the exact AllBlocking classification independently of shard sequence order' {
+        $dependency = Import-PowerShellDataFile -LiteralPath (
+            Join-Path $script:RepoRoot 'config\dev-dependencies.psd1'
+        )
+        $repositoryFiles = @(
+            $dependency.QualityShards |
+                ForEach-Object { @($_.Paths) } |
+                ForEach-Object {
+                    [pscustomobject]@{ RelativePath = [string]$_ }
+                }
+        )
+
+        $policy = Get-CddsiWorkerQualityShardPolicy `
+            -RepositoryFiles $repositoryFiles `
+            -SelectedShardId ''
+
+        $policy.Profile.QualitySet | Should -BeExactly 'AllBlocking'
+        @($policy.Profile.SelectedPesterPaths).Count | Should -Be 42
+        @($policy.Shards).Count | Should -Be 13
+    }
+
     It 'returns the original exact evidence field set with clean zero values' {
         $context = New-IsolationEvidenceTestContext
         $evidence = Get-CddsiIsolationEvidence -ExecutionContext $context
@@ -280,6 +301,9 @@ Describe 'P1 isolation evidence contract' {
                 [pscustomobject]@{
                     Result = 'Failed'
                     Name = $testName
+                    ErrorRecord = @([pscustomobject]@{
+                        FullyQualifiedErrorId = 'SyntheticFailure'
+                    })
                     ScriptBlock = [pscustomobject]@{
                         File = $fullPath
                         StartPosition = [pscustomobject]@{
@@ -298,21 +322,97 @@ Describe 'P1 isolation evidence contract' {
         $failedTests[0].RelativePath | Should -BeExactly $relativePath
         $failedTests[0].StartLine | Should -Be $sourceCommands[0].Extent.StartLineNumber
         $failedTests[0].Name | Should -BeExactly $testName
+        $failedTests[0].ErrorRecordCount | Should -Be 1
     }
 
-    It 'creates bounded schema version 2 shard failure evidence' {
+    It 'validates every failed test through exact entry 33 without truncation' {
+        $relativePath = 'tests/Contract/IsolationEvidence.Tests.ps1'
+        $fullPath = Join-Path $script:RepoRoot $relativePath
+        $script:InitialRepositoryHashByPath[$relativePath] =
+            (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $fullPath, [ref]$tokens, [ref]$parseErrors)
+        @($parseErrors).Count | Should -Be 0
+        $testName = 'validates every failed test through exact entry 33 without truncation'
+        $sourceCommands = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -ceq 'It' -and
+                $node.CommandElements.Count -ge 2 -and
+                $node.CommandElements[1] -is
+                    [Management.Automation.Language.StringConstantExpressionAst] -and
+                [string]$node.CommandElements[1].Value -ceq $testName
+        }, $true))
+        $sourceCommands.Count | Should -Be 1
+
+        $newFailedTest = {
+            [pscustomobject]@{
+                Result = 'Failed'
+                Name = $testName
+                ErrorRecord = @([pscustomobject]@{
+                    FullyQualifiedErrorId = 'SyntheticFailure'
+                })
+                ScriptBlock = [pscustomobject]@{
+                    File = $fullPath
+                    StartPosition = [pscustomobject]@{
+                        StartLine = [long]$sourceCommands[0].Extent.StartLineNumber
+                    }
+                }
+            }
+        }
+        $completeTests = @(1..33 | ForEach-Object { & $newFailedTest })
+        $completeResult = [pscustomobject]@{
+            FailedCount = 33L
+            Tests = $completeTests
+        }
+        $completeEvidence = @(Get-CddsiWorkerFailedTestEvidence `
+            -PesterResult $completeResult `
+            -AllowedRelativePaths @($relativePath))
+        $completeEvidence.Count | Should -Be 33
+        $completeEvidence[32].ErrorRecordCount | Should -Be 1
+
+        $missingTests = @(1..33 | ForEach-Object { & $newFailedTest })
+        $missingTests[32].PSObject.Properties.Remove('ErrorRecord')
+        {
+            Get-CddsiWorkerFailedTestEvidence `
+                -PesterResult ([pscustomobject]@{
+                    FailedCount = 33L
+                    Tests = $missingTests
+                }) `
+                -AllowedRelativePaths @($relativePath)
+        } | Should -Throw
+
+        $nullTests = @(1..33 | ForEach-Object { & $newFailedTest })
+        $nullTests[32].ErrorRecord = @($null)
+        {
+            Get-CddsiWorkerFailedTestEvidence `
+                -PesterResult ([pscustomobject]@{
+                    FailedCount = 33L
+                    Tests = $nullTests
+                }) `
+                -AllowedRelativePaths @($relativePath)
+        } | Should -Throw
+    }
+
+    It 'creates full schema version 2 shard failure evidence' {
         $testFiles = @('tests/HostSandbox/FastLaneGitOutbox.Tests.ps1')
         $failedTests = @(
             [pscustomobject][ordered]@{
                 RelativePath = $testFiles[0]
                 StartLine = 2800L
                 Name = 'stages three distinct mocked keypairs with protected receipts and reuses the exact valid root idempotently'
+                ErrorRecordCount = 1L
             }
         )
         $pester = [pscustomobject][ordered]@{
             Result = 'Failed'
+            TotalCount = 23L
             PassedCount = 22L
             FailedCount = 1L
+            FailedBlocksCount = 0L
+            FailedContainersCount = 0L
             FailedTests = $failedTests
             FailedTestEvidenceTruncated = $false
             SkippedCount = 0L
@@ -321,7 +421,7 @@ Describe 'P1 isolation evidence contract' {
             DurationMilliseconds = 1000L
         }
         $provenance = [pscustomobject][ordered]@{
-            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v4'
+            MeasurementRuleVersion = 'cddsi-worker-measurement-rules-v6'
             RepositoryInventorySha256 = ('a' * 64) -join ''
             InitialRepositoryManifestSha256 = ('b' * 64) -join ''
             FinalRepositoryManifestSha256 = ('b' * 64) -join ''
@@ -336,7 +436,7 @@ Describe 'P1 isolation evidence contract' {
             -Engine PowerShell7 `
             -ShardId H02 `
             -SandboxBindingSha256 (('f' * 64) -join '') `
-            -ShardPathsSha256 (Get-CddsiWorkerSequenceSha256 -Values $testFiles) `
+            -ShardPathsSha256 (Get-CddsiWorkerQualityShardPathsSha256 -Values $testFiles) `
             -TestFiles $testFiles `
             -Pester $pester `
             -Provenance $provenance `
@@ -345,7 +445,102 @@ Describe 'P1 isolation evidence contract' {
         $evidence.SchemaVersion | Should -Be 2
         $evidence.Pester.FailedCount | Should -Be 1
         $evidence.Pester.FailedTests[0].StartLine | Should -Be 2800
+        $evidence.Pester.FailedTests[0].ErrorRecordCount | Should -Be 1
         $evidence.Pester.FailedTestEvidenceTruncated | Should -BeFalse
+
+        $fullPester = $pester.PSObject.Copy()
+        $fullPester.TotalCount = 55L
+        $fullPester.FailedCount = 33L
+        $fullPester.FailedTests = @(1..33 | ForEach-Object {
+            $failedTests[0].PSObject.Copy()
+        })
+        $fullEvidence = New-CddsiWorkerPesterShardEvidenceV2 `
+            -RunId '00000000-0000-0000-0000-000000000004' `
+            -Engine PowerShell7 `
+            -ShardId H02 `
+            -SandboxBindingSha256 (('f' * 64) -join '') `
+            -ShardPathsSha256 (Get-CddsiWorkerQualityShardPathsSha256 -Values $testFiles) `
+            -TestFiles $testFiles `
+            -Pester $fullPester `
+            -Provenance $provenance `
+            -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+        @($fullEvidence.Pester.FailedTests).Count | Should -Be 33
+        $fullEvidence.Pester.FailedTestEvidenceTruncated | Should -BeFalse
+
+        $forbiddenTruncation = $fullPester.PSObject.Copy()
+        $forbiddenTruncation.FailedTestEvidenceTruncated = $true
+        {
+            New-CddsiWorkerPesterShardEvidenceV2 `
+                -RunId '00000000-0000-0000-0000-000000000004' `
+                -Engine PowerShell7 `
+                -ShardId H02 `
+                -SandboxBindingSha256 (('f' * 64) -join '') `
+                -ShardPathsSha256 (Get-CddsiWorkerQualityShardPathsSha256 -Values $testFiles) `
+                -TestFiles $testFiles `
+                -Pester $forbiddenTruncation `
+                -Provenance $provenance `
+                -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+        } | Should -Throw
+
+        {
+            New-CddsiWorkerPesterShardEvidenceV2 `
+                -RunId '00000000-0000-0000-0000-000000000004' `
+                -Engine PowerShell7 `
+                -ShardId H02 `
+                -SandboxBindingSha256 (('f' * 64) -join '') `
+                -ShardPathsSha256 (Get-CddsiWorkerSequenceSha256 -Values $testFiles) `
+                -TestFiles $testFiles `
+                -Pester $pester `
+                -Provenance $provenance `
+                -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+        } | Should -Throw
+
+        $negativeCount = $pester.PSObject.Copy()
+        $negativeCount.TotalCount = -1L
+        {
+            New-CddsiWorkerPesterShardEvidenceV2 `
+                -RunId '00000000-0000-0000-0000-000000000004' `
+                -Engine PowerShell7 `
+                -ShardId H02 `
+                -SandboxBindingSha256 (('f' * 64) -join '') `
+                -ShardPathsSha256 (Get-CddsiWorkerQualityShardPathsSha256 -Values $testFiles) `
+                -TestFiles $testFiles `
+                -Pester $negativeCount `
+                -Provenance $provenance `
+                -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+        } | Should -Throw
+
+        $totalDrift = $pester.PSObject.Copy()
+        $totalDrift.TotalCount = 24L
+        {
+            New-CddsiWorkerPesterShardEvidenceV2 `
+                -RunId '00000000-0000-0000-0000-000000000004' `
+                -Engine PowerShell7 `
+                -ShardId H02 `
+                -SandboxBindingSha256 (('f' * 64) -join '') `
+                -ShardPathsSha256 (Get-CddsiWorkerQualityShardPathsSha256 -Values $testFiles) `
+                -TestFiles $testFiles `
+                -Pester $totalDrift `
+                -Provenance $provenance `
+                -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+        } | Should -Throw
+
+        $missingErrorCount = $pester.PSObject.Copy()
+        $missingFailedTest = $failedTests[0].PSObject.Copy()
+        $missingFailedTest.PSObject.Properties.Remove('ErrorRecordCount')
+        $missingErrorCount.FailedTests = @($missingFailedTest)
+        {
+            New-CddsiWorkerPesterShardEvidenceV2 `
+                -RunId '00000000-0000-0000-0000-000000000004' `
+                -Engine PowerShell7 `
+                -ShardId H02 `
+                -SandboxBindingSha256 (('f' * 64) -join '') `
+                -ShardPathsSha256 (Get-CddsiWorkerQualityShardPathsSha256 -Values $testFiles) `
+                -TestFiles $testFiles `
+                -Pester $missingErrorCount `
+                -Provenance $provenance `
+                -ExpectedEngineGrantSha256 $script:WorkerGrantSha256
+        } | Should -Throw
     }
 
     It 'aggregates actual TestSafe and DryRun ledger and mutation-spy records' {

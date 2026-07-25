@@ -83,9 +83,13 @@ prompt、Git、命令参数、环境变量、日志、报告、截图、evidence
 - 已退役 relay/outbox/Automation 传输与旧 evidence-plumbing 回归只作非阻塞历史诊断；
   必须如实记录失败，不能通过删除断言或伪造 PASS 使其“变绿”。正式候选的
   clean-snapshot/CAS/signature/acceptance evidence 仍是 P12 前置。
-- 在具名 ProductReleaseGate、精确 test inventory、CI 和 Release 回归落地前，完整
-  `scripts/check.ps1` 仍是阻塞门。历史测试只有在经测试证明的分层入口中才可非阻塞；
-  不得直接跳过现有 shard、降低断言或把 not-run 算通过。
+- 具名 ProductReleaseGate、精确 test inventory、CI 和 Release 回归已经激活；
+  legacy `scripts/check.ps1` 继续独立执行并单列。历史测试只有经
+  HistoricalDiagnostics 完整执行后才可非阻塞；不得直接跳过现有 shard、降低断言或
+  把 not-run 算通过。
+- measurement rules v6 必须为每个失败测试全量保留 ErrorRecord count 和 tracked
+  static `It` 源码绑定，`FailedTestEvidenceTruncated` 恒为 false；禁止只审计摘要
+  前缀。CI 的 240 分钟仅是串行具名门外层预算，每个 worker 的 900 秒上限不变。
 - Formal 里程碑仍保持 `P10A → 冻结事实 → P10B → P11` 的候选与 evidence 绑定；
   D-026 的开发租约不把开发测试结果自动变成 P11 acceptance receipt。
 - 未达到 `READY_FOR_FORMAL_P10A` 不得冻结输入，未完成 P11 正式验收不得声称
@@ -1003,11 +1007,15 @@ schema 或 ledger 漂移均 fail closed，不得退回继承真实 HOME 的临�
 
 1. 先写/更新测试与故障矩阵。
 2. 实现最小范围。
-3. 按 `TESTING.md` 的 P1 标准入口运行双 PowerShell 引擎测试；必须显式绑定三个
-   工具的绝对路径与 SHA-256。
-4. 取得 clean `scripts/check.ps1 -PassThru` evidence 后运行
-   `scripts/build-release.ps1 -DryRun`；working-tree/cached `git diff --check` 已在
-   隔离质量门内执行。
+3. 按 `TESTING.md` 的 D-026 标准入口运行
+   `scripts/invoke-release-gates.ps1 -PassThru`；必须显式绑定三个工具的绝对路径与
+   SHA-256。该入口内的 ProductReleaseGate 是阻塞门，并绑定双引擎产品测试、
+   HostSandbox、失败注入与 `build-release.ps1 -DryRun`。
+4. 单独运行 legacy `scripts/check.ps1 -PassThru` 并报告结果。只有在 47/47 分类
+   合同已通过、ProductReleaseGate 完整通过，且 legacy 失败仅来自具名 historical
+   集合时，这些历史断言失败才非发布阻塞；任何产品、基础设施、超时、清理、证据
+   或仓库漂移失败仍 fail closed。working-tree/cached `git diff --check` 保持在隔离
+   质量门内执行。
 
 5. 复审 secret、真实资源访问、manifest 和文档一致性。
 6. 更新 `HANDOFF.md` 的阶段、已完成、下一工作包和验证结果。

@@ -42,13 +42,26 @@ fast-forward push。不得创建重复 PR、force push、改写历史或自动 r
 用 Computer Use 实际验证 Claude Desktop 的 Chat、Code、Cowork，取得
 `READY_FOR_FORMAL_P10A`；P11 再对最终候选精确字节重复正式矩阵。宿主机和 CI 仍不执行
 产品 Live；真实系统操作只允许在 disposable VM。已退役的 relay/outbox/Automation
-传输与旧 evidence-plumbing 回归是非阻塞历史诊断，不能伪造 PASS，也不能用来掩盖
-产品失败；正式候选的 clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。
+传输与旧 evidence-plumbing 回归已由具名 ProductReleaseGate、精确分类合同、独立
+HistoricalDiagnostics 和 CI/Release 绑定隔离。产品集合始终阻塞；历史集合必须完整
+执行，只有完整的 test-level failure 可如实成为 `FAILED_TESTS` 且
+`ReleaseBlocking=false`。timeout、crash、missing、skip、not-run、inconclusive、
+基础设施和分类漂移仍阻塞。历史结果不能伪造 PASS，也不能用来掩盖产品失败；正式
+候选的 clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。
+
+当前标准入口是 `scripts/invoke-release-gates.ps1 -PassThru`。Product profile 为
+29 tests / 8 shards / 18 workers / 21 processes / 48 ledger；Historical 为
+13 / 9 / 20 / 23 / 52。`scripts/check.ps1` 作为 legacy `AllBlocking` 诊断单列，
+拓扑为 42 / 13 / 28 / 31 / 68，不是具名产品发布门。
+
+当前 VM 尚无 guest 外部可恢复 clean snapshot receipt，因此未使用 D-026 的产品
+Live 权限，也未执行安装、注册表、AppX、VMP、服务、Credential Manager 或其他真实
+系统写入。
 
 API Key 只允许用户在 VM 本地遮罩输入，Codex 不读取、不转述、不截图；产品只能经
-DPAPI CurrentUser 和 owner-only helper 使用。已经贴入对话的测试 Key 视为已暴露并
-应轮换，不得复制到 prompt、Git、命令行、环境变量、日志、报告、截图、evidence 或
-Release。
+DPAPI CurrentUser 和 owner-only helper 使用。此前暴露的测试 Key 已由用户确认撤销，
+本轮未搜索或使用；后续只接受产品遮罩输入框内新轮换、限额的 Key，不得复制到 Git、
+命令行、环境变量、日志、报告、截图、evidence 或 Release。
 
 realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Automation、
 scheduler、`codex exec resume`、旧 onboarding/bootstrap/canary/finalization 永久退役，
@@ -144,6 +157,12 @@ Scaffold 已可执行 Live。
   `config/execution-boundaries.psd1`。
 - 固定 Pester 来源、整树 hash、13 个质量分片和 isolation suite 计数：
   `config/dev-dependencies.psd1`。
+- D-026 测试文件一归属分类合同：`config/product-release-gate.psd1`，当前
+  `EnforcementPhase=NamedProductReleaseGate`。
+- 三个 fail-closed execution profile：`scripts/quality-set-policy.ps1`。
+- 阻塞发布的产品门和独立历史诊断：`scripts/product-release-gate.ps1`、
+  `scripts/historical-diagnostics.ps1`。
+- CI/Release 共用的唯一具名入口：`scripts/invoke-release-gates.ps1`。
 - `config/fast-lane-policy.psd1` 只保留已退役 Fast Lane 的历史/回归合同，不产生
   当前通信或远端操作权。
 - Release 文件分类：`scripts/release-manifest.psd1`。

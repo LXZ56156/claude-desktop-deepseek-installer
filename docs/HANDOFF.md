@@ -1,13 +1,19 @@
 # 新任务交接
 
-更新日期：2026-07-24
+更新日期：2026-07-25
 
 ## 当前动态状态（唯一入口）
 
-**D026_VM_ACCEPTANCE_FIRST / VM_LIVE_HANDOFF_PREPARATION /
-HOST_WRITE_FROZEN_AFTER_HANDOFF / VM_SOLE_WRITER_ON_EXISTING_BRANCH_AND_PR1 /
-REAL_INSTALL_AND_COMPUTER_USE_REQUIRED / RELAY_PERMANENTLY_RETIRED /
-AUTOMATION_PAUSED_OR_ABSENT / PRODUCT_STILL_SCAFFOLD /
+**D026_VM_ACCEPTANCE_FIRST / VM_DEVELOPMENT_NAMED_GATE_ACTIVE /
+VM_START_BINDING_CONFIRMED / HOST_WRITE_FROZEN_AFTER_HANDOFF /
+VM_SOLE_WRITER_ON_EXISTING_BRANCH_AND_PR1 / NAMED_PRODUCT_RELEASE_GATE_ACTIVE /
+HISTORICAL_DIAGNOSTICS_INDEPENDENT /
+NAMED_GATE_FAILURE_EVIDENCE_FIX_DUAL_ENGINE_PASSED /
+PERSISTED_EVIDENCE_TIMESTAMP_ROUNDTRIP_FIX_DUAL_ENGINE_PASSED /
+FINAL_TRACKED_BYTES_FROZEN_FOR_RETEST /
+EXTERNAL_SNAPSHOT_RECEIPT_MISSING / LIVE_MUTATIONS_NOT_STARTED /
+REAL_INSTALL_AND_COMPUTER_USE_REQUIRED /
+RELAY_PERMANENTLY_RETIRED / AUTOMATION_PAUSED_OR_ABSENT / PRODUCT_STILL_SCAFFOLD /
 RELEASE_READY_NOT_YET_REACHED / P12_MANUAL_ONLY。**
 
 2026-07-24 用户冻结 D-026，结束“VM 永远只读、用户搬回报告、宿主机逐轮批修”的
@@ -16,6 +22,13 @@ commit/tree 成为 VM 起点后，宿主机冻结产品写入。此后 disposabl
 `codex/repair/p10a-0a-fast-lane` 分支和 PR #1 的阶段性唯一写入者，可以修改源码、
 测试、文档和构建定义，按共同根因正常 commit 并 fast-forward push。不得创建重复 PR、
 force push、改写历史或自动 rebase；remote 出现非预期提交时必须停止。
+
+本轮 VM 已非破坏绑定 D-026 起点：branch
+`codex/repair/p10a-0a-fast-lane`，local HEAD、upstream、remote branch 和 PR #1 head
+在绑定时均为 `79b821a6cca42f4756cb5748533ec03e9b06c63f`，tree 为
+`095d0ddb9333afca54e3692ce336ccd13a29d8e7`，index/worktree clean。起初打开的
+detached commit 未被覆盖，保存在
+`refs/cddsi-frozen/d0c2ad515abe54955a3a0dc361d2f50037dc82e5`。
 
 当前产品仍是 `Scaffold`，入口仍 fail closed，尚未实现真实安装器。D-026 不把
 synthetic PASS 当作产品完成：VM 必须优先实现并用不可 promotion 的 development ZIP
@@ -26,6 +39,12 @@ Computer Use 实际打开 Claude Desktop 验证 Chat、Code、Cowork，达到
 AppX、HKCU managed policy、DPAPI CurrentUser、VMP、进程和最小 DeepSeek 请求只允许
 发生在明确的 disposable VM。
 
+本机已确认为 Windows 11 x64 VMware disposable guest，VMware Tools 运行且
+Computer Use 能力可用；但尚无 guest 外部可恢复 clean snapshot receipt，因此
+Computer Use 还没有形成产品 GUI PASS，D-026 的 Live grant 也没有使用。本轮只允许
+repo 源码、文档、fake、TestSafe、DryRun 和隔离测试；未执行安装、注册表、AppX、
+VMP、服务、Credential Manager 或其他真实系统写入。
+
 发布必过门从现在起以产品行为、供应链验签、凭据、所有权/补偿、Release inventory/
 secret、真实用户路径和 Computer Use 为准。已退役的 relay/outbox/Automation 传输与
 旧 evidence-plumbing 回归，包括 FastLaneGitOutbox H02 的固定内部 Git 时限，只保留为
@@ -34,16 +53,93 @@ clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。到
 `RELEASE_READY` 后仍必须停在 P12 前，向用户交付精确 commit/tree、候选 hash、支持
 矩阵和 GUI 证据；不得自动 merge、创建正式 GitHub Release 或 promotion。
 
-当前代码尚未实现具名 ProductReleaseGate 分层，因此这次 handoff 仍必须让完整
-`scripts/check.ps1` 全绿。VM 只有在实现精确 test inventory、CI/Release 绑定和
-fail-closed 回归，证明发布关键测试无遗漏且全部执行后，才能把 historical H02
-单列为 report-only；在此之前不得 skip、not-run、删测或直接忽略失败。
+`config/product-release-gate.psd1` 当前
+`EnforcementPhase=NamedProductReleaseGate`：release manifest 中的 47 个 `tests/`
+资产精确一归属，Product 34（29 Pester + 4 fixture + 1 support），Historical 13
+（全部 Pester），42 个 Pester 精确为 29 + 13。具名 ProductReleaseGate runtime、
+独立 HistoricalDiagnostics、共同 orchestrator 与 CI/Release 三步工作流均已绑定。
+Product profile 固定 29 tests / 8 shards / 18 workers / 21 trusted processes /
+48 ledger；Historical 固定 13 / 9 / 20 / 23 / 52；legacy `AllBlocking` 固定
+42 / 13 / 28 / 31 / 68。不得 skip、not-run、删测或直接忽略失败。
 
-用户已在本次对话中贴出的测试 API Key 不在本文件复述，统一视为已暴露并应轮换。
-无论余额多少，API Key 都不得进入 Codex prompt、Git、参数、环境变量、脚本、日志、
-状态、报告、截图、evidence 或 Release。真实验收时只允许用户在 VM 的遮罩输入框或
-安全终端中本地输入一次；Codex 不读取、不转述、不截图，产品只经 DPAPI CurrentUser
-和 owner-only helper 使用。
+起始 commit 的本地全量基线在 PS7/H02 安全终止：此前 12/28 workers 完成，
+40/42 Pester 文件实际执行，累计 563 passed；H02 25 项中 21 passed、4 failed，
+0 skipped、0 not-run、0 inconclusive。四项均被已退役 Fast Lane 的固定内部
+`FAST_LANE_RUNTIME_LIMIT` 抢先终止；仓库前后未变、失败披露安全、cleanup
+`SucceededAfterFailure`。D-026 禁止调试或恢复该退役 outbox，所以本轮不修改它、
+不扩大 timeout、不降断言。具名门现已闭环分类和运行语义，这类完整的普通历史
+test-level failure 由 HistoricalDiagnostics 如实报告为 `FAILED_TESTS` 且
+`ReleaseBlocking=false`；基础设施失败仍阻塞。
+
+ReleaseFacts fixture 去除重复构造后，具名组合门曾在当时的完整 tracked bytes 上
+通过：外层/Product 为 `PASSED`，Historical 为 `COMPLETED/FAILED_TESTS` 且
+`ReleaseBlocking=false`。外部 evidence 为 139587 bytes、SHA-256
+`f9f3045eae528752acd9ca98ab98d8aeb60d3edc0d806c00fdb50cea98639d27`，
+outer binding 为
+`697e9b069ecfd3bcfd97b3134b0854c8e821eae99488aefdbec4b12ac4e9a0be`；
+9 层 stored canonical hash 均经独立重算匹配，整份 evidence secret findings=0。
+该次 Product 在 PS7/PS5.1 各 371/371 clean，Release DryRun 为
+`SUCCEEDED/DryRun/Changed=false`、39/39、四层 secret=0，三个 repository snapshot
+均为 170 files / 33 directories、hash
+`26f2f2b7d742a00ee89b096c0efa4c459aee9bf336e91f162b7947349aacae9a`。
+Historical PS7 为 272 total / 269 passed / 3 failed，PS5.1 为
+272 / 271 / 1；四项都来自退役
+`tests/HostSandbox/FastLaneGitOutbox.Tests.ps1` H02，完整绑定、无截断，cleanup
+`Succeeded`。该 evidence 证明成功路径和历史分层，但下述失败路径审计修复已改变
+tracked bytes，因此它不再是提交终态证据。
+
+提交前只读审查发现共同入口会在两条 child path 都尝试后丢弃结构化 safe failure
+payload，且产品包装器以 131072 字符上限静默省略合法大 evidence。现已修复为
+`CddsiNamedReleaseGateFailureEvidence`：Product/Historical 分别记录
+`PASSED|FAILED_CLOSED`，合法 child payload 为完整 `BOUND` 对象并绑定 canonical
+SHA-256；缺失和不安全 payload 分别显式为 `UNAVAILABLE`/`REJECTED_UNSAFE`；stderr
+只写具名 `CDDSI_NAMED_GATE_FAILURE_EVIDENCE_V1`，不转发原始异常正文、绝对路径或
+secret，也不再有条数/JSON 长度截断。371 条 synthetic failure 穿过产品包装、共同
+入口和 exception Data，精确第 33 条仍可取；第 33 条 ErrorRecordCount 伪造被
+`REJECTED_UNSAFE`。解析后的所有字符串叶和 normalized JSON 都重新扫描；
+`C:\`、`C:/`、UNC、单前导 `/`/`\` rooted path、Unicode-escaped path/secret 均
+拒绝，`https://` 正例接受，581 个 tracked static `It` 名称没有误拒。
+DevelopmentDependencies focused 在最终字节上 PS7/PS5.1 各 30/30 clean。
+工具 SHA 故障注入实际得到两条 `FAILED_CLOSED/BOUND` child path、完整组合 binding、
+无绝对路径或 secret，两个 harness cleanup 均为 `NotCreated`。
+
+失败路径修复后的具名组合门在当时冻结字节上完整通过：Product PS7/PS5.1 各
+372/372 clean；Historical PS7 为 272 total / 270 passed / 2 failed，PS5.1 为
+272 / 271 / 1，三项均为退役 H02 且 `ReleaseBlocking=false`；Release DryRun
+39/39，全部 cleanup 成功、仓库未变、secret findings=0。外部 evidence 为
+92510 bytes、SHA-256
+`7a44796d4851f80b00ea04b77151323bccc51dd47ddf67a881c8ef13db6ae1d1`，
+outer binding 为
+`460599c422d452ce92ffd932ad4b83be90d2235a85e938bbdc36bbca0dba6fe3`，
+九层 canonical hash 独立重算一致。
+
+随后对该持久化 JSON 的独立默认-loader 验证发现：PowerShell 7
+`ConvertFrom-Json` 会把规范 `ZipEntryTimestampUtc` 物化为 UTC `DateTime`，旧验证器
+却先转为当前文化字符串再与 ISO 文本比较，因而误拒绝合法 evidence；使用
+`-DateKind String` 时全部 binding 原本有效。现已把验证收紧为只接受逐字规范字符串，
+或 `Kind=Utc` 且 ticks 精确为规范时刻的 `DateTime`；Local、Unspecified、
+`DateTimeOffset`、相邻 tick 和非规范等价文本均拒绝，并加入双引擎回归。该修复再次
+改变 tracked bytes，所以上述完整 evidence 只证明修复前路径，不是提交终态；必须在
+focused 双引擎通过后重跑具名组合门、legacy、DryRun 和最终扫描。新增回归所在
+HostSandbox 全文件已在 PS7/PS5.1 各 32/32 clean，skip/not-run/inconclusive 均为
+0；当前 tracked bytes 从此冻结，最终组合门的 Product 计数必须相应成为每引擎
+373/373。
+
+ReleaseFacts 窄 profile 的 16 个 `It` 和生产库未改变；优化后 PS7/PS5.1 仍各
+16/16 clean，耗时由 687949/406997 ms 降至 438402/253743 ms，legacy C02 随后在
+509 秒内通过原 900 秒 hard limit。本段更新时一轮 legacy `AllBlocking` 已因上述
+源码审查结果失效；它不作为终态 evidence，并由原 owner-marked harness 自行清理。
+
+提交前必须在最终内容上重新运行具名组合入口、Release DryRun、legacy 单列、
+encoding/diff 与 tracked/release/evidence secret scans。最终 commit/tree、PR head
+和 CI 只能在普通 fast-forward push 后外部核验，不能在 tracked 文档中自引用尚未
+生成的 commit。
+
+用户已确认撤销此前暴露的测试 API Key，本文件不复述；本轮未搜索、未使用，也未把
+它写入 Git、参数、环境变量、脚本、日志、状态、报告、截图、evidence 或 Release。
+真实验收时只允许用户在 VM 的产品遮罩输入框中本地输入一把新轮换、限额的 Key；
+Codex 不读取、不转述、不截图，产品只经 DPAPI CurrentUser 和 owner-only helper
+使用。
 
 realtime relay、Cloudflare、WebSocket watcher、control-repo 实时消息、Codex
 Automation、scheduler、`codex exec resume`、旧 onboarding ZIP、foreground canary、
@@ -1195,7 +1291,7 @@ P10A-0A/P10A/P10B/P11 完成：
 PowerShell、Git 的绝对路径及 SHA-256：
 
 ```powershell
-& <pwsh.exe> -NoLogo -NoProfile -File scripts/check.ps1 `
+& <pwsh.exe> -NoLogo -NoProfile -File scripts/invoke-release-gates.ps1 `
   -PowerShell7Executable <pwsh.exe> `
   -PowerShell7Sha256 <sha256> `
   -WindowsPowerShellExecutable <powershell.exe> `
@@ -1206,10 +1302,18 @@ PowerShell、Git 的绝对路径及 SHA-256：
   -PassThru
 ```
 
-`scripts/check.ps1` 必须在 owner-marked HostSandbox 内完成双引擎 Pester、隔离 Git
-inventory 与 working-tree/cached `git diff --check`。不得绕过该入口直接运行继承真实
-HOME/Git 配置的 Pester 或 Git。只有全树 clean quality evidence 后，才运行
-`scripts/build-release.ps1 -DryRun`；DryRun 不是可发布候选构建。
+`scripts/invoke-release-gates.ps1` 必须先尝试 ProductReleaseGate，再独立尝试
+HistoricalDiagnostics；产品路径失败后仍须尝试历史路径，最终任一基础设施失败硬抛。
+Product 必须 `PASSED`，Historical 必须 `COMPLETED` 且只允许
+`PASSED|FAILED_TESTS`、`ReleaseBlocking=false`。Product gate 在 S0/S1/S2 外层
+repository snapshot 之间运行双引擎产品 Pester、隔离 Git inventory、
+working-tree/cached `git diff --check` 和嵌套 `build-release.ps1 -DryRun`。不得绕过
+该入口直接运行继承真实 HOME/Git 配置的 Pester 或 Git；DryRun 不是可发布候选构建。
+
+legacy `scripts/check.ps1 -PassThru` 仍以 `AllBlocking` 执行全部 42 个 Pester，作为
+独立历史兼容诊断运行并如实记录。它不是 NamedProductReleaseGate；其完整的普通
+历史 test-level failure 不得覆盖具名 Product 终态，但 timeout、crash、missing、
+skip、not-run、inconclusive、基础设施或分类漂移仍阻塞。
 
 ## 最终 VM 开发提示词交付（D-026 当前合同）
 

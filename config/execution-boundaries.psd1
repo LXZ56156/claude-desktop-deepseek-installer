@@ -80,7 +80,12 @@
             'scripts/build-candidate.ps1'
             'scripts/check.ps1'
             'scripts/check-worker.ps1'
+            'scripts/historical-diagnostics.ps1'
             'scripts/invoke-host-sandbox.ps1'
+            'scripts/invoke-release-gates.ps1'
+            'scripts/product-release-gate.ps1'
+            'scripts/quality-set-policy.ps1'
+            'scripts/release-gate-common.ps1'
             'operator/fast-lane/invoke-synthetic-rehearsal.ps1'
         )
 
@@ -103,6 +108,7 @@
             'config/execution-boundaries.psd1'
             'config/dev-dependencies.psd1'
             'config/fast-lane-policy.psd1'
+            'config/product-release-gate.psd1'
             'scripts/release-manifest.psd1'
         )
 
@@ -404,6 +410,10 @@
             'scripts/build-release.ps1'
             'scripts/check.ps1'
             'scripts/check-worker.ps1'
+            'scripts/historical-diagnostics.ps1'
+            'scripts/invoke-host-sandbox.ps1'
+            'scripts/invoke-release-gates.ps1'
+            'scripts/product-release-gate.ps1'
             'operator/fast-lane/invoke-synthetic-rehearsal.ps1'
         )
 

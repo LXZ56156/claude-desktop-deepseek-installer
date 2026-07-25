@@ -38,6 +38,7 @@ $runner = Join-Path $PSScriptRoot 'invoke-host-sandbox.ps1'
 try {
     $result = & $runner `
         -Scenario Quality `
+        -QualitySet AllBlocking `
         -RepositoryRoot (Split-Path -Parent $PSScriptRoot) `
         -PowerShell7Executable $PowerShell7Executable `
         -PowerShell7Sha256 $PowerShell7Sha256 `

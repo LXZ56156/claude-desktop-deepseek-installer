@@ -30,11 +30,17 @@ trusted harness 分平面记账；worker evidence、仓库快照和 Release Simu
 并发修改、force push 或用第二个 PR 分叉同一修复。D-026 不把这一权限扩展到宿主机、
 CI 或最终冻结候选验收。
 
+当前 VM 尚无 guest 外部可恢复 clean snapshot receipt，因此本轮没有使用上述 Live
+授权，只执行 repository 源码、fake、TestSafe、DryRun 和隔离测试工作；安装、注册表、
+AppX、VMP、服务、Credential Manager 及其他真实系统写入仍未开始。
+
 realtime relay、Cloudflare、WebSocket watcher、control repo、Automation、scheduler
 及 `codex exec resume` 继续退役，不得恢复、调用或作为隔离门。tracked operator
-实现只保留 DevelopmentOnly 历史/回归属性；其缺失或失败不阻断 `VmDevelopment`
-真实用户路径，但历史结果也不得伪造、改写或充当产品 Live、Computer Use、候选验收
-或发布证据。
+实现只保留 DevelopmentOnly 历史/回归属性。具名 ProductReleaseGate、精确分类、
+独立 HistoricalDiagnostics 和 CI/Release 绑定现已启用；历史集合必须完整执行，
+只有完整的 test-level failure 可成为 report-only `FAILED_TESTS`。timeout、crash、
+missing、skip、not-run、inconclusive、基础设施和分类漂移仍阻塞。历史结果不得
+伪造、改写或充当产品 Live、Computer Use、候选验收或发布证据。
 
 需要本地 Git 的 HostSandbox 测试不依赖 `PATH` 或用户 Git 配置。父 harness 将已验
 SHA-256 的 Git grant 作为 worker 必填参数传入，worker 复验 bytes 后只以只读 global
@@ -275,29 +281,33 @@ L2/L3 不能在父进程临时修改环境后继续执行，而应以 `-NoProfil
 
 环境重定向不能隔离 registry/AppX，因此仍必须使用 fake provider 和静态门。
 
-标准质量门不再把每个引擎的全部 Pester 放进一个 monolithic worker。每个引擎固定
-执行 1 个 Static worker 和 `config/dev-dependencies.psd1` 中 13 个 ordinal
-`QualityShards`；42 个 test files 必须精确覆盖一次、无重复、无遗漏。父进程 argv
-只传固定 `ShardId`，worker 自己从已验 hash 的 lock 解析路径。每份 role evidence
-都绑定 engine、grant、inventory、repository manifest 和 shard policy；父进程逐份
-严格 UTF-8 读取并在最终聚合前独立复验。
+具名质量门不把每个引擎的 Pester 放进一个 monolithic worker。每个引擎执行 1 个
+Static worker 和当前 profile 选中的 ordinal `QualityShards`：Product 为 29 tests /
+8 shards / 18 workers，Historical 为 13 / 9 / 20；legacy `AllBlocking` 为
+42 / 13 / 28。三个集合都由 `config/dev-dependencies.psd1` 与
+`config/product-release-gate.psd1` 共同 fail closed 绑定。父进程 argv 只传固定
+`ShardId`，worker 自己从已验 hash 的 lock 解析路径。每份 role evidence 都绑定
+engine、grant、inventory、repository manifest、classification 和 shard policy；
+父进程逐份严格 UTF-8 读取并在最终聚合前独立复验。
 
 每个 worker 都在 logger 单一进程级 UTF-8 入口之后向 stdout/stderr 写固定中文与
 非 BMP round-trip marker，父进程用严格 UTF-8 decoder 验回。worker 超时时必须杀死
 可用的完整进程树、有界 drain 管道，并输出 `CddsiSafeFailureEvidence` schema v3：
 包括当前 engine/role/shard、已完成 worker 的精确计划前缀、测试文件和通过断言计数。
-非超时 Pester shard 失败还必须从 worker evidence 文件读取最多 32 项
-repo-relative path、正整数 source line 与静态 `It` 名称；worker 和父进程分别把名称重新
-绑定到 tracked 源码 AST，禁止把任意 runtime/error 文本带入可分享证据。超时仍是 fail
-closed，部分进度不能冒充完整 PASS。
+非超时 Pester shard 失败必须从 worker evidence 文件读取全部 `FailedCount` 项；
+`FailedTestEvidenceTruncated` 保留为兼容字段但必须恒为 false。每项都含
+repo-relative path、正整数 source line、静态 `It` 名称和正整数 ErrorRecord count；
+worker 和父进程分别把全量名称重新绑定到 tracked 源码 AST，禁止把任意 runtime/error
+文本带入可分享证据。超时仍是 fail closed，部分进度不能冒充完整 PASS。
 
 可分享失败文本中的 path token 必须把 Windows 反斜杠、Git 正斜杠和混合分隔符视为
 同一路径，并使用 culture-invariant 的 ordinal-like ignore-case 语义；token 化后的
 disclosure validator 必须按同一规则复验。不得因当前 culture（包括 `tr-TR`）不同而
 保留 owner root、repository、tool 或 VM 私有绝对路径。
 
-外层 VM 批处理器不得把标准 `scripts/check.ps1` 的 `TEMP/TMP` 再重定向到深层
-evidence run-root。标准门会在正常 OS temporary root 中自行创建唯一
+外层 VM 批处理器不得把 `scripts/invoke-release-gates.ps1` 或 legacy
+`scripts/check.ps1` 的 `TEMP/TMP` 再重定向到深层 evidence run-root。HostSandbox
+会在正常 OS temporary root 中自行创建唯一
 `cddsi-test-<GUID>`，再把 worker 的 profile、HOME、TEMP、state 和 evidence 全部指向
 该 owner-marked sandbox；controller 的报告/evidence root 可以独立存放，但不能增加
 产品固定 `CDDsi\FastLane\packages|credentials` 路径的嵌套深度。
@@ -317,8 +327,22 @@ config 固定同值，使本地 receive-pack 不继承或修改 system/global Gi
 
 `bootstrap-dev.ps1` 已收敛为 verify-only 校验器：只检查仓库固定 Pester lock 与
 runtime tree，不下载、安装、导入或修改 PowerShellGet repository、CurrentUser
-module 和持久 `PSModulePath` 配置；它还验证 `QualityShards` 的 exact schema，
-完整测试文件 partition 和 policy hash。
+module 和持久 `PSModulePath` 配置。`QualityShards` 的 exact schema、完整 Pester
+partition 和 policy hash 由 `invoke-host-sandbox.ps1`、`check-worker.ps1` 与 Contract
+测试分别 fail closed 校验，不属于 bootstrap 的职责。
+
+`config/product-release-gate.psd1` 当前
+`EnforcementPhase=NamedProductReleaseGate`：47 个 `tests/` 资产精确分为 Product
+34 和 Historical 13，42 个 Pester 入口精确分为 29 和 13。具名 Product profile
+固定 8 shards / 18 workers / 21 trusted processes / 48 ledger；Historical 固定
+9 / 20 / 23 / 52；legacy `AllBlocking` 固定 13 / 28 / 31 / 68。
+`scripts/invoke-release-gates.ps1 -PassThru` 是 Product 与 Historical 的共同标准
+入口；legacy `scripts/check.ps1` 必须单列报告，不得冒充具名门 evidence。
+共同入口必须在 Product 与 Historical 都已尝试后才终止；失败 evidence 分别绑定
+两条路径的完整 safe payload、canonical hash 和 `BOUND|UNAVAILABLE|
+REJECTED_UNSAFE` 状态。stderr 只允许输出具名的
+`CDDSI_NAMED_GATE_FAILURE_EVIDENCE_V1` JSON，不得输出 child 原始异常文本，不得按
+失败条数或 payload 长度静默截断。
 
 ## Fake Provider 与调用账本
 
@@ -364,16 +388,19 @@ REPOSITORY_CONTENT_CHANGED = false
 `TRUSTED_HARNESS_PROCESS_COUNT` 可以大于零，但必须与场景声明的 pwsh/Pester/Git
 精确序列一致。dependency bootstrap 独立运行，不计入产品测试通过证据。
 
-当前完整质量 evidence 必须精确包含 31 个 trusted process（Git inventory、双引擎
-各 1 Static + 13 shards、两个 Git diff）和 68 条最终 harness ledger；顶层
-`WORKER_EVIDENCE` 仍只包含两个经验证的 engine 聚合对象。
+ProductReleaseGate 的质量 evidence 必须精确包含 21 个 trusted process 和 48 条
+最终 harness ledger；HistoricalDiagnostics 必须精确包含 23 和 52。legacy
+`AllBlocking` evidence 仍为 31 和 68。三个 profile 的顶层 `WORKER_EVIDENCE` 都只
+包含两个经验证的 engine 聚合对象；计数不得跨 profile 借用。
 
 TestSafe/DryRun 的每个 mutation spy 调用次数必须为零，返回结果必须
 `Changed=false`。
 
 ## 静态门
 
-`scripts/check.ps1` 和 Pester Contract 当前强制：
+`scripts/invoke-release-gates.ps1`、`scripts/product-release-gate.ps1`、
+`scripts/historical-diagnostics.ps1`、`scripts/quality-set-policy.ps1`、legacy
+`scripts/check.ps1` 和 Pester Contract 当前共同强制：
 
 - 只有精确列出的 live adapter 可以引用产品系统 API。
 - 只有精确列出的 trusted harness 可以创建 sandbox、启动测试工具或执行受限
