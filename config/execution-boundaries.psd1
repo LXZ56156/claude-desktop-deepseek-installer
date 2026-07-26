@@ -31,12 +31,19 @@
 
         Tests = @(
             'tests/Unit/Common.Tests.ps1'
+            'tests/Unit/D027ClaudeDownloadReceipt.Tests.ps1'
+            'tests/Unit/D027ClaudeMsixManifest.Tests.ps1'
+            'tests/Unit/D027GitWinVerifyTrust.Tests.ps1'
+            'tests/Unit/D027SnapshotAuthorization.Tests.ps1'
             'tests/Unit/ExecutionContext.Tests.ps1'
             'tests/Unit/FakeProviders.Tests.ps1'
+            'tests/Unit/GitForWindowsObserver.Tests.ps1'
             'tests/Unit/State.Tests.ps1'
             'tests/Unit/StateStore.Tests.ps1'
             'tests/Unit/DeepSeekApi.Tests.ps1'
             'tests/Unit/EnvironmentReadiness.Tests.ps1'
+            'tests/Contract/D027ClaudeDesktopInstallerLive.Tests.ps1'
+            'tests/Contract/D027GitInstallerLive.Tests.ps1'
             'tests/Contract/PublicFunctions.Tests.ps1'
             'tests/Contract/SafetyBoundary.Tests.ps1'
             'tests/Contract/Config.Tests.ps1'
@@ -105,6 +112,7 @@
         )
 
         PolicyData = @(
+            'config/d027-snapshot-authority.psd1'
             'config/public-functions.psd1'
             'config/execution-boundaries.psd1'
             'config/dev-dependencies.psd1'

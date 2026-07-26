@@ -1,6 +1,6 @@
 # 架构
 
-更新日期：2026-07-25
+更新日期：2026-07-26
 
 ## D-027 当前架构
 
@@ -144,9 +144,17 @@ TestSafe/DryRun 测试缺 fake provider 时失败，不能回退到真实环境�
 
 `d027-snapshot-authorization.ps1` 是 D-027 外部 clean-snapshot authority、
 receipt、平台绑定和 process-scoped Git session 的窄公共核心；它在
-`execution-context.ps1` 后、Claude/Git 领域模块前加载。当前公开 receipt validator
-仍只授权 `InstallGitForWindows`，不能授权 Claude；独立
-`ProvisionClaudeDesktopMachineWide` workload 尚未实现。
+`execution-context.ps1` 后、Claude/Git 领域模块前加载。纯 common-proof validator
+只验证共享 schema、平台、时间窗、调用方绑定的 execution artifact 和 RSA proof；
+它不选择 operation、不比较 domain workload pairing，也不建立 session。Git wrapper
+固定 `InstallGitForWindows`，Claude wrapper 固定
+`ProvisionClaudeDesktopMachineWide`，两者不接受 caller-selectable operation 或
+workload token。Claude workload descriptor 绑定候选 commit/tree/ZIP/内容清单/SBOM、
+credential helper 源码与 PE、Claude MSIX 内容、下载/held-file/manifest/package
+identity/signature evidence token，并把 receipt 的 execution artifact 固定为候选 ZIP。
+这些 evidence token 在本层只作引用绑定，形状正确不等于 signer、publisher、下载或
+held-handle 已获信任。Claude process-scoped session、Enable/Assert 和 Live machine-wide
+provisioning 仍未实现；production snapshot authority 仍为 `Configured=false`。
 
 领域模块之间不形成循环依赖，也不能直接调用系统 cmdlet/.NET I/O。跨域协调只在
 orchestrator。acceptance 消费结果，不成为安装实现的依赖。

@@ -16,12 +16,14 @@ GIT_INSTALLER_WINVERIFYTRUST_IDENTITY_TOCTOU_IMPLEMENTED /
 GIT_SILENT_INSTALL_GLOBAL_CONFIG_SAFE_POLICY_EXIT_AND_PATH_READBACK_IMPLEMENTED /
 GIT_VM_ACCEPTANCE_RSA_SNAPSHOT_SESSION_GATE_IMPLEMENTED_CONFIGURED_FALSE /
 D027_SNAPSHOT_AUTHORIZATION_CORE_EXTRACTED_GIT_BEHAVIOR_PRESERVED /
+D027_SNAPSHOT_PRIVATE_COMMON_PROOF_AND_FIXED_DOMAIN_WRAPPERS_IMPLEMENTED /
 GIT_LIVE_INSTALL_BLOCKED_PENDING_CANDIDATE_WORKLOAD_BINDING /
 CLAUDE_OFFICIAL_X64_STANDARD_SOURCE_DESCRIPTOR_IMPLEMENTED_UNRESOLVED /
 CLAUDE_BOUNDED_MSIX_MANIFEST_PARSER_IMPLEMENTED_PROVISIONAL_IDENTITY /
 CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
-CLAUDE_SNAPSHOT_WORKLOAD_NOT_YET_IMPLEMENTED /
+CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
+CLAUDE_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
 CLAUDE_DOWNLOAD_SIGNATURE_MACHINE_PROVISION_NOT_YET_IMPLEMENTED /
 REAL_READ_ONLY_GIT_2_54_OBSERVED /
 GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
@@ -30,7 +32,59 @@ REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
 
-### D-027 当前 snapshot authorization 核心解耦批次
+### D-027 当前 Claude machine-wide snapshot workload 纯合同批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`0de0581b72362cb63bfa6b5fa8109c1c48de2523`、tree
+`9b539696ac7fd3c42f7bcab4fc44ece60edc2ae8`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批只建立 Claude machine-wide candidate workload 的纯 descriptor/binding 与固定
+receipt-domain validator；没有建立 Claude process-scoped session、Enable/Assert 或
+任何 Live 行为，也没有执行产品网络、下载、文件/注册表写入、进程、UAC 或安装。
+
+- `cddsi-d027-claude-machine-wide-snapshot-workload-v1` 是精确 30 字段合同，固定
+  `ClaudeDesktopMachineWide`、`VmAcceptance` 三元组和
+  `ProvisionClaudeDesktopMachineWide`。它绑定 run、candidate commit/tree/ZIP/
+  content manifest/SBOM、credential helper source/PE/build/signature evidence，
+  以及 Claude MSIX content/download receipt/held-file/manifest/package identity/
+  signature evidence；commit/tree 只接受 lowercase nonzero 40-hex，全部 SHA/token
+  只接受 lowercase nonzero 64-hex。
+- 四个长度字段要求严格整数且固定上限：candidate ZIP 1 GiB、SBOM 8 MiB、
+  credential-helper PE 100 MiB、Claude MSIX 1 GiB。Claude MSIX content token 必须
+  由既有 SHA-256 + length 绑定重算；完整 descriptor 再进入独立
+  `cddsi-d027-claude-machine-wide-snapshot-workload-binding-v1` domain-separated token。
+- 共享 receipt proof 是 script-scoped、强类型 `System.Func` 委托，不是可由
+  `Get-Command` 发现的命令，也不接受 operation/workload selector。Git/Claude 两个
+  公开 wrapper 分别固定 `InstallGitForWindows` /
+  `ProvisionClaudeDesktopMachineWide` 和对应 workload pairing；Claude receipt 的
+  `ExecutionArtifactSha256` 必须等于 descriptor 的 `CandidateZipSha256`。重算
+  receipt binding 并重新做有效 RSA 签名的跨域 operation/token 配对仍被两个 wrapper
+  拒绝；Git wrapper 的 API、session 调用点、状态、错误码和消息保持不变。窄
+  D-027 AST focused gate 冻结 common proof 为 0 个 FunctionDefinition、1 个
+  script-scoped typed delegate assignment、恰好 2 个固定 `.Invoke`，并要求 0 个
+  dynamic/ampersand command 和 0 个 reflection finding。
+- helper/signature/manifest/package/download/held-file token 在本层只作引用绑定；
+  token 形状正确不等于 signer、publisher、identity 或 held-handle 已获信任。
+  当前没有 Claude session Enable/Assert，production snapshot authority 继续
+  `Configured=false`，所以本批不能成立 destructive Claude authorization。
+- `execution-boundaries.psd1` 已把 production snapshot authority 配置归入
+  `PolicyData`，并把 7 个既有 D-027/Git focused test 归入 `Tests`；108 个已跟踪
+  PowerShell source 与 108 个 plane entry 精确相等，无 duplicate、missing 或
+  unclassified。
+
+本批最终 Windows PowerShell 5.1 focused 结果为：
+`D027SnapshotAuthorization` 21/21、`D027GitInstallerLive` 18/18、
+`D027GitWinVerifyTrust` 4/4、`PublicFunctions` 4/4、`Config` 18/18，以及
+`LiveAdapters` 中仅与当前 bootstrap graph 相关的 filter 1/1；合计 66 passed、
+0 failed、0 skipped、0 inconclusive，filter 有 5 not-run；`Encoding` 另为 4/4。
+tracked 共 179 files 中 108 个 PowerShell source parser 为
+0 error，`git diff --check` 通过。release manifest 为 schema 1、41 package files、
+138 development-only files，duplicate/overlap/missing/unclassified/unknown 均为 0；
+179 个 inventory 和 41 个 package files 的独立 secret scan 均为 0 findings，
+顶层 evidence/artifact/report/log root 为 0。当前不是候选、Claude signer proof、
+clean-snapshot acceptance 或发布证据。
+
+### D-027 前序已推送 snapshot authorization 核心解耦批次
 
 本批的精确 parent 为已普通 fast-forward 推送的 commit
 `015421bba4207d24507e6320e582bdf959832a78`、tree

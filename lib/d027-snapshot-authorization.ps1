@@ -2,6 +2,12 @@
 # Loading this file defines contracts only and performs no host observation or mutation.
 
 $script:CddsiD027ExternalSnapshotReceiptMaximumBytes = [long](32KB)
+$script:CddsiD027CandidateZipMaximumBytes = [long](1GB)
+$script:CddsiD027CandidateSbomMaximumBytes = [long](8MB)
+$script:CddsiD027CredentialHelperPeMaximumBytes = [long](100MB)
+$script:CddsiD027ClaudeSnapshotMsixMaximumBytes = [long](1GB)
+$script:CddsiD027ClaudeSnapshotWorkloadBindingDomain =
+    'cddsi-d027-claude-machine-wide-snapshot-workload-binding-v1'
 $script:CddsiD027SnapshotAuthorityPolicyFieldNames = @(
     'SchemaVersion',
     'ContractVersion',
@@ -43,6 +49,38 @@ $script:CddsiD027ExternalSnapshotReceiptFieldNames = @(
     'ExpiresAtUtc',
     'WorkloadBindingToken',
     'ReceiptBindingToken'
+)
+$script:CddsiD027ClaudeSnapshotWorkloadFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'WorkloadKind',
+    'RunId',
+    'Stage',
+    'EnvironmentTier',
+    'ArtifactProfile',
+    'Operation',
+    'CandidateCommitSha',
+    'CandidateTreeSha',
+    'CandidateZipSha256',
+    'CandidateZipLengthBytes',
+    'CandidateContentManifestBindingToken',
+    'CandidateSbomSha256',
+    'CandidateSbomLengthBytes',
+    'CredentialHelperSourceTreeSha256',
+    'CredentialHelperSourceManifestSha256',
+    'CredentialHelperPeSha256',
+    'CredentialHelperPeLengthBytes',
+    'CredentialHelperBuildDescriptorBindingToken',
+    'CredentialHelperSignatureEvidenceBindingToken',
+    'ClaudeMsixSha256',
+    'ClaudeMsixLengthBytes',
+    'ClaudeMsixContentBindingToken',
+    'ClaudeDownloadReceiptBindingToken',
+    'ClaudeHeldFileIdentityToken',
+    'ClaudeManifestBindingToken',
+    'ClaudePackageIdentityBindingToken',
+    'ClaudeSignatureEvidenceBindingToken',
+    'WorkloadBindingToken'
 )
 $script:CddsiD027GitLiveSessionAuthorizationFieldNames = @(
     'SchemaVersion',
@@ -397,6 +435,167 @@ function Get-CddsiD027GitSnapshotWorkloadBindingToken {
     return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
 }
 
+function Get-CddsiD027ClaudeSnapshotWorkloadBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor
+    )
+
+    $withoutBinding = @(
+        $script:CddsiD027ClaudeSnapshotWorkloadFieldNames |
+            Where-Object { $_ -cne 'WorkloadBindingToken' }
+    )
+    $validNames = (
+        (Test-CddsiExactPropertySet `
+            -InputObject $WorkloadDescriptor `
+            -Expected $withoutBinding) -or
+        (Test-CddsiExactPropertySet `
+            -InputObject $WorkloadDescriptor `
+            -Expected $script:CddsiD027ClaudeSnapshotWorkloadFieldNames)
+    )
+    if (-not $validNames) {
+        throw 'D-027 Claude snapshot workload did not match the exact binding schema.'
+    }
+
+    $canonical = New-Object System.Collections.Generic.List[string]
+    $canonical.Add($script:CddsiD027ClaudeSnapshotWorkloadBindingDomain)
+    foreach ($name in $withoutBinding) {
+        $value = $WorkloadDescriptor.$name
+        $text = if ($value -is [string]) {
+            $value
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            [Convert]::ToString(
+                [long]$value,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+        else {
+            throw 'D-027 Claude snapshot workload contained an unsupported field type.'
+        }
+        $canonical.Add(
+            ('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text)
+        )
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function Test-CddsiD027ClaudeSnapshotWorkloadDescriptor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$WorkloadDescriptor
+    )
+
+    try {
+        if (
+            $null -eq $WorkloadDescriptor -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $WorkloadDescriptor `
+                -Expected $script:CddsiD027ClaudeSnapshotWorkloadFieldNames)
+        ) {
+            return $false
+        }
+
+        $runId = [guid]::Empty
+        if (
+            -not (Test-CddsiSchemaVersionOne -Value $WorkloadDescriptor.SchemaVersion) -or
+            $WorkloadDescriptor.ContractVersion -isnot [string] -or
+            $WorkloadDescriptor.ContractVersion -cne
+                'cddsi-d027-claude-machine-wide-snapshot-workload-v1' -or
+            $WorkloadDescriptor.WorkloadKind -isnot [string] -or
+            $WorkloadDescriptor.WorkloadKind -cne 'ClaudeDesktopMachineWide' -or
+            $WorkloadDescriptor.RunId -isnot [string] -or
+            -not [guid]::TryParse($WorkloadDescriptor.RunId, [ref]$runId) -or
+            $runId -eq [guid]::Empty -or
+            $WorkloadDescriptor.RunId -cne $runId.ToString('D') -or
+            $WorkloadDescriptor.Stage -isnot [string] -or
+            $WorkloadDescriptor.Stage -cne 'VmAcceptance' -or
+            $WorkloadDescriptor.EnvironmentTier -isnot [string] -or
+            $WorkloadDescriptor.EnvironmentTier -cne 'VmAcceptance' -or
+            $WorkloadDescriptor.ArtifactProfile -isnot [string] -or
+            $WorkloadDescriptor.ArtifactProfile -cne 'VmAcceptance' -or
+            $WorkloadDescriptor.Operation -isnot [string] -or
+            $WorkloadDescriptor.Operation -cne 'ProvisionClaudeDesktopMachineWide'
+        ) {
+            return $false
+        }
+
+        foreach ($name in @('CandidateCommitSha', 'CandidateTreeSha')) {
+            $value = $WorkloadDescriptor.$name
+            if (
+                $value -isnot [string] -or
+                $value -cnotmatch '^[a-f0-9]{40}$' -or
+                $value -cmatch '^0{40}$'
+            ) {
+                return $false
+            }
+        }
+        foreach ($name in @(
+            'CandidateZipSha256',
+            'CandidateContentManifestBindingToken',
+            'CandidateSbomSha256',
+            'CredentialHelperSourceTreeSha256',
+            'CredentialHelperSourceManifestSha256',
+            'CredentialHelperPeSha256',
+            'CredentialHelperBuildDescriptorBindingToken',
+            'CredentialHelperSignatureEvidenceBindingToken',
+            'ClaudeMsixSha256',
+            'ClaudeMsixContentBindingToken',
+            'ClaudeDownloadReceiptBindingToken',
+            'ClaudeHeldFileIdentityToken',
+            'ClaudeManifestBindingToken',
+            'ClaudePackageIdentityBindingToken',
+            'ClaudeSignatureEvidenceBindingToken',
+            'WorkloadBindingToken'
+        )) {
+            $value = $WorkloadDescriptor.$name
+            if (
+                $value -isnot [string] -or
+                $value -cnotmatch '^[a-f0-9]{64}$' -or
+                $value -cmatch '^0{64}$'
+            ) {
+                return $false
+            }
+        }
+
+        $lengthBounds = [ordered]@{
+            CandidateZipLengthBytes = $script:CddsiD027CandidateZipMaximumBytes
+            CandidateSbomLengthBytes = $script:CddsiD027CandidateSbomMaximumBytes
+            CredentialHelperPeLengthBytes =
+                $script:CddsiD027CredentialHelperPeMaximumBytes
+            ClaudeMsixLengthBytes =
+                $script:CddsiD027ClaudeSnapshotMsixMaximumBytes
+        }
+        foreach ($name in $lengthBounds.Keys) {
+            $value = $WorkloadDescriptor.$name
+            if (
+                (($value -isnot [int]) -and ($value -isnot [long])) -or
+                [long]$value -lt 1 -or
+                [long]$value -gt [long]$lengthBounds[$name]
+            ) {
+                return $false
+            }
+        }
+
+        $expectedContentBindingToken = Get-CddsiD027ClaudeContentBindingToken `
+            -ArtifactSha256 $WorkloadDescriptor.ClaudeMsixSha256 `
+            -ArtifactSizeBytes ([long]$WorkloadDescriptor.ClaudeMsixLengthBytes)
+        if (
+            $WorkloadDescriptor.ClaudeMsixContentBindingToken -cne
+                $expectedContentBindingToken -or
+            $WorkloadDescriptor.WorkloadBindingToken -cne
+                (Get-CddsiD027ClaudeSnapshotWorkloadBindingToken `
+                    -WorkloadDescriptor $WorkloadDescriptor)
+        ) {
+            return $false
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Test-CddsiD027CanonicalBase64 {
     [CmdletBinding()]
     param(
@@ -538,15 +737,15 @@ function Get-CddsiD027ExternalSnapshotReceiptBindingToken {
     return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
 }
 
-function Test-CddsiD027ExternalSnapshotReceipt {
-    [CmdletBinding()]
+$script:CddsiD027ExternalSnapshotReceiptCommonProof =
+    [Func[object, string, string, object, string, object, bool]]{
     param(
-        [Parameter(Mandatory = $true)]$Receipt,
-        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
-        [Parameter(Mandatory = $true)][string]$ExpectedExecutionArtifactSha256,
-        [Parameter(Mandatory = $true)]$PlatformObservation,
-        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
-        [Parameter(Mandatory = $true)]$AuthorityPolicy
+        $Receipt,
+        $ExpectedRunId,
+        $ExpectedExecutionArtifactSha256,
+        $PlatformObservation,
+        $ValidationTimeUtc,
+        $AuthorityPolicy
     )
 
     $rsa = $null
@@ -641,7 +840,10 @@ function Test-CddsiD027ExternalSnapshotReceipt {
             $Receipt.ArtifactProfile -isnot [string] -or
             $Receipt.ArtifactProfile -cne 'VmAcceptance' -or
             $Receipt.Operation -isnot [string] -or
-            $Receipt.Operation -cne 'InstallGitForWindows'
+            $Receipt.Operation -cnotin @(
+                'InstallGitForWindows',
+                'ProvisionClaudeDesktopMachineWide'
+            )
         ) {
             return $false
         }
@@ -768,12 +970,6 @@ function Test-CddsiD027ExternalSnapshotReceipt {
             return $false
         }
 
-        $expectedWorkloadBindingToken = Get-CddsiD027GitSnapshotWorkloadBindingToken `
-            -RunId $ExpectedRunId `
-            -ExecutionArtifactSha256 $ExpectedExecutionArtifactSha256
-        if ($Receipt.WorkloadBindingToken -cne $expectedWorkloadBindingToken) {
-            return $false
-        }
         $calculatedReceiptBindingToken =
             Get-CddsiD027ExternalSnapshotReceiptBindingToken -Receipt $Receipt
         if ($Receipt.ReceiptBindingToken -cne $calculatedReceiptBindingToken) {
@@ -813,6 +1009,94 @@ function Test-CddsiD027ExternalSnapshotReceipt {
     finally {
         if ($null -ne $sha) { $sha.Dispose() }
         if ($null -ne $rsa) { $rsa.Dispose() }
+    }
+}
+
+function Test-CddsiD027ExternalSnapshotReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][string]$ExpectedExecutionArtifactSha256,
+        [Parameter(Mandatory = $true)]$PlatformObservation,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
+        [Parameter(Mandatory = $true)]$AuthorityPolicy
+    )
+
+    try {
+        $expectedWorkloadBindingToken =
+            Get-CddsiD027GitSnapshotWorkloadBindingToken `
+                -RunId $ExpectedRunId `
+                -ExecutionArtifactSha256 $ExpectedExecutionArtifactSha256
+        if (
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Receipt `
+                -Expected $script:CddsiD027ExternalSnapshotReceiptFieldNames) -or
+            $Receipt.Operation -isnot [string] -or
+            $Receipt.Operation -cne 'InstallGitForWindows' -or
+            $Receipt.WorkloadBindingToken -isnot [string] -or
+            $Receipt.WorkloadBindingToken -cne $expectedWorkloadBindingToken
+        ) {
+            return $false
+        }
+        return $script:CddsiD027ExternalSnapshotReceiptCommonProof.Invoke(
+            $Receipt,
+            $ExpectedRunId,
+            $ExpectedExecutionArtifactSha256,
+            $PlatformObservation,
+            $ValidationTimeUtc,
+            $AuthorityPolicy
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-CddsiD027ClaudeExternalSnapshotReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt,
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)]$PlatformObservation,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
+        [Parameter(Mandatory = $true)]$AuthorityPolicy
+    )
+
+    try {
+        if (-not (Test-CddsiD027ClaudeSnapshotWorkloadDescriptor `
+            -WorkloadDescriptor $WorkloadDescriptor)) {
+            return $false
+        }
+        $parsedExpectedRunId = [guid]::Empty
+        if (
+            -not [guid]::TryParse($ExpectedRunId, [ref]$parsedExpectedRunId) -or
+            $parsedExpectedRunId -eq [guid]::Empty -or
+            $ExpectedRunId -cne $parsedExpectedRunId.ToString('D') -or
+            $WorkloadDescriptor.RunId -cne $ExpectedRunId -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Receipt `
+                -Expected $script:CddsiD027ExternalSnapshotReceiptFieldNames) -or
+            $Receipt.Operation -isnot [string] -or
+            $Receipt.Operation -cne 'ProvisionClaudeDesktopMachineWide' -or
+            $Receipt.WorkloadBindingToken -isnot [string] -or
+            $Receipt.WorkloadBindingToken -cne
+                $WorkloadDescriptor.WorkloadBindingToken
+        ) {
+            return $false
+        }
+        return $script:CddsiD027ExternalSnapshotReceiptCommonProof.Invoke(
+            $Receipt,
+            $ExpectedRunId,
+            $WorkloadDescriptor.CandidateZipSha256,
+            $PlatformObservation,
+            $ValidationTimeUtc,
+            $AuthorityPolicy
+        )
+    }
+    catch {
+        return $false
     }
 }
 
