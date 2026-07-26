@@ -13,6 +13,7 @@ $script:CddsiLibraryLoadOrder = @(
     'release-artifact.ps1',
     'state.ps1',
     'execution-context.ps1',
+    'd027-snapshot-authorization.ps1',
     'fake-providers.ps1',
     'state-store.ps1',
     'desktop-env-check.ps1',

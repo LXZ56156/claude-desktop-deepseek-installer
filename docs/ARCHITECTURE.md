@@ -132,6 +132,7 @@ TestSafe/DryRun 测试缺 fake provider 时失败，不能回退到真实环境�
 
 现有模块按领域保留：
 
+- `d027-snapshot-authorization.ps1`
 - `desktop-env-check.ps1`
 - `desktop-msix.ps1`
 - `git-for-windows.ps1`
@@ -140,6 +141,12 @@ TestSafe/DryRun 测试缺 fake provider 时失败，不能回退到真实环境�
 - `desktop-config.ps1`
 - `desktop-lifecycle.ps1`
 - `desktop-acceptance.ps1`
+
+`d027-snapshot-authorization.ps1` 是 D-027 外部 clean-snapshot authority、
+receipt、平台绑定和 process-scoped Git session 的窄公共核心；它在
+`execution-context.ps1` 后、Claude/Git 领域模块前加载。当前公开 receipt validator
+仍只授权 `InstallGitForWindows`，不能授权 Claude；独立
+`ProvisionClaudeDesktopMachineWide` workload 尚未实现。
 
 领域模块之间不形成循环依赖，也不能直接调用系统 cmdlet/.NET I/O。跨域协调只在
 orchestrator。acceptance 消费结果，不成为安装实现的依赖。

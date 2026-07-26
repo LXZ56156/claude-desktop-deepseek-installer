@@ -159,6 +159,57 @@ Describe 'D-027 signed external clean-snapshot receipt' {
         $script:CddsiD027GitLiveSessionAuthorization = $null
     }
 
+    It 'loads the extracted declaration-only core before Claude and Git domains' {
+        $corePath = Join-Path `
+            $script:RepoRoot `
+            'lib\d027-snapshot-authorization.ps1'
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            $corePath,
+            [ref]$tokens,
+            [ref]$errors
+        )
+        @($errors).Count | Should -Be 0
+        @(
+            $ast.EndBlock.Statements |
+                Where-Object {
+                    $_ -isnot [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst]
+                }
+        ).Count | Should -Be 0
+
+        $snapshotIndex = [Array]::IndexOf(
+            [string[]]$script:CddsiLibraryLoadOrder,
+            'd027-snapshot-authorization.ps1'
+        )
+        $executionContextIndex = [Array]::IndexOf(
+            [string[]]$script:CddsiLibraryLoadOrder,
+            'execution-context.ps1'
+        )
+        $desktopIndex = [Array]::IndexOf(
+            [string[]]$script:CddsiLibraryLoadOrder,
+            'desktop-msix.ps1'
+        )
+        $gitIndex = [Array]::IndexOf(
+            [string[]]$script:CddsiLibraryLoadOrder,
+            'git-for-windows.ps1'
+        )
+        $snapshotIndex | Should -BeGreaterThan $executionContextIndex
+        $desktopIndex | Should -BeGreaterThan $snapshotIndex
+        $gitIndex | Should -BeGreaterThan $snapshotIndex
+
+        foreach ($name in @(
+                'Test-CddsiD027ExternalSnapshotReceipt',
+                'Enable-CddsiD027GitLiveSessionAuthorization',
+                'Assert-CddsiD027GitLiveContext'
+            )) {
+            [IO.Path]::GetFileName(
+                (Get-Command $name -CommandType Function).ScriptBlock.File
+            ) | Should -BeExactly 'd027-snapshot-authorization.ps1'
+        }
+    }
+
     It 'accepts a valid ephemeral RSA-SHA256 PKCS#1 v1.5 signature' {
         $receipt = New-CddsiD027SnapshotReceiptFixture
         (Test-CddsiD027ExternalSnapshotReceipt `

@@ -15,11 +15,13 @@ GIT_PRIVATE_DLL_SET_PROTECTED_AND_BOUND /
 GIT_INSTALLER_WINVERIFYTRUST_IDENTITY_TOCTOU_IMPLEMENTED /
 GIT_SILENT_INSTALL_GLOBAL_CONFIG_SAFE_POLICY_EXIT_AND_PATH_READBACK_IMPLEMENTED /
 GIT_VM_ACCEPTANCE_RSA_SNAPSHOT_SESSION_GATE_IMPLEMENTED_CONFIGURED_FALSE /
+D027_SNAPSHOT_AUTHORIZATION_CORE_EXTRACTED_GIT_BEHAVIOR_PRESERVED /
 GIT_LIVE_INSTALL_BLOCKED_PENDING_CANDIDATE_WORKLOAD_BINDING /
 CLAUDE_OFFICIAL_X64_STANDARD_SOURCE_DESCRIPTOR_IMPLEMENTED_UNRESOLVED /
 CLAUDE_BOUNDED_MSIX_MANIFEST_PARSER_IMPLEMENTED_PROVISIONAL_IDENTITY /
 CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
+CLAUDE_SNAPSHOT_WORKLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_DOWNLOAD_SIGNATURE_MACHINE_PROVISION_NOT_YET_IMPLEMENTED /
 REAL_READ_ONLY_GIT_2_54_OBSERVED /
 GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
@@ -27,6 +29,51 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 snapshot authorization 核心解耦批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`015421bba4207d24507e6320e582bdf959832a78`、tree
+`473bd20e6a7478eb07af254a0c53ffe60c72331a`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批只做 snapshot authorization 代码归属和 bootstrap inventory 的机械解耦；
+没有改变 receipt schema、签名域、Git operation、session 状态、错误码、消息、
+重验位置或任何 Live 行为，也没有执行产品网络、文件/注册表写入、进程、UAC 或安装。
+
+- 新增 package library `lib/d027-snapshot-authorization.ps1`，在
+  `execution-context.ps1` 后、Claude/Git 领域模块前加载。外部 snapshot 的平台观察、
+  authority policy、RSA-SHA256 receipt binding/验签、held receipt 读取、
+  process-scoped Git session 和 Git bootstrap/live assert 共 14 个既有函数及其
+  script-scoped 常量/状态从 `git-for-windows.ps1` 原文移入该文件。
+- 对上一 commit 的原文件做 AST/function extent 与常量范围逐项比对，14/14
+  函数和全部移动常量的规范化文本完全相同；`Get-CddsiD027GitWinVerifyTrustResult`
+  和 `Install-CddsiGitForWindows` 仍由 `git-for-windows.ps1` 提供，全部既有调用名
+  与 mutation 前、Start-Process 前、readback 前的重新鉴权调用保持不变。
+- bootstrap、execution-boundaries、public-function inventory 和 release manifest
+  已同步到唯一新归属；default bootstrap 仍不加载 `live-adapters.ps1`。
+- 这次物理解耦本身不扩大授权。当前 external receipt validator 仍精确硬编码
+  `Operation=InstallGitForWindows` 并重新计算 Git workload token；因此 Git receipt
+  不能授权 Claude，Claude machine-wide provisioning 也还没有任何可成立 session。
+  下一批必须以私有 core + 两个固定 operation wrapper 建立独立
+  `ProvisionClaudeDesktopMachineWide` workload，不能公开 caller-selectable operation，
+  也不能读写或回退到 Git session。production authority 继续
+  `Configured=false`。
+
+本批 Windows PowerShell 5.1 focused 结果为：
+`D027SnapshotAuthorization` 13/13、`D027GitInstallerLive` 18/18、
+`D027GitWinVerifyTrust` 4/4、`PublicFunctions` 4/4、`Config` 18/18，以及
+`LiveAdapters` 中仅与当前 bootstrap graph 相关的 filter 1/1；合计 58 passed、
+0 failed、0 skipped、0 inconclusive，filter 有 5 not-run；`Encoding` 另为 4/4。
+一次非门的完整 `LiveAdapters` 诊断中，current bootstrap graph 断言通过，另有两个
+退役历史失败：旧 `FunctionDefinitionAst` digest 与通用 access-ledger counter
+静态断言。它们与本次搬移无关，按 D-027 范围不修复、不计入阻塞门。
+
+tracked 加 intended untracked 共 179 files 中 108 个 PowerShell source parser 为
+0 error，`git diff --check` 通过。release manifest 为 schema 1、41 package files、
+138 development-only files，duplicate/overlap/missing/unclassified/unknown 均为 0；
+179 个 inventory 和 41 个 package files 的独立 secret scan 均为 0 findings，
+顶层 evidence/artifact/report/log root 为 0。当前不是候选、snapshot authority
+配置、Claude authorization 或 clean-snapshot acceptance 证据。
 
 ### D-027 当前 Claude Desktop 纯下载收据与 held-file schema 批次
 

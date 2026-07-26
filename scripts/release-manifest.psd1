@@ -17,6 +17,7 @@
         'lib/release-facts.ps1'
         'lib/release-artifact.ps1'
         'lib/execution-context.ps1'
+        'lib/d027-snapshot-authorization.ps1'
         'lib/fake-providers.ps1'
         'lib/state.ps1'
         'lib/state-store.ps1'

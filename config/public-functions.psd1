@@ -171,7 +171,7 @@
             'Invoke-CddsiFakeProviderOperation'
             'Assert-CddsiFakeProviderExpectations'
         )
-        'lib/git-for-windows.ps1' = @(
+        'lib/d027-snapshot-authorization.ps1' = @(
             'Test-CddsiD027Windows11X64Platform'
             'Get-CddsiD027SnapshotPlatformObservation'
             'Get-CddsiD027GitSnapshotWorkloadBindingToken'
@@ -184,9 +184,11 @@
             'Read-CddsiD027ExternalSnapshotReceipt'
             'Enable-CddsiD027GitLiveSessionAuthorization'
             'Clear-CddsiD027GitLiveSessionAuthorization'
-            'Get-CddsiD027GitWinVerifyTrustResult'
             'Assert-CddsiD027GitLiveBootstrapContext'
             'Assert-CddsiD027GitLiveContext'
+        )
+        'lib/git-for-windows.ps1' = @(
+            'Get-CddsiD027GitWinVerifyTrustResult'
             'ConvertFrom-CddsiGitVersionProbeResult'
             'ConvertTo-CddsiGitInstallerReceiptVersion'
             'ConvertFrom-CddsiGitPeHeader'
