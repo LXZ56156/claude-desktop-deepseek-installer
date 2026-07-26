@@ -168,12 +168,40 @@ provisioning 仍未实现；production snapshot authority 仍为 `Configured=fal
 必须是与解析后 `RawData` 精确相等、不含 private key 的单一 DER。
 
 这一层只验证 evidence claim 的结构与相互一致性，没有 native WinVerifyTrust、I/O、
-held-handle producer、policy、session 或 Live authority，固定
-Trusted/`0x00000000`/Verify→Extract→Close 仍只是被校验的自报告字段。未来私有
-producer 必须持有最终 MSIX 的同一文件句柄，在 WinVerifyTrust VERIFY 后通过同一
-state data 提取 primary signer，再执行 CLOSE；不得使用
-`Get-AuthenticodeSignature`，也不得按路径重新打开文件。只有 producer 内部创建且
-未外泄的 same-state evidence 才能由后续 Claude process-scoped session 消费。
+authoritative held-handle producer、policy、session 或 Live authority，固定
+Trusted/`0x00000000`/Verify→Extract→Close 仍只是被校验的自报告字段。
+
+新增的 D-027 Claude native observation 是 script-scoped 强类型 delegate，不是
+PowerShell command，也没有任何 session consumer。它只在 Win11 Workstation、
+native AMD64、64-bit Windows PowerShell 5.1 下借用 caller-owned readable/seekable/
+non-writable `FileStream`。native type 对 SafeHandle 保持 add-ref，由同一 handle
+取得 WinTrust 所要求的 canonical path，并把 required path 与 raw handle 一起传入
+`WinVerifyTrustEx` Generic Verify V2；产品代码不按路径重开。字段名
+`CallerFileHandleSupplied` 是刻意的：它只证明 handle 被提供，`fOpenedFile=false`
+也只证明 trust provider 未自行 open file，二者都不夸称每个 OS/SIP 内部读取一定
+使用该 handle。
+
+native observation 在同一个 WVT state 中依次取得 provider data、唯一 primary
+signer index 0/non-countersigner、certificate index 0，并在 CLOSE 前把 256–12,288
+byte 的公开 DER 复制到 managed memory。`WINTRUST_SIGNATURE_SETTINGS` 用非零 output
+sentinel 请求 secondary-signature count，必须观察到 verified index 0、secondary
+count 0；provider state 另须恰好一个 primary signer。每个已返回的 VERIFY 都必须在
+`finally` CLOSE，同一 GUID/data/path/file-info/handle/signature-settings allocation
+保持到 CLOSE 返回，只有 native VERIFY/CLOSE 都精确为 0 才保留 DER。no-revocation +
+cache-only 只证明本次未检查吊销且不允许 WVT 网络获取，不证明证书未吊销。
+
+VERIFY 前与 CLOSE 后从同一 handle 比较 file attributes、creation/write time、
+volume/file index、size、link count，并重新解析 final path、重算 path binding。
+stream position 随后恢复，caller handle 不由 primitive 关闭。这里仍不是完整 artifact
+authority：read-only stream 无法反推 caller 使用的 share mode，稳定 file facts 也
+不是 byte-level hash equality。未来真实 downloader 必须在内部以 `FileShare.Read`
+创建并持有最终 handle，在该锁定 stream 上做 pre/post SHA-256、raw manifest、
+download receipt、held identity/content、publisher/signer policy 的完整组合；成功
+CLOSE 后才能创建 30 字段 evidence。只有该 downloader-owned、未外泄 producer 以及
+真实 policy 完成后，后续 Claude process-scoped session 才可能消费其结果。当前
+unsigned 负路径与 ABI/static lifecycle 已验证，真实官方 MSIX 的 positive
+provider-reopen、secondary/primary signer、DER/publisher 行为仍是 disposable VM
+clean-snapshot calibration gate。
 
 领域模块之间不形成循环依赖，也不能直接调用系统 cmdlet/.NET I/O。跨域协调只在
 orchestrator。acceptance 消费结果，不成为安装实现的依赖。

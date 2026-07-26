@@ -23,6 +23,7 @@ CLAUDE_BOUNDED_MSIX_MANIFEST_PARSER_IMPLEMENTED_PROVISIONAL_IDENTITY /
 CLAUDE_MANIFEST_RAW_CONTENT_AND_IDENTITY_BINDING_IMPLEMENTED /
 CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
 CLAUDE_SAME_STATE_SIGNER_EVIDENCE_PURE_CONTRACT_IMPLEMENTED /
+CLAUDE_PRIVATE_SAME_STATE_NATIVE_OBSERVATION_IMPLEMENTED_NEGATIVE_ONLY /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
 CLAUDE_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
@@ -33,6 +34,85 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 Claude MSIX 私有 same-state native observation 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`4f8544b5588548d0688b2f4d72d838faa178f43a`、tree
+`58767424a70d76af0312dc1895e269f90d8171c2`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批只建立 Win11 x64 / Windows PowerShell 5.1 下的私有、瞬态、只观察 native
+primitive；没有执行产品网络、真实 Claude 下载、AppX/DISM、进程、注册表、UAC 或
+安装，没有读取任何真实 Claude 配置，也没有建立 Claude session、Live authority 或
+30 字段 authoritative evidence producer。
+
+- `cddsi-d027-claude-msix-same-state-native-observation-v1` 是精确 22 字段的
+  path-free 瞬态观察。它通过 script-scoped 强类型
+  `System.Func[FileStream,object]` 调用按版本命名的 C# native type；没有新增
+  `FunctionDefinitionAst`、公开命令或 session 调用点。native type 只在第一次私有
+  调用时编译，随后要求同一 type reference 与 assembly identity；干净 sentinel 下
+  若精确类型已预载则 fail closed。这个防护只针对由产品入口创建的 fresh trusted
+  PS5.1 process，在同一 script scope 已被任意代码控制后不声称能自我防御。
+- runtime 门通过 `RtlGetVersion` 要求 build 至少 22000 且
+  `VER_NT_WORKSTATION`，再通过 `IsWow64Process2(GetCurrentProcess)` 要求 process
+  machine 为 native、native machine 精确为 AMD64；PowerShell wrapper 另要求
+  5.1 与 64-bit process/OS。Windows Server、ARM64 及其 x64 仿真均不得成为成功
+  observation。
+- primitive 只借用调用方已打开、readable/seekable/non-writable 的
+  `FileStream`，对 `SafeFileHandle` 做 `DangerousAddRef`，由该 handle 取得 required
+  canonical final path。`WINTRUST_FILE_INFO` 同时携带 required path 和同一个 raw
+  handle；本项目代码不按路径重开，也不使用 `Get-AuthenticodeSignature`。
+  `CallerFileHandleSupplied=true` 只表示 handle 被传给 WinTrust，不夸称所有 OS/SIP
+  读取都必然使用它。成功还要求 provider 的 `fOpenedFile=false`；这只表示 provider
+  没有自行 open file。
+- native 生命周期固定为 `WinVerifyTrustEx` Generic Verify V2、no UI、
+  `WTD_REVOKE_NONE`、cache-only/no revocation network、install UI context：
+  `VERIFY -> provider data -> primary signer[0,false,0] -> cert[0] -> bounded DER
+  copy -> CLOSE`。只接受 native LONG 精确为 0；每个已返回的 VERIFY 都在 `finally`
+  对同一 data/GUID 执行 CLOSE，CLOSE 不为 0、指针/header/DER 异常或清理失败都清空
+  DER 并 fail closed。provider-owned certificate context 不由产品释放。
+- `WINTRUST_SIGNATURE_SETTINGS` 以两个 `UInt32.MaxValue` output sentinel 请求
+  `WSS_GET_SECONDARY_SIG_COUNT`；两个输出必须实际改变，verified index 必须为 0，
+  secondary signature count 必须为 0。返回的 provider state 另要求恰好一个
+  non-countersigner primary signer。官方实物若出现 secondary/multiple signer，
+  必须停在精确人工架构决定，不能任选一个签名。
+- VERIFY 前与 CLOSE 后都从同一 handle 比较 attributes、creation/write time、
+  volume serial、size、link count 和 file index，并重新取得 final path、重算其
+  binding；任一变化都 fail closed。调用方 stream 的原 position 必须恢复，handle
+  仍由调用方拥有。这里仍没有 same-handle pre/post SHA-256、manifest、download
+  receipt 或 NTFS/ownership 全量组合，因此稳定 file facts 不是 byte-level TOCTOU
+  proof，也不能单独授权安装。未来真实 downloader 必须内部以 `FileShare.Read`
+  创建并持有最终 handle，再在同一锁定 stream 中做两次 content hash、manifest/
+  receipt/held-file 关联和最终 readback。
+- 本机 PS5.1 只使用新建、未签名的 `TestDrive`/temp `.msix` 验证负路径：
+  WVT 返回 path-free `UnsupportedSubject` / `0x800B0003`，CLOSE 为
+  `0x00000000`，final path/file facts 稳定、stream position 恢复且 caller handle
+  仍可用；没有正向声称 Anthropic signer/publisher。x64 ABI 实测固定为 OS version
+  284、file info 32、trust data 88、signature settings 32、handle facts 52、
+  provider prefix 136（`csSigners` offset 120）、signer 24、provider cert 16、
+  `CERT_CONTEXT` 40 bytes。独立 fresh PS5.1 对抗探测先预载精确 type 后得到
+  `NativeTypeUnavailable`、Trusted=false、path token null，native sentinel 未被接受。
+
+本批最终在彼此独立的 fresh Windows PowerShell 5.1 进程中运行必要 focused 门：
+same-state signer 8/8、signature evidence 7/7、manifest 5/5、download receipt
+10/10、public functions 4/4、config 18/18，以及只筛选默认 bootstrap graph
+disjointness 的 LiveAdapters 1/1，共 53 passed、0 failed/skipped/inconclusive；
+LiveAdapters 中其余 5 个非筛选用例为 not run。Encoding 另为 4/4。181 个
+tracked/untracked inventory 由 release manifest 精确分成 41 个 package files 与
+140 个 development-only files，无 overlap/duplicate/missing/unknown；110 个
+PowerShell sources 与 110 个 execution-boundary entries 精确相等，其中 Tests plane
+52 个，PS5.1 parser 为 0 errors。181 个 inventory、41 个 package files 和 0 个
+evidence paths 的独立 stream secret scan 均为 0 findings；顶层
+evidence/artifact/report/log root 为 0，`git diff --check` 通过。没有运行退役历史
+测试、ProductReleaseGate 或 PS7 parity。
+
+当前 private observation 不证明 Anthropic identity、证书未吊销、official source/
+download receipt、完整内容在 VERIFY 前后相同、manifest Publisher 绑定、snapshot
+authority、安装或机器状态。`RevocationMode=NotChecked` 只表示本次未做 revocation
+check 且禁止 WVT 网络获取。真实官方 Claude MSIX 的正向 `ProviderOpenedFile=false`、
+secondary count 0、primary count 1、DER copy-before-close 与 publisher 关联仍必须在
+disposable VM clean snapshot 上校准；在此之前不建立 downloader-owned producer 或
+Claude session。
 
 ### D-027 当前 Claude MSIX raw-manifest 与 same-state signer claim 纯合同批次
 

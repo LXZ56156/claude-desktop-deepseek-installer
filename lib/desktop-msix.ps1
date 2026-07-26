@@ -96,6 +96,1236 @@ $script:CddsiD027ClaudeMsixSignatureEvidenceFieldNames = @(
     'EvidenceBindingToken'
 )
 
+if (
+    $null -eq (Get-Variable `
+        -Name CddsiD027ClaudeMsixSameStateSignerNativeType `
+        -Scope Script `
+        -ErrorAction SilentlyContinue)
+) {
+    $script:CddsiD027ClaudeMsixSameStateSignerNativeType = $null
+}
+if (
+    $null -eq (Get-Variable `
+        -Name CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName `
+        -Scope Script `
+        -ErrorAction SilentlyContinue)
+) {
+    $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName = $null
+}
+
+$script:CddsiD027ClaudeMsixSameStateSignerNativeTypeDefinition = @'
+using System;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace Cddsi.D027 {
+    public static class ClaudeMsixSameStateWinVerifyTrustV1 {
+        private const uint WTD_UI_NONE = 2;
+        private const uint WTD_REVOKE_NONE = 0;
+        private const uint WTD_CHOICE_FILE = 1;
+        private const uint WTD_STATEACTION_VERIFY = 1;
+        private const uint WTD_STATEACTION_CLOSE = 2;
+        private const uint WTD_REVOCATION_CHECK_NONE = 0x10;
+        private const uint WTD_CACHE_ONLY_URL_RETRIEVAL = 0x1000;
+        private const uint WTD_DISABLE_MD2_MD4 = 0x2000;
+        private const uint WTD_UICONTEXT_INSTALL = 1;
+        private const uint WSS_GET_SECONDARY_SIG_COUNT = 0x2;
+        private const int MinimumCertificateBytes = 256;
+        private const int MaximumCertificateBytes = 12288;
+        private const long MaximumArtifactBytes = 1073741824;
+        private const int Windows11MinimumBuild = 22000;
+        private const byte VER_NT_WORKSTATION = 1;
+        private const ushort IMAGE_FILE_MACHINE_UNKNOWN = 0;
+        private const ushort IMAGE_FILE_MACHINE_AMD64 = 0x8664;
+        private const uint FILE_ATTRIBUTE_DIRECTORY = 0x10;
+        private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x400;
+
+        private static readonly Guid GenericVerifyV2 =
+            new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
+        private static readonly IntPtr InvalidWindowHandle = new IntPtr(-1);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct RTL_OSVERSIONINFOEXW {
+            internal uint dwOSVersionInfoSize;
+            internal uint dwMajorVersion;
+            internal uint dwMinorVersion;
+            internal uint dwBuildNumber;
+            internal uint dwPlatformId;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            internal string szCSDVersion;
+
+            internal ushort wServicePackMajor;
+            internal ushort wServicePackMinor;
+            internal ushort wSuiteMask;
+            internal byte wProductType;
+            internal byte wReserved;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WINTRUST_FILE_INFO {
+            internal uint cbStruct;
+            internal IntPtr pcwszFilePath;
+            internal IntPtr hFile;
+            internal IntPtr pgKnownSubject;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WINTRUST_DATA {
+            internal uint cbStruct;
+            internal IntPtr pPolicyCallbackData;
+            internal IntPtr pSIPClientData;
+            internal uint dwUIChoice;
+            internal uint fdwRevocationChecks;
+            internal uint dwUnionChoice;
+            internal IntPtr pFile;
+            internal uint dwStateAction;
+            internal IntPtr hWVTStateData;
+            internal IntPtr pwszURLReference;
+            internal uint dwProvFlags;
+            internal uint dwUIContext;
+            internal IntPtr pSignatureSettings;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WINTRUST_SIGNATURE_SETTINGS {
+            internal uint cbStruct;
+            internal uint dwIndex;
+            internal uint dwFlags;
+            internal uint cSecondarySigs;
+            internal uint dwVerifiedSigIndex;
+            internal IntPtr pCryptoPolicy;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION {
+            internal uint FileAttributes;
+            internal FILETIME_NATIVE CreationTime;
+            internal FILETIME_NATIVE LastAccessTime;
+            internal FILETIME_NATIVE LastWriteTime;
+            internal uint VolumeSerialNumber;
+            internal uint FileSizeHigh;
+            internal uint FileSizeLow;
+            internal uint NumberOfLinks;
+            internal uint FileIndexHigh;
+            internal uint FileIndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CRYPT_PROVIDER_DATA_SIGNERS_PREFIX {
+            internal uint cbStruct;
+            internal IntPtr pWintrustData;
+            internal int fOpenedFile;
+            internal IntPtr hWndParent;
+            internal IntPtr pgActionID;
+            internal IntPtr hProv;
+            internal uint dwError;
+            internal uint dwRegSecuritySettings;
+            internal uint dwRegPolicySettings;
+            internal IntPtr psPfns;
+            internal uint cdwTrustStepErrors;
+            internal IntPtr padwTrustStepErrors;
+            internal uint chStores;
+            internal IntPtr pahStores;
+            internal uint dwEncoding;
+            internal IntPtr hMsg;
+            internal uint csSigners;
+            internal IntPtr pasSigners;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME_NATIVE {
+            internal uint dwLowDateTime;
+            internal uint dwHighDateTime;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CRYPT_PROVIDER_SGNR_HEAD {
+            internal uint cbStruct;
+            internal FILETIME_NATIVE sftVerifyAsOf;
+            internal uint csCertChain;
+            internal IntPtr pasCertChain;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CRYPT_PROVIDER_CERT_HEAD {
+            internal uint cbStruct;
+            internal IntPtr pCert;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CERT_CONTEXT {
+            internal uint dwCertEncodingType;
+            internal IntPtr pbCertEncoded;
+            internal uint cbCertEncoded;
+            internal IntPtr pCertInfo;
+            internal IntPtr hCertStore;
+        }
+
+        public sealed class AbiSizes {
+            public int OsVersionInfoEx;
+            public int WinTrustFileInfo;
+            public int WinTrustData;
+            public int WinTrustSignatureSettings;
+            public int ByHandleFileInformation;
+            public int ProviderDataSignersPrefix;
+            public int ProviderSignersOffset;
+            public int ProviderSignerHead;
+            public int ProviderCertHead;
+            public int CertContext;
+        }
+
+        public sealed class Observation {
+            public bool Trusted;
+            public string Status;
+            public string NativeStatusHex;
+            public bool CallerFileHandleSupplied;
+            public bool FinalPathStableAcrossVerification;
+            public bool FileFactsStableAcrossVerification;
+            public Nullable<bool> ProviderOpenedFile;
+            public Nullable<uint> PrimarySignerCount;
+            public Nullable<uint> SecondarySignatureCount;
+            public bool StateCloseCompleted;
+            public string StateCloseNativeStatusHex;
+            public bool StreamPositionRestored;
+            public string FinalPathBindingToken;
+            public byte[] PrimarySignerCertificateDerBytes;
+            public Nullable<uint> PrimarySignerCertificateDerLengthBytes;
+        }
+
+        [DllImport("ntdll.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RtlGetVersion(
+            ref RTL_OSVERSIONINFOEXW versionInformation);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern IntPtr GetCurrentProcess();
+
+        [DllImport(
+            "kernel32.dll",
+            ExactSpelling = true,
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWow64Process2(
+            IntPtr processHandle,
+            out ushort processMachine,
+            out ushort nativeMachine);
+
+        [DllImport(
+            "kernel32.dll",
+            CharSet = CharSet.Unicode,
+            ExactSpelling = true,
+            SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(
+            IntPtr fileHandle,
+            StringBuilder path,
+            uint capacity,
+            uint flags);
+
+        [DllImport(
+            "kernel32.dll",
+            ExactSpelling = true,
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandle(
+            IntPtr fileHandle,
+            out BY_HANDLE_FILE_INFORMATION information);
+
+        [DllImport(
+            "wintrust.dll",
+            EntryPoint = "WinVerifyTrustEx",
+            ExactSpelling = true)]
+        private static extern int WinVerifyTrustEx(
+            IntPtr windowHandle,
+            ref Guid actionId,
+            ref WINTRUST_DATA trustData);
+
+        [DllImport(
+            "wintrust.dll",
+            EntryPoint = "WTHelperProvDataFromStateData",
+            ExactSpelling = true)]
+        private static extern IntPtr WTHelperProvDataFromStateData(
+            IntPtr stateData);
+
+        [DllImport(
+            "wintrust.dll",
+            EntryPoint = "WTHelperGetProvSignerFromChain",
+            ExactSpelling = true)]
+        private static extern IntPtr WTHelperGetProvSignerFromChain(
+            IntPtr providerData,
+            uint signerIndex,
+            [MarshalAs(UnmanagedType.Bool)] bool counterSigner,
+            uint counterSignerIndex);
+
+        [DllImport(
+            "wintrust.dll",
+            EntryPoint = "WTHelperGetProvCertFromChain",
+            ExactSpelling = true)]
+        private static extern IntPtr WTHelperGetProvCertFromChain(
+            IntPtr providerSigner,
+            uint certificateIndex);
+
+        public static AbiSizes GetAbiSizes() {
+            AbiSizes result = new AbiSizes();
+            result.OsVersionInfoEx =
+                Marshal.SizeOf(typeof(RTL_OSVERSIONINFOEXW));
+            result.WinTrustFileInfo =
+                Marshal.SizeOf(typeof(WINTRUST_FILE_INFO));
+            result.WinTrustData =
+                Marshal.SizeOf(typeof(WINTRUST_DATA));
+            result.WinTrustSignatureSettings =
+                Marshal.SizeOf(typeof(WINTRUST_SIGNATURE_SETTINGS));
+            result.ByHandleFileInformation =
+                Marshal.SizeOf(typeof(BY_HANDLE_FILE_INFORMATION));
+            result.ProviderDataSignersPrefix =
+                Marshal.SizeOf(typeof(CRYPT_PROVIDER_DATA_SIGNERS_PREFIX));
+            result.ProviderSignersOffset =
+                Marshal.OffsetOf(
+                    typeof(CRYPT_PROVIDER_DATA_SIGNERS_PREFIX),
+                    "csSigners").ToInt32();
+            result.ProviderSignerHead =
+                Marshal.SizeOf(typeof(CRYPT_PROVIDER_SGNR_HEAD));
+            result.ProviderCertHead =
+                Marshal.SizeOf(typeof(CRYPT_PROVIDER_CERT_HEAD));
+            result.CertContext =
+                Marshal.SizeOf(typeof(CERT_CONTEXT));
+            return result;
+        }
+
+        public static Observation Observe(FileStream stream) {
+            Observation result = NewObservation("InvalidInput");
+            if (!IsWindows11X64()) {
+                result.Status = "UnsupportedRuntime";
+                return result;
+            }
+            if (stream == null) {
+                return result;
+            }
+            try {
+                if (!stream.CanRead || !stream.CanSeek || stream.CanWrite) {
+                    return result;
+                }
+            }
+            catch (ObjectDisposedException) {
+                return result;
+            }
+
+            SafeFileHandle safeHandle = null;
+            bool handleAddRef = false;
+            bool verifyReturned = false;
+            bool originalPositionCaptured = false;
+            bool beforeFileFactsCaptured = false;
+            long originalPosition = 0;
+            IntPtr pathPointer = IntPtr.Zero;
+            IntPtr fileInfoPointer = IntPtr.Zero;
+            IntPtr signatureSettingsPointer = IntPtr.Zero;
+            BY_HANDLE_FILE_INFORMATION beforeFileFacts =
+                new BY_HANDLE_FILE_INFORMATION();
+            WINTRUST_DATA trustData = new WINTRUST_DATA();
+            Guid actionId = GenericVerifyV2;
+
+            try {
+                safeHandle = stream.SafeFileHandle;
+                if (safeHandle == null ||
+                    safeHandle.IsInvalid ||
+                    safeHandle.IsClosed) {
+                    return result;
+                }
+                safeHandle.DangerousAddRef(ref handleAddRef);
+                IntPtr rawHandle = safeHandle.DangerousGetHandle();
+                if (rawHandle == IntPtr.Zero ||
+                    rawHandle == new IntPtr(-1)) {
+                    return result;
+                }
+
+                originalPosition = stream.Position;
+                originalPositionCaptured = true;
+                stream.Position = 0;
+
+                beforeFileFacts = GetHeldFileFacts(rawHandle);
+                beforeFileFactsCaptured = true;
+                if (!IsEligibleHeldFile(beforeFileFacts)) {
+                    result.Status = "HeldFileIneligible";
+                    return result;
+                }
+
+                string finalPath = GetFinalPath(rawHandle);
+                string normalizedFinalPath = NormalizeFinalPath(finalPath);
+                if (!String.Equals(
+                    Path.GetExtension(normalizedFinalPath),
+                    ".msix",
+                    StringComparison.OrdinalIgnoreCase)) {
+                    return result;
+                }
+                result.FinalPathBindingToken =
+                    GetPathBindingToken(normalizedFinalPath);
+
+                pathPointer = Marshal.StringToCoTaskMemUni(finalPath);
+                WINTRUST_FILE_INFO fileInfo = new WINTRUST_FILE_INFO();
+                fileInfo.cbStruct =
+                    (uint)Marshal.SizeOf(typeof(WINTRUST_FILE_INFO));
+                fileInfo.pcwszFilePath = pathPointer;
+                fileInfo.hFile = rawHandle;
+                fileInfo.pgKnownSubject = IntPtr.Zero;
+                fileInfoPointer =
+                    Marshal.AllocHGlobal(
+                        Marshal.SizeOf(typeof(WINTRUST_FILE_INFO)));
+                Marshal.StructureToPtr(fileInfo, fileInfoPointer, false);
+
+                WINTRUST_SIGNATURE_SETTINGS signatureSettings =
+                    new WINTRUST_SIGNATURE_SETTINGS();
+                signatureSettings.cbStruct =
+                    (uint)Marshal.SizeOf(
+                        typeof(WINTRUST_SIGNATURE_SETTINGS));
+                signatureSettings.dwIndex = 0;
+                signatureSettings.dwFlags =
+                    WSS_GET_SECONDARY_SIG_COUNT;
+                signatureSettings.cSecondarySigs =
+                    UInt32.MaxValue;
+                signatureSettings.dwVerifiedSigIndex =
+                    UInt32.MaxValue;
+                signatureSettings.pCryptoPolicy = IntPtr.Zero;
+                signatureSettingsPointer =
+                    Marshal.AllocHGlobal(
+                        Marshal.SizeOf(
+                            typeof(WINTRUST_SIGNATURE_SETTINGS)));
+                Marshal.StructureToPtr(
+                    signatureSettings,
+                    signatureSettingsPointer,
+                    false);
+
+                trustData.cbStruct =
+                    (uint)Marshal.SizeOf(typeof(WINTRUST_DATA));
+                trustData.pPolicyCallbackData = IntPtr.Zero;
+                trustData.pSIPClientData = IntPtr.Zero;
+                trustData.dwUIChoice = WTD_UI_NONE;
+                trustData.fdwRevocationChecks = WTD_REVOKE_NONE;
+                trustData.dwUnionChoice = WTD_CHOICE_FILE;
+                trustData.pFile = fileInfoPointer;
+                trustData.dwStateAction = WTD_STATEACTION_VERIFY;
+                trustData.hWVTStateData = IntPtr.Zero;
+                trustData.pwszURLReference = IntPtr.Zero;
+                trustData.dwProvFlags =
+                    WTD_REVOCATION_CHECK_NONE |
+                    WTD_CACHE_ONLY_URL_RETRIEVAL |
+                    WTD_DISABLE_MD2_MD4;
+                trustData.dwUIContext = WTD_UICONTEXT_INSTALL;
+                trustData.pSignatureSettings =
+                    signatureSettingsPointer;
+
+                result.CallerFileHandleSupplied = true;
+                int nativeStatus = WinVerifyTrustEx(
+                    InvalidWindowHandle,
+                    ref actionId,
+                    ref trustData);
+                verifyReturned = true;
+                result.NativeStatusHex = ToNativeStatusHex(nativeStatus);
+                if (nativeStatus != 0) {
+                    result.Status = MapUntrustedStatus(nativeStatus);
+                }
+                else if (signatureSettingsPointer == IntPtr.Zero) {
+                    result.Status = "SignatureSettingsUnavailable";
+                }
+                else {
+                    signatureSettings =
+                        (WINTRUST_SIGNATURE_SETTINGS)
+                            Marshal.PtrToStructure(
+                                signatureSettingsPointer,
+                                typeof(WINTRUST_SIGNATURE_SETTINGS));
+                    if (
+                        signatureSettings.cbStruct !=
+                            Marshal.SizeOf(
+                                typeof(
+                                    WINTRUST_SIGNATURE_SETTINGS)) ||
+                        signatureSettings.dwIndex != 0 ||
+                        signatureSettings.dwFlags !=
+                            WSS_GET_SECONDARY_SIG_COUNT
+                    ) {
+                        result.Status =
+                            "SignatureSettingsInvalid";
+                    }
+                    else if (
+                        signatureSettings.cSecondarySigs ==
+                            UInt32.MaxValue ||
+                        signatureSettings.dwVerifiedSigIndex ==
+                            UInt32.MaxValue
+                    ) {
+                        result.Status =
+                            "SignatureSettingsUnobserved";
+                    }
+                    else if (
+                        signatureSettings.cSecondarySigs != 0 ||
+                        signatureSettings.dwVerifiedSigIndex != 0
+                    ) {
+                        result.SecondarySignatureCount =
+                            signatureSettings.cSecondarySigs;
+                        result.Status =
+                            "AmbiguousEmbeddedSignatures";
+                    }
+                    else {
+                        result.SecondarySignatureCount = 0;
+                        if (
+                            trustData.hWVTStateData == IntPtr.Zero
+                        ) {
+                            result.Status = "StateUnavailable";
+                        }
+                        else {
+                            ExtractProviderPrimarySigner(
+                                trustData.hWVTStateData,
+                                result);
+                        }
+                    }
+                }
+            }
+            catch (DllNotFoundException) {
+                result.Status = "NativeUnavailable";
+            }
+            catch (EntryPointNotFoundException) {
+                result.Status = "NativeUnavailable";
+            }
+            catch (BadImageFormatException) {
+                result.Status = "NativeUnavailable";
+            }
+            catch (ObjectDisposedException) {
+                result.Status = "InvalidInput";
+            }
+            catch (ArgumentException) {
+                result.Status = verifyReturned
+                    ? "ExtractionFailed"
+                    : "ObservationFailed";
+            }
+            catch (IOException) {
+                result.Status = verifyReturned
+                    ? "ExtractionFailed"
+                    : "ObservationFailed";
+            }
+            catch {
+                result.Status = verifyReturned
+                    ? "ExtractionFailed"
+                    : "ObservationFailed";
+            }
+            finally {
+                if (verifyReturned) {
+                    try {
+                        trustData.dwStateAction = WTD_STATEACTION_CLOSE;
+                        int closeStatus = WinVerifyTrustEx(
+                            InvalidWindowHandle,
+                            ref actionId,
+                            ref trustData);
+                        result.StateCloseNativeStatusHex =
+                            ToNativeStatusHex(closeStatus);
+                        result.StateCloseCompleted = closeStatus == 0;
+                        if (closeStatus != 0) {
+                            result.Status = "StateCloseFailed";
+                        }
+                    }
+                    catch {
+                        result.StateCloseCompleted = false;
+                        result.StateCloseNativeStatusHex = null;
+                        result.Status = "StateCloseFailed";
+                    }
+                }
+
+                if (verifyReturned && beforeFileFactsCaptured) {
+                    try {
+                        BY_HANDLE_FILE_INFORMATION afterFileFacts =
+                            GetHeldFileFacts(
+                                safeHandle.DangerousGetHandle());
+                        result.FileFactsStableAcrossVerification =
+                            SameHeldFileFacts(
+                                beforeFileFacts,
+                                afterFileFacts);
+                        if (
+                            !result.FileFactsStableAcrossVerification
+                        ) {
+                            result.Status = "FileFactsChanged";
+                        }
+                    }
+                    catch {
+                        result.FileFactsStableAcrossVerification =
+                            false;
+                        result.Status = "FileFactsUnavailable";
+                    }
+                }
+                if (verifyReturned) {
+                    try {
+                        string afterFinalPath =
+                            NormalizeFinalPath(
+                                GetFinalPath(
+                                    safeHandle.DangerousGetHandle()));
+                        string afterFinalPathBindingToken =
+                            GetPathBindingToken(afterFinalPath);
+                        result.FinalPathStableAcrossVerification =
+                            String.Equals(
+                                result.FinalPathBindingToken,
+                                afterFinalPathBindingToken,
+                                StringComparison.Ordinal);
+                        if (
+                            !result.FinalPathStableAcrossVerification
+                        ) {
+                            result.Status = "FinalPathChanged";
+                        }
+                    }
+                    catch {
+                        result.FinalPathStableAcrossVerification =
+                            false;
+                        result.Status = "FinalPathUnavailable";
+                    }
+                }
+
+                bool nativeCleanupFailed = false;
+                try {
+                    if (fileInfoPointer != IntPtr.Zero) {
+                        Marshal.DestroyStructure(
+                            fileInfoPointer,
+                            typeof(WINTRUST_FILE_INFO));
+                        Marshal.FreeHGlobal(fileInfoPointer);
+                        fileInfoPointer = IntPtr.Zero;
+                    }
+                }
+                catch {
+                    nativeCleanupFailed = true;
+                }
+                try {
+                    if (pathPointer != IntPtr.Zero) {
+                        Marshal.FreeCoTaskMem(pathPointer);
+                        pathPointer = IntPtr.Zero;
+                    }
+                }
+                catch {
+                    nativeCleanupFailed = true;
+                }
+                try {
+                    if (signatureSettingsPointer != IntPtr.Zero) {
+                        Marshal.DestroyStructure(
+                            signatureSettingsPointer,
+                            typeof(WINTRUST_SIGNATURE_SETTINGS));
+                        Marshal.FreeHGlobal(
+                            signatureSettingsPointer);
+                        signatureSettingsPointer = IntPtr.Zero;
+                    }
+                }
+                catch {
+                    nativeCleanupFailed = true;
+                }
+                if (nativeCleanupFailed) {
+                    result.Status = "NativeCleanupFailed";
+                }
+
+                if (originalPositionCaptured) {
+                    try {
+                        stream.Position = originalPosition;
+                        result.StreamPositionRestored =
+                            stream.Position == originalPosition;
+                    }
+                    catch {
+                        result.StreamPositionRestored = false;
+                    }
+                    if (!result.StreamPositionRestored) {
+                        result.Status = "StreamPositionRestoreFailed";
+                    }
+                }
+
+                if (handleAddRef) {
+                    try {
+                        if (
+                            safeHandle == null ||
+                            safeHandle.IsInvalid ||
+                            safeHandle.IsClosed
+                        ) {
+                            result.Status =
+                                "CallerHandleInvalidated";
+                        }
+                        safeHandle.DangerousRelease();
+                    }
+                    catch {
+                        result.Status = "NativeCleanupFailed";
+                    }
+                }
+            }
+
+            if (
+                !result.StateCloseCompleted ||
+                !result.StreamPositionRestored ||
+                !result.CallerFileHandleSupplied ||
+                !result.FinalPathStableAcrossVerification ||
+                !result.FileFactsStableAcrossVerification ||
+                result.ProviderOpenedFile != false ||
+                result.PrimarySignerCount != 1 ||
+                result.SecondarySignatureCount != 0 ||
+                !String.Equals(
+                    result.Status,
+                    "Trusted",
+                    StringComparison.Ordinal)
+            ) {
+                result.Trusted = false;
+                result.PrimarySignerCertificateDerBytes = null;
+                result.PrimarySignerCertificateDerLengthBytes = null;
+            }
+            return result;
+        }
+
+        private static void ExtractProviderPrimarySigner(
+            IntPtr stateData,
+            Observation result) {
+            IntPtr providerPointer =
+                WTHelperProvDataFromStateData(stateData);
+            if (providerPointer == IntPtr.Zero) {
+                result.Status = "ProviderDataUnavailable";
+                return;
+            }
+            CRYPT_PROVIDER_DATA_SIGNERS_PREFIX provider =
+                (CRYPT_PROVIDER_DATA_SIGNERS_PREFIX)
+                    Marshal.PtrToStructure(
+                        providerPointer,
+                        typeof(
+                            CRYPT_PROVIDER_DATA_SIGNERS_PREFIX));
+            int providerPrefixSize =
+                Marshal.SizeOf(
+                    typeof(
+                        CRYPT_PROVIDER_DATA_SIGNERS_PREFIX));
+            if (provider.cbStruct < providerPrefixSize) {
+                result.Status = "ProviderDataInvalid";
+                return;
+            }
+            result.ProviderOpenedFile =
+                provider.fOpenedFile != 0;
+            result.PrimarySignerCount =
+                provider.csSigners;
+            if (provider.fOpenedFile != 0) {
+                result.Status = "ProviderOpenedFile";
+                return;
+            }
+            if (
+                provider.csSigners != 1 ||
+                provider.pasSigners == IntPtr.Zero
+            ) {
+                result.Status = "AmbiguousPrimarySigners";
+                return;
+            }
+            ExtractPrimarySignerCertificate(
+                providerPointer,
+                provider.pasSigners,
+                result);
+        }
+
+        private static void ExtractPrimarySignerCertificate(
+            IntPtr providerPointer,
+            IntPtr expectedPrimarySignerPointer,
+            Observation result) {
+            IntPtr signerPointer =
+                WTHelperGetProvSignerFromChain(
+                    providerPointer,
+                    0,
+                    false,
+                    0);
+            if (
+                signerPointer == IntPtr.Zero ||
+                signerPointer != expectedPrimarySignerPointer
+            ) {
+                result.Status = "PrimarySignerUnavailable";
+                return;
+            }
+            CRYPT_PROVIDER_SGNR_HEAD signer =
+                (CRYPT_PROVIDER_SGNR_HEAD)
+                    Marshal.PtrToStructure(
+                        signerPointer,
+                        typeof(CRYPT_PROVIDER_SGNR_HEAD));
+            if (
+                signer.cbStruct <
+                    Marshal.SizeOf(typeof(CRYPT_PROVIDER_SGNR_HEAD)) ||
+                signer.csCertChain < 1 ||
+                signer.pasCertChain == IntPtr.Zero
+            ) {
+                result.Status = "PrimarySignerInvalid";
+                return;
+            }
+
+            IntPtr providerCertificatePointer =
+                WTHelperGetProvCertFromChain(signerPointer, 0);
+            if (
+                providerCertificatePointer == IntPtr.Zero ||
+                providerCertificatePointer != signer.pasCertChain
+            ) {
+                result.Status = "SignerCertificateUnavailable";
+                return;
+            }
+            CRYPT_PROVIDER_CERT_HEAD providerCertificate =
+                (CRYPT_PROVIDER_CERT_HEAD)
+                    Marshal.PtrToStructure(
+                        providerCertificatePointer,
+                        typeof(CRYPT_PROVIDER_CERT_HEAD));
+            if (
+                providerCertificate.cbStruct <
+                    Marshal.SizeOf(typeof(CRYPT_PROVIDER_CERT_HEAD)) ||
+                providerCertificate.pCert == IntPtr.Zero
+            ) {
+                result.Status = "SignerCertificateInvalid";
+                return;
+            }
+
+            CERT_CONTEXT certificate =
+                (CERT_CONTEXT)
+                    Marshal.PtrToStructure(
+                        providerCertificate.pCert,
+                        typeof(CERT_CONTEXT));
+            if (
+                certificate.pbCertEncoded == IntPtr.Zero ||
+                certificate.cbCertEncoded < MinimumCertificateBytes ||
+                certificate.cbCertEncoded > MaximumCertificateBytes
+            ) {
+                result.Status = "SignerCertificateDerInvalid";
+                return;
+            }
+            byte[] certificateDer =
+                new byte[(int)certificate.cbCertEncoded];
+            Marshal.Copy(
+                certificate.pbCertEncoded,
+                certificateDer,
+                0,
+                certificateDer.Length);
+            result.PrimarySignerCertificateDerBytes = certificateDer;
+            result.PrimarySignerCertificateDerLengthBytes =
+                certificate.cbCertEncoded;
+            result.Trusted = true;
+            result.Status = "Trusted";
+        }
+
+        private static Observation NewObservation(string status) {
+            Observation result = new Observation();
+            result.Trusted = false;
+            result.Status = status;
+            result.NativeStatusHex = null;
+            result.CallerFileHandleSupplied = false;
+            result.FinalPathStableAcrossVerification = false;
+            result.FileFactsStableAcrossVerification = false;
+            result.ProviderOpenedFile = null;
+            result.PrimarySignerCount = null;
+            result.SecondarySignatureCount = null;
+            result.StateCloseCompleted = false;
+            result.StateCloseNativeStatusHex = null;
+            result.StreamPositionRestored = false;
+            result.FinalPathBindingToken = null;
+            result.PrimarySignerCertificateDerBytes = null;
+            result.PrimarySignerCertificateDerLengthBytes = null;
+            return result;
+        }
+
+        private static bool IsWindows11X64() {
+            if (
+                !Environment.Is64BitOperatingSystem ||
+                !Environment.Is64BitProcess
+            ) {
+                return false;
+            }
+            RTL_OSVERSIONINFOEXW version =
+                new RTL_OSVERSIONINFOEXW();
+            version.dwOSVersionInfoSize =
+                (uint)Marshal.SizeOf(
+                    typeof(RTL_OSVERSIONINFOEXW));
+            if (RtlGetVersion(ref version) != 0) {
+                return false;
+            }
+            if (
+                version.dwMajorVersion != 10 ||
+                version.dwBuildNumber < Windows11MinimumBuild ||
+                version.wProductType != VER_NT_WORKSTATION
+            ) {
+                return false;
+            }
+            ushort processMachine;
+            ushort nativeMachine;
+            if (!IsWow64Process2(
+                GetCurrentProcess(),
+                out processMachine,
+                out nativeMachine)) {
+                return false;
+            }
+            return (
+                processMachine == IMAGE_FILE_MACHINE_UNKNOWN &&
+                nativeMachine == IMAGE_FILE_MACHINE_AMD64
+            );
+        }
+
+        private static BY_HANDLE_FILE_INFORMATION GetHeldFileFacts(
+            IntPtr rawHandle) {
+            BY_HANDLE_FILE_INFORMATION information;
+            if (!GetFileInformationByHandle(
+                rawHandle,
+                out information)) {
+                throw new IOException(
+                    "The held file facts were unavailable.");
+            }
+            return information;
+        }
+
+        private static bool IsEligibleHeldFile(
+            BY_HANDLE_FILE_INFORMATION information) {
+            long size =
+                ((long)information.FileSizeHigh << 32) |
+                information.FileSizeLow;
+            return (
+                (information.FileAttributes &
+                    FILE_ATTRIBUTE_DIRECTORY) == 0 &&
+                (information.FileAttributes &
+                    FILE_ATTRIBUTE_REPARSE_POINT) == 0 &&
+                information.NumberOfLinks == 1 &&
+                size > 0 &&
+                size <= MaximumArtifactBytes
+            );
+        }
+
+        private static bool SameHeldFileFacts(
+            BY_HANDLE_FILE_INFORMATION before,
+            BY_HANDLE_FILE_INFORMATION after) {
+            return (
+                before.FileAttributes == after.FileAttributes &&
+                before.CreationTime.dwLowDateTime ==
+                    after.CreationTime.dwLowDateTime &&
+                before.CreationTime.dwHighDateTime ==
+                    after.CreationTime.dwHighDateTime &&
+                before.LastWriteTime.dwLowDateTime ==
+                    after.LastWriteTime.dwLowDateTime &&
+                before.LastWriteTime.dwHighDateTime ==
+                    after.LastWriteTime.dwHighDateTime &&
+                before.VolumeSerialNumber ==
+                    after.VolumeSerialNumber &&
+                before.FileSizeHigh == after.FileSizeHigh &&
+                before.FileSizeLow == after.FileSizeLow &&
+                before.NumberOfLinks == after.NumberOfLinks &&
+                before.FileIndexHigh == after.FileIndexHigh &&
+                before.FileIndexLow == after.FileIndexLow
+            );
+        }
+
+        private static string GetFinalPath(IntPtr rawHandle) {
+            const uint capacity = 32768;
+            StringBuilder path = new StringBuilder((int)capacity);
+            uint length = GetFinalPathNameByHandleW(
+                rawHandle,
+                path,
+                capacity,
+                0);
+            if (length == 0 || length >= capacity) {
+                throw new IOException(
+                    "The held file final path was unavailable.");
+            }
+            return path.ToString();
+        }
+
+        private static string NormalizeFinalPath(string finalPath) {
+            string normalized = finalPath;
+            if (normalized.StartsWith(
+                @"\\?\UNC\",
+                StringComparison.OrdinalIgnoreCase)) {
+                normalized = @"\\" + normalized.Substring(8);
+            }
+            else if (normalized.StartsWith(
+                @"\\?\",
+                StringComparison.OrdinalIgnoreCase)) {
+                normalized = normalized.Substring(4);
+            }
+            return Path.GetFullPath(normalized);
+        }
+
+        private static string GetPathBindingToken(string finalPath) {
+            string canonical =
+                Path.GetFullPath(finalPath)
+                    .TrimEnd(new char[] { '\\', '/' })
+                    .ToUpperInvariant();
+            using (SHA256 sha = SHA256.Create()) {
+                byte[] bytes = Encoding.UTF8.GetBytes(canonical);
+                return BitConverter.ToString(
+                    sha.ComputeHash(bytes))
+                    .Replace("-", String.Empty)
+                    .ToLowerInvariant();
+            }
+        }
+
+        private static string ToNativeStatusHex(int status) {
+            return "0x" +
+                unchecked((uint)status).ToString(
+                    "X8",
+                    CultureInfo.InvariantCulture);
+        }
+
+        private static string MapUntrustedStatus(int status) {
+            uint value = unchecked((uint)status);
+            if (value == 0x800B0100) {
+                return "NoSignature";
+            }
+            if (
+                value == 0x800B0001 ||
+                value == 0x800B0002 ||
+                value == 0x800B0003
+            ) {
+                return "UnsupportedSubject";
+            }
+            if (
+                value == 0x800B0004 ||
+                value == 0x800B0101 ||
+                value == 0x800B0109 ||
+                value == 0x800B010A ||
+                value == 0x800B0111
+            ) {
+                return "Untrusted";
+            }
+            return "PolicyRejected";
+        }
+    }
+}
+'@
+
+$script:CddsiD027ClaudeMsixSameStateSignerObserver =
+    [System.Func[System.IO.FileStream, object]]{
+        param([AllowNull()][System.IO.FileStream]$Stream)
+
+        $result = [ordered]@{
+            SchemaVersion                          = 1
+            ContractVersion                       =
+                'cddsi-d027-claude-msix-same-state-native-observation-v1'
+            ObservationMethod                     =
+                'CallerHeldFileStreamNativeObservation'
+            VerificationMethod                    =
+                'WinVerifyTrustExGenericVerifyV2'
+            SignerExtractionMethod                =
+                'WTHelperPrimarySignerCertificateFromSameState'
+            StateLifecycle                        =
+                'VerifyExtractCopyCloseRequired'
+            FinalPathBindingToken                 = $null
+            CallerFileHandleSupplied              = $false
+            FinalPathStableAcrossVerification     = $false
+            FileFactsStableAcrossVerification     = $false
+            ProviderOpenedFile                    = $null
+            PrimarySignerCount                    = $null
+            SecondarySignatureCount               = $null
+            WinVerifyTrustTrusted                 = $false
+            WinVerifyTrustStatus                  = 'InvalidInput'
+            WinVerifyTrustNativeStatusHex         = $null
+            WinVerifyTrustRevocationMode          = 'NotChecked'
+            StateCloseCompleted                   = $false
+            StateCloseNativeStatusHex             = $null
+            StreamPositionRestored                = $false
+            PrimarySignerCertificateDerBytes      = $null
+            PrimarySignerCertificateDerLengthBytes = $null
+        }
+        if ($null -eq $Stream) {
+            return [pscustomobject]$result
+        }
+        if (
+            $PSVersionTable.PSVersion.Major -ne 5 -or
+            $PSVersionTable.PSVersion.Minor -ne 1 -or
+            -not [Environment]::Is64BitOperatingSystem -or
+            -not [Environment]::Is64BitProcess
+        ) {
+            $result.WinVerifyTrustStatus = 'UnsupportedRuntime'
+            return [pscustomobject]$result
+        }
+
+        try {
+            $nativeTypeFullName =
+                'Cddsi.D027.ClaudeMsixSameStateWinVerifyTrustV1'
+            if (
+                $null -eq
+                    $script:CddsiD027ClaudeMsixSameStateSignerNativeType
+            ) {
+                $preexistingTypes = @(
+                    foreach (
+                        $assembly in
+                            [AppDomain]::CurrentDomain.GetAssemblies()
+                    ) {
+                        $candidate = $assembly.GetType(
+                            $nativeTypeFullName,
+                            $false,
+                            $false
+                        )
+                        if ($null -ne $candidate) {
+                            $candidate
+                        }
+                    }
+                )
+                if ($preexistingTypes.Count -ne 0) {
+                    $result.WinVerifyTrustStatus =
+                        'NativeTypeUnavailable'
+                    return [pscustomobject]$result
+                }
+                $compiledTypes = @(
+                    Add-Type `
+                        -TypeDefinition `
+                            $script:CddsiD027ClaudeMsixSameStateSignerNativeTypeDefinition `
+                        -Language CSharp `
+                        -PassThru `
+                        -ErrorAction Stop
+                )
+                $matchingTypes = @(
+                    $compiledTypes |
+                        Where-Object {
+                            $_.FullName -ceq $nativeTypeFullName
+                        }
+                )
+                if ($matchingTypes.Count -ne 1) {
+                    $result.WinVerifyTrustStatus =
+                        'NativeTypeUnavailable'
+                    return [pscustomobject]$result
+                }
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeType =
+                    $matchingTypes[0]
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName =
+                    $matchingTypes[0].Assembly.FullName
+            }
+
+            $nativeType =
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeType
+            $loadedMatches = @(
+                foreach (
+                    $assembly in
+                        [AppDomain]::CurrentDomain.GetAssemblies()
+                ) {
+                    $candidate = $assembly.GetType(
+                        $nativeTypeFullName,
+                        $false,
+                        $false
+                    )
+                    if ($null -ne $candidate) {
+                        $candidate
+                    }
+                }
+            )
+            if (
+                $null -eq $nativeType -or
+                $nativeType.FullName -cne $nativeTypeFullName -or
+                $nativeType.Assembly.FullName -cne
+                    $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName -or
+                $loadedMatches.Count -ne 1 -or
+                -not [object]::ReferenceEquals(
+                    $loadedMatches[0],
+                    $nativeType
+                )
+            ) {
+                $result.WinVerifyTrustStatus =
+                    'NativeTypeUnavailable'
+                return [pscustomobject]$result
+            }
+
+            $observeMethod = $nativeType.GetMethod(
+                'Observe',
+                [Reflection.BindingFlags]'Public,Static'
+            )
+            if ($null -eq $observeMethod) {
+                $result.WinVerifyTrustStatus =
+                    'NativeTypeUnavailable'
+                return [pscustomobject]$result
+            }
+            $native = $observeMethod.Invoke(
+                $null,
+                [object[]]@($Stream)
+            )
+            if ($null -eq $native) {
+                $result.WinVerifyTrustStatus =
+                    'InvalidNativeObservation'
+                return [pscustomobject]$result
+            }
+
+            $result.FinalPathBindingToken =
+                [string]$native.FinalPathBindingToken
+            $result.CallerFileHandleSupplied =
+                [bool]$native.CallerFileHandleSupplied
+            $result.FinalPathStableAcrossVerification =
+                [bool]$native.FinalPathStableAcrossVerification
+            $result.FileFactsStableAcrossVerification =
+                [bool]$native.FileFactsStableAcrossVerification
+            if ($null -ne $native.ProviderOpenedFile) {
+                $result.ProviderOpenedFile =
+                    [bool]$native.ProviderOpenedFile
+            }
+            if ($null -ne $native.PrimarySignerCount) {
+                $result.PrimarySignerCount =
+                    [long]$native.PrimarySignerCount
+            }
+            if ($null -ne $native.SecondarySignatureCount) {
+                $result.SecondarySignatureCount =
+                    [long]$native.SecondarySignatureCount
+            }
+            $result.WinVerifyTrustTrusted =
+                [bool]$native.Trusted
+            $result.WinVerifyTrustStatus =
+                [string]$native.Status
+            $result.WinVerifyTrustNativeStatusHex =
+                [string]$native.NativeStatusHex
+            $result.StateCloseCompleted =
+                [bool]$native.StateCloseCompleted
+            $result.StateCloseNativeStatusHex =
+                [string]$native.StateCloseNativeStatusHex
+            $result.StreamPositionRestored =
+                [bool]$native.StreamPositionRestored
+
+            if ($null -ne $native.PrimarySignerCertificateDerBytes) {
+                $result.PrimarySignerCertificateDerBytes =
+                    [byte[]]$native.PrimarySignerCertificateDerBytes.Clone()
+            }
+            if (
+                $null -ne
+                    $native.PrimarySignerCertificateDerLengthBytes
+            ) {
+                $result.PrimarySignerCertificateDerLengthBytes =
+                    [long]$native.PrimarySignerCertificateDerLengthBytes
+            }
+
+            $trustedShape = (
+                $result.WinVerifyTrustTrusted -and
+                $result.WinVerifyTrustStatus -ceq 'Trusted' -and
+                $result.WinVerifyTrustNativeStatusHex -ceq
+                    '0x00000000' -and
+                $result.CallerFileHandleSupplied -and
+                $result.FinalPathStableAcrossVerification -and
+                $result.FileFactsStableAcrossVerification -and
+                $result.ProviderOpenedFile -is [bool] -and
+                -not $result.ProviderOpenedFile -and
+                $result.PrimarySignerCount -is [long] -and
+                $result.PrimarySignerCount -eq 1 -and
+                $result.SecondarySignatureCount -is [long] -and
+                $result.SecondarySignatureCount -eq 0 -and
+                $result.StateCloseCompleted -and
+                $result.StateCloseNativeStatusHex -ceq
+                    '0x00000000' -and
+                $result.StreamPositionRestored -and
+                $result.FinalPathBindingToken -cmatch
+                    '^[a-f0-9]{64}$' -and
+                $result.FinalPathBindingToken -cnotmatch
+                    '^0{64}$' -and
+                $result.PrimarySignerCertificateDerBytes -is
+                    [byte[]] -and
+                $result.PrimarySignerCertificateDerBytes.Length -ge
+                    256 -and
+                $result.PrimarySignerCertificateDerBytes.Length -le
+                    $script:CddsiD027ClaudeSignerCertificateMaximumBytes -and
+                $result.PrimarySignerCertificateDerLengthBytes -is
+                    [long] -and
+                $result.PrimarySignerCertificateDerLengthBytes -eq
+                    $result.PrimarySignerCertificateDerBytes.Length
+            )
+            if (-not $trustedShape) {
+                $result.WinVerifyTrustTrusted = $false
+                $result.PrimarySignerCertificateDerBytes = $null
+                $result.PrimarySignerCertificateDerLengthBytes = $null
+                if ($result.WinVerifyTrustStatus -ceq 'Trusted') {
+                    $result.WinVerifyTrustStatus =
+                        'InvalidNativeObservation'
+                }
+            }
+        }
+        catch {
+            $result.WinVerifyTrustTrusted = $false
+            $result.WinVerifyTrustStatus = 'NativeUnavailable'
+            $result.PrimarySignerCertificateDerBytes = $null
+            $result.PrimarySignerCertificateDerLengthBytes = $null
+        }
+        return [pscustomobject]$result
+    }
+
 function New-CddsiD027ClaudeDesktopSourceDescriptor {
     [CmdletBinding()]
     param()
