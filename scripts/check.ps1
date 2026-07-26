@@ -1,78 +1,73 @@
 ﻿[CmdletBinding()]
-param(
-    [Parameter(Mandatory = $true)]
-    [string]$PowerShell7Executable,
-
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[a-fA-F0-9]{64}$')]
-    [string]$PowerShell7Sha256,
-
-    [Parameter(Mandatory = $true)]
-    [string]$WindowsPowerShellExecutable,
-
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[a-fA-F0-9]{64}$')]
-    [string]$WindowsPowerShellSha256,
-
-    [Parameter(Mandatory = $true)]
-    [string]$GitExecutable,
-
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[a-fA-F0-9]{64}$')]
-    [string]$GitSha256,
-
-    [ValidateRange(30, 3600)]
-    [int]$ProcessTimeoutSeconds = 900,
-
-    [switch]$KeepSandboxOnFailure,
-    [switch]$PassThru
-)
+param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'lib\logger.ps1')
-Initialize-CddsiConsoleEncoding | Out-Null
-
-$runner = Join-Path $PSScriptRoot 'invoke-host-sandbox.ps1'
-try {
-    $result = & $runner `
-        -Scenario Quality `
-        -QualitySet AllBlocking `
-        -RepositoryRoot (Split-Path -Parent $PSScriptRoot) `
-        -PowerShell7Executable $PowerShell7Executable `
-        -PowerShell7Sha256 $PowerShell7Sha256 `
-        -WindowsPowerShellExecutable $WindowsPowerShellExecutable `
-        -WindowsPowerShellSha256 $WindowsPowerShellSha256 `
-        -GitExecutable $GitExecutable `
-        -GitSha256 $GitSha256 `
-        -ProcessTimeoutSeconds $ProcessTimeoutSeconds `
-        -KeepSandboxOnFailure:$KeepSandboxOnFailure `
-        -PassThru
+if ($PSVersionTable.PSEdition -cne 'Desktop' -or
+    $PSVersionTable.PSVersion.Major -ne 5 -or
+    -not [Environment]::Is64BitProcess) {
+    throw 'Run scripts/check.ps1 with 64-bit Windows PowerShell 5.1.'
 }
-catch {
-    $primaryError = $_
-    $failureJson = [string]$primaryError.Exception.Data['CddsiFailureEvidenceJson']
-    if (-not [string]::IsNullOrWhiteSpace($failureJson) -and $failureJson.Length -le 200000) {
-        try {
-            $failureEvidence = $failureJson | ConvertFrom-Json -ErrorAction Stop
-            if (
-                $failureEvidence.SchemaVersion -eq 3 -and
-                $failureEvidence.EvidenceType -ceq 'CddsiSafeFailureEvidence' -and
-                $failureEvidence.Status -ceq 'FAILED_SAFE'
-            ) {
-                [Console]::Error.WriteLine('CDDSI_SAFE_FAILURE_EVIDENCE_V3=' + $failureJson)
-            }
-        }
-        catch {
-            # Never emit an unvalidated failure payload.
-        }
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
+[void](& (Join-Path $PSScriptRoot 'bootstrap-dev.ps1') -PassThru)
+$manifest = Import-PowerShellDataFile -LiteralPath (
+    Join-Path $PSScriptRoot 'release-manifest.psd1'
+)
+
+$parseTargets = @(
+    @($manifest.PackageFiles) + @(
+        'scripts/bootstrap-dev.ps1'
+        'scripts/build-release.ps1'
+        'scripts/check.ps1'
+    ) | Where-Object { [IO.Path]::GetExtension($_) -in @('.ps1', '.psd1') }
+)
+foreach ($relative in $parseTargets) {
+    $tokens = $null
+    $errors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $projectRoot $relative),
+        [ref]$tokens,
+        [ref]$errors
+    )
+    if ($errors.Count -ne 0) {
+        throw ('PowerShell 5.1 parse failed for {0}: {1}' -f
+            $relative,
+            ($errors.Message -join '; '))
     }
-    throw $primaryError
 }
 
-if ($PassThru) {
-    return $result
+$configuration = [PesterConfiguration]::Default
+$configuration.Run.Path = @(Join-Path $projectRoot 'tests')
+$configuration.Run.PassThru = $true
+$configuration.Output.Verbosity = 'Detailed'
+$configuration.TestResult.Enabled = $false
+$result = Invoke-Pester -Configuration $configuration
+if ($result.FailedCount -ne 0 -or
+    $result.SkippedCount -ne 0 -or
+    $result.NotRunCount -ne 0 -or
+    $result.InconclusiveCount -ne 0) {
+    throw ('Pester gate failed: failed={0}, skipped={1}, notRun={2}, inconclusive={3}' -f
+        $result.FailedCount,
+        $result.SkippedCount,
+        $result.NotRunCount,
+        $result.InconclusiveCount)
 }
 
-Write-Host 'All isolated quality checks passed.' -ForegroundColor Green
+$release = & (Join-Path $PSScriptRoot 'build-release.ps1') -DryRun
+if ($release.Status -cne 'SUCCEEDED') {
+    throw 'Release DryRun failed.'
+}
+
+$diffOutput = @(git -C $projectRoot diff --check 2>&1)
+if ($LASTEXITCODE -ne 0) {
+    throw ("git diff --check failed:`n{0}" -f ($diffOutput -join "`n"))
+}
+
+[pscustomobject]@{
+    Status           = 'SUCCEEDED'
+    PesterPassed     = $result.PassedCount
+    ParsedFiles      = $parseTargets.Count
+    PackageFileCount = $release.PackageFileCount
+}

@@ -1,200 +1,27 @@
-# Claude Desktop DeepSeek Installer
+# Claude Desktop + DeepSeek practical installer
 
-这是一个面向 Windows 的中文引导式一键安装器项目：用户双击脚本后，安装器检测
-环境，从官方来源部署 Claude Desktop，确保 Git 和 Cowork 前置就绪，安全接收
-DeepSeek API Key，预置官方 Third-Party 配置并完成启动与验收。
+这是一个面向 Windows 11 x64 的小型安装器。目标很直接：双击后准备 Git、安装官方
+最新版 Claude Desktop，并把 DeepSeek API Key 安全地配置给 Claude Desktop。
 
-“一键”表示一次双击发起完整流程，不表示绕过 UAC、API Key 输入、必要重启、
-BIOS 虚拟化或 Claude 的安全授权。
+## 使用
 
-## 当前状态（D-027）
+1. 下载并完整解压 Release ZIP。
+2. 双击 `开始安装.cmd`。
+3. 阅读变更说明后输入 `y`。
+4. 如果缺少 Git，接受官方 Git for Windows 安装器的 UAC。
+5. 在遮罩输入框中输入 DeepSeek API Key。
+6. Claude 打开后先发送一条普通文本消息验证。
+7. 需要检查时双击 `一键诊断.cmd`；需要移除本项目配置时双击 `恢复配置.cmd`。
 
-D-027 已于 2026-07-25 取代 D-026 的实现、测试和发布路线。正式支持范围缩为
-Windows 11 x64，产品运行时固定 Windows PowerShell 5.1；PowerShell 7 只作开发者
-非阻塞诊断。唯一 Live 隔离环境是带 VM 外部可恢复 clean snapshot 的 disposable VM。
+安装器会复用已验证的常见 Git for Windows 安装；否则读取官方 GitHub immutable
+release metadata，核对 SHA-256 和 Authenticode 后安装。Claude MSIX 来自 Anthropic
+官方 x64 endpoint，并核对最终域名、签名、publisher、manifest 和安装前哈希。
 
-当前产品仍不可用：公开入口还是 `scaffold_only`，Git 静默安装、Claude Desktop 安装、
-配置、API、Chat/Code/Cowork、Diagnose/Repair/Restore 均未真实通过。D-026 未完成
-WIP 已保存为明确 NON-RELEASE、SUPERSEDED checkpoint
-`ba7b108a1ad931fd64b3b4afad4d1e105c9f2ec2`，tree
-`b0ceb5cb1f388d088c3a65d7571ec75905821b3c`；它不是候选或发布证据。
+Key 不会出现在命令行、环境变量、日志或状态中。安装器只保存 DPAPI CurrentUser
+密文，Claude 通过本地 credential helper 取用。
 
-D-027 不再扩展通用 HostSandbox/Fake Provider/access-ledger，也不再运行退役
-relay/outbox/Automation 历史测试。阻塞门只保留 PS5.1 focused Unit/Contract、
-公开 `.cmd` 退出码、DryRun 零真实副作用、manifest/编码/secret scan，以及一个
-clean Windows 11 x64 snapshot 上从 ZIP 启动的真实用户矩阵。开发收敛后冻结一次
-clean source、构建一次精确候选，再对该候选验收；D-026 的 P10A/P10B/P11 不再是
-发布要求。通过后的状态为 `D027_RELEASE_READY`，仍只允许用户人工决定 merge/release，
-不得自动发布或 promotion。
+当前 practical MVP 使用 per-user MSIX，完成安装与第三方推理配置；它不自动启用
+Virtual Machine Platform，也不承诺 Cowork 在每台机器可用。先把 Chat happy path
+在 disposable VM 跑通，再根据真实故障补兼容。
 
-下一实现顺序从真实垂直路径开始：preflight → Git 检测/唯一 PATH → 官方 Git
-下载、hash、签名、TOCTOU 与静默安装 → Claude 官方安装 → VMP/UAC/重启恢复 →
-Credential Manager/DPAPI → HKCU policy 与恢复 → 生命周期/修复 → 六个入口 →
-ZIP 和 Computer Use。
-
-### D-026 checkpoint（历史；无当前产品权威）
-
-默认入口仍是 `Scaffold`，真实安装器尚未实现。VmDevelopment 已加入显式 `Stage`、
-三个精确 Live stage/tier 绑定、独立单次 `LoadLiveProviders` grant/CAS，以及与
-run/stage/tier/profile、调用方声明的 adapter SHA-256 字段和已提交 load receipt 结构绑定的
-`LiveReadOnly` provider set。该 set 只声明 11 个冻结的只读 `Inspect` capability，
-并绑定一个 canonical capability-set digest。本批没有真实 OS I/O。当前通用 dispatcher
-尚未把 provider set 绑定到受信 adapter 定义，因此即使 tuple 合法，也会在调用任何
-同名函数和写入 ledger 前以 `LIVE_READ_ONLY_ADAPTER_SOURCE_UNBOUND` fail closed；
-adapter SHA-256 字段当前只校验格式和传递关系，不是已验证的包内文件摘要；
-adapter 内的 `ProviderFailure/NOT_IMPLEMENTED` 路径只是静态合同，尚不是可执行产品
-读取路径。默认 bootstrap、Host 和 CI 仍不会加载 live adapter。2026-07-24 冻结的 D-026 已将
-开发方式切换为 disposable VM acceptance-first：宿主机在现有
-`codex/repair/p10a-0a-fast-lane` 分支和 PR #1 正常推送 clean handoff commit 后冻结
-产品写入；从该精确 commit/tree 起，VM Codex 成为阶段性唯一写入者，可以直接修改
-源码、测试、文档和构建定义，反复真实测试并 fast-forward push，直到
-`READY_FOR_FORMAL_P10A`。随后完成 P10A 事实冻结、P10B 候选构建和 P11 精确候选
-只读验收，正式通过才是 `RELEASE_READY`。不得创建重复 PR、force push、改写历史
-或自动 rebase。
-
-开发完成门优先看不可 promotion 的 development ZIP 的真实安装、配置、API、重复运行、
-诊断、修复、恢复、UAC/人工重启，并由 Computer Use 实际打开 Claude Desktop 验证
-Chat、Code、Cowork；P11 再对最终候选精确字节重复该矩阵。
-进程存在、配置存在或 synthetic PASS 不能代替 GUI PASS。已退役的 relay/outbox/
-Automation 传输和旧 evidence-plumbing 回归已由具名 ProductReleaseGate、精确分类
-合同、独立 HistoricalDiagnostics 和 CI/Release 绑定隔离。产品集合始终阻塞发布；
-历史集合必须完整执行并如实报告 `PASSED` 或 `FAILED_TESTS`，只有完整的 test-level
-失败为 report-only。timeout、crash、missing、skip、not-run、inconclusive、基础设施
-或分类漂移仍 fail closed。历史结果不得伪造 PASS，也不得用来掩盖产品失败；正式
-候选的 clean snapshot、CAS、签名和 P10A/P11 evidence 仍是 P12 前置。
-
-API Key 只允许用户在 disposable VM 的遮罩输入框或安全终端中本地输入；Codex 不
-读取、不转述、不截图，产品只经 DPAPI CurrentUser 和 owner-only helper 使用。此前
-暴露的测试 Key 已由用户确认撤销，本轮未搜索或使用；后续真实验收只接受产品遮罩
-输入框内新轮换、限额的 Key，不得复制到 Git、参数、环境变量、脚本、日志、报告、
-截图、evidence 或 Release。
-
-realtime relay、Cloudflare、WebSocket watcher、control repo、Codex Automation、
-scheduler、`codex exec resume` 和旧 onboarding/bootstrap/canary/finalization 永久
-退役。达到 `RELEASE_READY` 后仍停在 P12 人工门前；不得自动 merge、创建正式
-GitHub Release 或 promotion。
-
-### D-026 前的合同基线（历史）
-
-P1-P9 纯/fake 合同、P10A
-evidence/consumption 合同以及 P10B frozen facts、helper release、deterministic
-双候选和 detached sidecar 宿主机支撑合同已经实现。P10A-0A 的宿主机 bootstrap
-实现也已完成，包括 `DirectionalRepositoryPair`、固定 Git outbox runtime、
-relay/state/hash、readiness resolver、deterministic onboarding bundle、fake reset、
-VM-only Windows guest-reset dispatcher/provider boundary、两端分钟级 prompts/runbooks
-与 synthetic rehearsal；这些 operator coordination 文件只归入 `DevelopmentOnlyFiles`。
-
-Fast Lane 采用一个逻辑双 outbox、两个物理单向 public control repos。产品 remote
-与两个 control repos 已公开；三仓均已启用禁止删除、禁止非快进并要求线性历史的
-protected-history ruleset，且无 bypass actor。包含本次文档闭环的新 clean HEAD 经外部
-机器完成标准全树门、Release Simulation、immutable onboarding bundle、自校验、仍暂停的
-HostCoordinator hash binding、remote/PR/CI 一致性核验后，宿主机 finalization 即为
-bootstrap-only ready，可派生 `CanStartVmBootstrap=true`。精确 post-commit 锚点不复制在
-tracked 文档中；按 `docs/HANDOFF.md` 的条件式，由 retained owner-marked bundle output、
-同一暂停 automation、PR CI 与实际 Git/remote 四方持久事实共同核验。
-
-最小权限角色凭据、VM 对产品 remote 的负向写验证、reset provider 的 VM device/Live
-evidence、VM Scheduled Task 与无人值守闭环仍未完成，因此 `CanStartVmIntegration=false`、
-`P10A0AComplete=false`、`CanStartFormalP10A=false`。Formal Lane 才为 P10A/P11 接入 CAS、
-签名与外部快照。本地质量门使用不可缺省
-ExecutionContext、default-deny fake provider、owner-marked HostSandbox、双引擎
-worker evidence 和 Release Simulation。
-以上 readiness、bootstrap 和 control-repo 描述保留为 D-026 前历史，不再构成当前
-VM 单写开发的前置；Formal candidate 的 clean snapshot、CAS、签名和只读验收仍是
-P12 前置。
-
-截至本 handoff，所有公开产品入口仍固定运行 TestSafe；新增的 `LiveReadOnly`
-装载/调度合同目前只由静态/contract tests 验证，且 11 个只读操作仍全部稳定
-fail closed，没有读取真实环境。产品系统修改、网络请求、配置写入和进程控制尚未实现。
-D-026 授权 VM 在唯一写入租约内实现并验证受控 Live，但不授权宿主机或 CI 执行真实
-动作。DevelopmentOnly 的 Windows
-guest-reset provider 历史上只允许在 disposable VM 经外部 trust/ownership/one-shot
-authorization 后进入其 operator Live 路径，不由默认 bootstrap 或 Release 加载。
-
-当前 `config/deepseek-desktop.defaults.json`、desired state、15 项 Windows
-`REG_SZ` serializer、官方 fixture 和 synthetic source precedence 已同步。配置
-writer、registry/credential I/O 和真实 Desktop 验证仍关闭；边界见
-`docs/EXTERNAL_CONTRACTS.md` 和 `docs/CONFIGURATION_DESIGN.md`。
-
-## 暂定最终用户流程
-
-1. 双击 `开始安装.cmd`。
-2. 检查 Windows、架构、权限、Desktop、Git、VMP、虚拟化和 Cowork readiness。
-3. 固定采用 Chat + Code + Cowork 完整功能目标，不展示功能选择页。
-4. 自动规划 Cowork-compatible MSIX 范围、Git 和 VMP 前置，并只请求必要的安全
-   确认。
-5. 下载并严格验证 Anthropic 官方 MSIX。
-6. 确保 Git 可用：合格版本直接复用，缺失或不合格时安装/升级官方 Git。
-7. 为 Cowork 处理 VMP；必要时安全 checkpoint，人工重启后重新双击续跑。
-8. 本地安全输入 DeepSeek API Key，以 DPAPI-backed credential helper 保存。
-9. 首次启动前部署 HKCU managed configuration，固定启用三个 surface，跳过
-   Anthropic 登录和
-   Developer Mode。
-10. 产品报告配置/API/readiness、secret 和资源级补偿；Chat/Code/Cowork UI E2E
-   由后续 VM Codex 验证。
-11. 输出中文脱敏报告。
-
-完整产品规格见 `docs/PRODUCT_SPEC.md`。
-
-## 产品边界
-
-- 不安装独立 Claude Code CLI、Node.js、npm、WSL 或 VS Code。
-- 技术上 Git 由内置 Code 需要；由于本产品固定包含 Code，Git 是产品必备前置。
-  合格版本复用，缺失或不合格版本才安装/升级。
-- 首版不提供 Chat/Code/Cowork 功能开关，也不在依赖失败时静默退化成 Chat-only。
-- 不读取、Test-Path、哈希、备份、写入或删除
-  `%USERPROFILE%\.claude\settings.json`。
-- 不直接或静默修改全局 Git 配置、用户 PATH 或全局/CurrentUser PowerShell
-  模块配置；官方 Git 安装器的精确 PATH 变化只有在披露、独立确认和补偿合同
-  齐全后才可接受。
-- 不绕过或降级 MSIX/EXE 签名验证。
-- 不把 Key 写入命令行、registry/configLibrary 明文、环境变量、日志、状态、
-  报告或 Release。
-- 不修改 Claude MSIX/Electron 资源做非官方汉化。安装器和文档中文，但 Claude
-  本体当前没有官方中文 UI。
-
-## 宿主机零接触
-
-本项目开发期间，本地自动化只允许 fake/provider 驱动的 TestSafe、DryRun、
-HostSandbox 和 Release Simulation。真实 MSIX、Git、registry、VMP、API、Claude
-配置和进程只允许在 D-026 明确授权的 disposable VM。P10A 窄范围校准、P10B
-双候选和 P11 Formal Lane 不阻塞前置的 acceptance-first 可写开发循环，但仍约束
-最终候选和正式发布证据；最终候选必须从 clean exact commit/Release ZIP 只读验收。
-
-P1 Sandbox Foundation 已完成；后续每个工作包必须持续保持其隔离证据全绿。
-这不授权宿主机 Live，也不代表 OS 权限隔离。权威合同见
-`docs/TEST_ISOLATION.md`。
-
-## 当前入口
-
-- `开始安装.cmd` / `Start-Install.cmd`
-- `一键诊断.cmd` / `Run-Diagnostics.cmd`
-- `恢复配置.cmd` / `Restore-Config.cmd`
-- `Start-Here.ps1 -Action Install|Diagnose|Repair|Restore -TestSafe`
-
-这些入口当前只返回 `scaffold_only`，不会执行真实动作。
-
-## 开发验证
-
-D-027 发布阻塞测试只运行 Windows PowerShell 5.1 focused Unit/Contract、公开
-`.cmd` 入口/退出码、DryRun 零真实进程/网络/注册表/外部写入、release manifest、
-编码与 secret scan，以及 clean Windows 11 x64 snapshot 的真实端到端矩阵。
-PowerShell 7 可诊断但不阻塞；旧 ProductReleaseGate、HostSandbox、双引擎一致性和
-HistoricalDiagnostics 只属于 D-026 历史，不再是 D-027 发布命令。
-
-## 文档入口
-
-- 未来正式包用户指南：`USER_GUIDE.md`
-- 故障处理：`TROUBLESHOOTING.md`
-- 隐私边界：`PRIVACY.md`
-- 当前任务交接：`docs/HANDOFF.md`
-- 完整文档地图：`docs/README.md`
-- 分阶段开发方案：`docs/IMPLEMENTATION_PLAN.md`
-- 宿主机隔离：`docs/TEST_ISOLATION.md`
-- 双机测试中继：`docs/VM_TEST_RELAY.md`
-- 窄范围 VM 校准：`docs/VM_CALIBRATION_PLAN.md`
-- 后续全面 VM 验收：`docs/VM_ACCEPTANCE_PLAN.md`
-
-下一任务以 `docs/HANDOFF.md` 顶部 D-027 状态和精确 clean HEAD/tree 为起点，在同一
-分支与 PR #1 优先打通“无 Git、无 Claude”到 Chat/Code/Cowork 的真实闭环。最终
-`D027_RELEASE_READY` 仍停在人工 merge/release 门，不自动发布。
+开发状态见 [docs/HANDOFF.md](docs/HANDOFF.md)。

@@ -1,128 +1,29 @@
 {
-  "schemaVersion": 2,
-  "projectStage": "scaffold",
-  "execution": {
-    "defaultMode": "TestSafe",
-    "liveEnabled": false,
-    "requireExplicitLiveAcknowledgement": true,
-    "automaticRestartAllowed": false
+  "schemaVersion": 3,
+  "support": {
+    "operatingSystem": "Windows 11",
+    "architecture": "x64",
+    "runtime": "Windows PowerShell 5.1"
   },
-  "desktop3p": {
-    "contractVersion": "claude-desktop-3p-managed-policy-v1",
-    "minimumDesktopVersion": "1.20186.0",
-    "windowsPolicyNoMergeSince": "1.19367.0",
-    "targetSource": "HKCU_MANAGED_POLICY",
-    "registryKey": "HKCU\\SOFTWARE\\Policies\\Claude",
-    "sourcePrecedence": [
-      "HKLM_MANAGED_POLICY",
-      "HKCU_MANAGED_POLICY",
-      "CONFIG_LIBRARY"
-    ],
-    "existingSourcePolicy": "conflict-stop",
-    "configLibraryWriterEnabled": false,
-    "claudeCodeSettingsPolicy": "do_not_read_or_modify",
-    "provider": {
-      "kind": "gateway",
-      "baseUrl": "https://api.deepseek.com/anthropic",
-      "authScheme": "x-api-key"
-    },
-    "modelPolicy": {
-      "discoveryEnabled": false,
-      "defaultModel": "deepseek-v4-pro",
-      "models": [
-        {
-          "name": "deepseek-v4-pro",
-          "labelOverride": "DeepSeek V4 Pro",
-          "supports1m": true
-        },
-        {
-          "name": "deepseek-v4-flash",
-          "labelOverride": "DeepSeek V4 Flash",
-          "supports1m": true
-        }
-      ],
-      "providerAliasMappings": [
-        {
-          "pattern": "claude-opus-*",
-          "targetModel": "deepseek-v4-pro",
-          "enforcedBy": "deepseek-anthropic-compatibility"
-        },
-        {
-          "pattern": "claude-sonnet-*",
-          "targetModel": "deepseek-v4-flash",
-          "enforcedBy": "deepseek-anthropic-compatibility"
-        },
-        {
-          "pattern": "claude-haiku-*",
-          "targetModel": "deepseek-v4-flash",
-          "enforcedBy": "deepseek-anthropic-compatibility"
-        }
-      ],
-      "familyTierSerializationPolicy": "omit_unverified_duplicate_model_binding"
-    },
-    "requestedSurfaces": [
-      "Chat",
-      "Code",
-      "Cowork"
-    ],
-    "surfacePolicy": {
-      "chatEnabled": true,
-      "codeEnabled": true,
-      "coworkEnabled": true,
-      "autoModeEnabled": false
-    },
-    "deploymentChooserPolicy": {
-      "disabled": true
-    },
-    "credentialReference": {
-      "kind": "helper-script",
-      "helperBinding": "<CREDENTIAL_HELPER_PATH>",
-      "ttlSeconds": 3600,
-      "timeoutSeconds": 60,
-      "silentRefreshEnabled": true,
-      "persistInConfig": false
-    },
-    "validationRequestEnabled": false
+  "provider": {
+    "kind": "gateway",
+    "baseUrl": "https://api.deepseek.com/anthropic",
+    "authScheme": "x-api-key"
   },
-  "claudeDesktopMsix": {
-    "sourcePolicy": "anthropic_official_only",
-    "metadataUri": null,
-    "downloadUri": null,
-    "expectedArtifactSha256": null,
-    "expectedArtifactSizeBytes": null,
-    "expectedSignerThumbprint": null,
-    "expectedSignerSubjectToken": null,
-    "expectedPublisher": null,
-    "packageIdentity": null,
-    "requireAuthenticodeSignature": true,
-    "requireTrustedChain": true,
-    "requireExecutionTimeHashReverification": true,
-    "redirectPolicy": "same-owner-https-only",
-    "maximumBytes": 4294967296
+  "models": [
+    {
+      "name": "deepseek-v4-pro",
+      "labelOverride": "DeepSeek V4 Pro"
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "labelOverride": "DeepSeek V4 Flash"
+    }
+  ],
+  "claude": {
+    "x64MsixUri": "https://claude.ai/api/desktop/win32/x64/msix/latest/redirect"
   },
-  "gitForWindows": {
-    "sourcePolicy": "git_for_windows_official_only",
-    "metadataApiUri": "https://api.github.com/repos/git-for-windows/git/releases/latest",
-    "downloadUri": null,
-    "expectedArtifactSha256": null,
-    "expectedArtifactSizeBytes": null,
-    "expectedSignerThumbprint": null,
-    "expectedSignerSubjectToken": null,
-    "expectedPublisher": null,
-    "installerIdentity": null,
-    "requireAuthenticodeSignature": true,
-    "requireTrustedChain": true,
-    "requireExecutionTimeHashReverification": true,
-    "redirectPolicy": "same-owner-https-only",
-    "maximumBytes": 1073741824,
-    "silentInstallEnabled": false,
-    "modifyGlobalGitConfig": false
-  },
-  "cowork": {
-    "checkVirtualMachinePlatform": true,
-    "checkHardwareVirtualization": true,
-    "checkService": true,
-    "enableWindowsFeature": false,
-    "restartEnabled": false
+  "git": {
+    "latestReleaseApi": "https://api.github.com/repos/git-for-windows/git/releases/latest"
   }
 }

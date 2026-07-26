@@ -2,21 +2,17 @@
 
 ## Pester 5.6.1
 
-This repository vendors the locked Pester 5.6.1 runtime tree under
-`.dev/modules/Pester/5.6.1` solely as a development and test dependency. It is
-not a product runtime dependency and must not be included in the installer
-release package.
+仓库在 `.dev/modules/Pester/5.6.1` 固定保存 Pester 5.6.1，仅用于开发测试，不进入
+Release ZIP。Pester 由 Pester Team 维护，采用 Apache License 2.0。
 
-Pester is copyright the Pester Team and is licensed under the Apache License
-2.0.
+完整许可证位于 `third-party/Pester-5.6.1-LICENSE.txt`。
 
-The full license text distributed with this vendored development dependency is
-`third-party/Pester-5.6.1-LICENSE.txt`.
+- <https://www.powershellgallery.com/packages/Pester/5.6.1>
+- <https://github.com/Pester/Pester>
+- <https://www.apache.org/licenses/LICENSE-2.0.html>
 
-- Official PowerShell Gallery package: <https://www.powershellgallery.com/packages/Pester/5.6.1>
-- Official project: <https://github.com/Pester/Pester>
-- Apache License 2.0: <https://www.apache.org/licenses/LICENSE-2.0.html>
+## Runtime downloads
 
-The exact vendored file count, byte count, manifest SHA-256, and whole-tree
-SHA-256 are recorded in `config/dev-dependencies.psd1`. The repository verifier
-does not download, install, update, repair, or import Pester.
+安装器不会重新分发 Git for Windows 或 Claude Desktop。需要时，它分别从 Git for
+Windows 官方 GitHub release 和 Anthropic 官方 endpoint 下载当前版本，并在执行前
+完成来源、哈希/签名与 identity 验证。相应软件受各自许可证和服务条款约束。
