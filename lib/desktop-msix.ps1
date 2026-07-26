@@ -3,6 +3,9 @@
 
 $script:CddsiD027ClaudeStandardX64SourceUri =
     'https://claude.ai/api/desktop/win32/x64/msix/latest/redirect'
+$script:CddsiD027ClaudeMsixMinimumBytes = [long]64
+$script:CddsiD027ClaudeTransportPathPattern =
+    '^/releases/win32/x64/[0-9]+\.[0-9]+\.[0-9]+/Claude-[a-f0-9]{40}\.msix$'
 $script:CddsiD027ClaudeMsixMaximumBytes = [long](1GB)
 $script:CddsiD027ClaudeManifestMaximumBytes = [long](1MB)
 $script:CddsiD027ClaudeSignerCertificateMaximumBytes = 12288
@@ -34,6 +37,53 @@ $script:CddsiD027ClaudeDownloadReceiptFieldNames = @(
     'ContentBindingToken',
     'ObservedAtUtc',
     'ReceiptBindingToken'
+)
+$script:CddsiD027ClaudeDownloadTransportFactFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'InitialRequestMethod',
+    'InitialRequestUri',
+    'InitialStatusCode',
+    'RedirectCount',
+    'RedirectLocationHeaderCount',
+    'RedirectTargetTransportUri',
+    'RedirectContentTypeHeaderCount',
+    'RedirectContentEncodingCount',
+    'RedirectTransferEncodingCount',
+    'RedirectContentLengthHeaderCount',
+    'RedirectContentLengthBytes',
+    'FinalRequestMethod',
+    'FinalRequestTransportUri',
+    'FinalStatusCode',
+    'FinalLocationHeaderCount',
+    'FinalContentTypeHeaderCount',
+    'FinalContentTypeMediaType',
+    'FinalContentTypeParameterCount',
+    'FinalContentEncodingCount',
+    'FinalTransferEncodingCount',
+    'FinalContentLengthHeaderCount',
+    'FinalContentLengthBytes'
+)
+$script:CddsiD027ClaudeDownloadTransportObservationFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'TransportState',
+    'ArtifactProfile',
+    'ArtifactType',
+    'DescriptorId',
+    'SourceDescriptorBindingToken',
+    'RequestUriBindingToken',
+    'RequestMethod',
+    'InitialStatusCode',
+    'SanitizedFinalUri',
+    'SanitizedFinalUriBindingToken',
+    'RedirectCount',
+    'FinalStatusCode',
+    'ContentTypeMediaType',
+    'ContentEncodingCount',
+    'TransferEncodingCount',
+    'DeclaredContentLengthBytes',
+    'HeaderObservationBindingToken'
 )
 $script:CddsiD027ClaudeHeldArtifactObservationFieldNames = @(
     'SchemaVersion',
@@ -2665,6 +2715,370 @@ function Test-CddsiD027ClaudeSanitizedDownloadUri {
     )
 }
 
+function ConvertTo-CddsiD027ClaudeSanitizedTransportUri {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$TransportUri
+    )
+
+    try {
+        $uri = $null
+        if (
+            $TransportUri.Length -lt 16 -or
+            $TransportUri.Length -gt 12288 -or
+            [regex]::IsMatch(
+                $TransportUri,
+                '[\p{Cc}\p{Z}]',
+                [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+            ) -or
+            $TransportUri.Contains('\') -or
+            -not [Uri]::TryCreate(
+                $TransportUri,
+                [UriKind]::Absolute,
+                [ref]$uri
+            ) -or
+            $uri.Scheme -cne 'https' -or
+            -not $uri.IsDefaultPort -or
+            -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+            -not [string]::IsNullOrEmpty($uri.Fragment) -or
+            $uri.DnsSafeHost.ToLowerInvariant() -cne
+                'downloads.claude.ai'
+        ) {
+            throw 'invalid'
+        }
+        $sanitized = $uri.GetLeftPart([UriPartial]::Path)
+        $queryIndex = $TransportUri.IndexOf(
+            '?',
+            [StringComparison]::Ordinal
+        )
+        $rawProjection = if ($queryIndex -ge 0) {
+            $TransportUri.Substring(0, $queryIndex)
+        }
+        else {
+            $TransportUri
+        }
+        if (
+            $rawProjection -cne $sanitized -or
+            -not [regex]::IsMatch(
+                $uri.AbsolutePath,
+                $script:CddsiD027ClaudeTransportPathPattern,
+                [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+            ) -or
+            -not (Test-CddsiD027ClaudeSanitizedDownloadUri `
+                -SourceUri $sanitized)
+        ) {
+            throw 'invalid'
+        }
+        return $sanitized
+    }
+    catch {
+        throw 'Claude transport URI was not an allowed official download target.'
+    }
+}
+
+function Get-CddsiD027ClaudeTransportHeaderBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Observation
+    )
+
+    $withoutBinding = @(
+        $script:CddsiD027ClaudeDownloadTransportObservationFieldNames |
+            Where-Object { $_ -cne 'HeaderObservationBindingToken' }
+    )
+    $validNames = (
+        (Test-CddsiExactPropertySet `
+            -InputObject $Observation `
+            -Expected $withoutBinding) -or
+        (Test-CddsiExactPropertySet `
+            -InputObject $Observation `
+            -Expected `
+                $script:CddsiD027ClaudeDownloadTransportObservationFieldNames)
+    )
+    if (-not $validNames) {
+        throw 'Claude transport header observation did not match the exact binding schema.'
+    }
+
+    $canonical = New-Object System.Collections.Generic.List[string]
+    $canonical.Add(
+        'cddsi-d027-claude-transport-header-observation-binding-v1'
+    )
+    foreach ($name in $withoutBinding) {
+        $value = $Observation.$name
+        if ($value -is [string]) {
+            $type = 's'
+            $text = $value
+        }
+        elseif ($value -is [bool]) {
+            $type = 'b'
+            $text = if ($value) { 'true' } else { 'false' }
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            $type = 'i'
+            $text = [Convert]::ToString(
+                [long]$value,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+        else {
+            throw 'Claude transport header observation contained an unsupported field type.'
+        }
+        $canonical.Add(
+            ('{0}:{1}:{2}={3}:{4}' -f
+                $type.Length,
+                $type,
+                $name.Length,
+                $name,
+                $text.Length) +
+            ':' + $text
+        )
+    }
+    return Get-CddsiSupplyChainTextBindingToken `
+        -Text ($canonical -join "`n")
+}
+
+function Test-CddsiD027ClaudeTransportHeaderObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Observation,
+        [Parameter(Mandatory = $true)]$ArtifactDescriptor
+    )
+
+    try {
+        if (
+            $null -eq $Observation -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Observation `
+                -Expected `
+                    $script:CddsiD027ClaudeDownloadTransportObservationFieldNames) -or
+            -not (Test-CddsiD027ClaudeDesktopSourceDescriptor `
+                -Descriptor $ArtifactDescriptor) -or
+            -not (Test-CddsiSchemaVersionOne `
+                -Value $Observation.SchemaVersion) -or
+            $Observation.ContractVersion -isnot [string] -or
+            $Observation.ContractVersion -cne
+                'cddsi-d027-claude-transport-header-observation-v1' -or
+            $Observation.TransportState -isnot [string] -or
+            $Observation.TransportState -cne
+                'HEADERS_ACCEPTED_BODY_UNVERIFIED' -or
+            $Observation.ArtifactProfile -isnot [string] -or
+            $Observation.ArtifactProfile -cne 'VmAcceptance' -or
+            $Observation.ArtifactType -isnot [string] -or
+            $Observation.ArtifactType -cne 'ClaudeDesktopMsix' -or
+            $Observation.DescriptorId -isnot [string] -or
+            $Observation.DescriptorId -cne
+                $ArtifactDescriptor.DescriptorId -or
+            $Observation.SourceDescriptorBindingToken -isnot [string] -or
+            $Observation.SourceDescriptorBindingToken -cne
+                $ArtifactDescriptor.MetadataBindingToken -or
+            $Observation.RequestUriBindingToken -isnot [string] -or
+            $Observation.RequestUriBindingToken -cne
+                $ArtifactDescriptor.SourceUriBindingToken -or
+            $Observation.RequestMethod -isnot [string] -or
+            $Observation.RequestMethod -cne 'GET' -or
+            $Observation.ContentTypeMediaType -isnot [string] -or
+            $Observation.ContentTypeMediaType -cne
+                'application/octet-stream' -or
+            $Observation.SanitizedFinalUri -isnot [string] -or
+            (ConvertTo-CddsiD027ClaudeSanitizedTransportUri `
+                -TransportUri $Observation.SanitizedFinalUri) -cne
+                    $Observation.SanitizedFinalUri -or
+            $Observation.SanitizedFinalUriBindingToken -isnot [string] -or
+            $Observation.SanitizedFinalUriBindingToken -cne
+                (Get-CddsiSourceUriBindingToken `
+                    -SourceUri $Observation.SanitizedFinalUri) -or
+            (($Observation.InitialStatusCode -isnot [int]) -and
+                ($Observation.InitialStatusCode -isnot [long])) -or
+            [long]$Observation.InitialStatusCode -ne 307 -or
+            (($Observation.RedirectCount -isnot [int]) -and
+                ($Observation.RedirectCount -isnot [long])) -or
+            [long]$Observation.RedirectCount -ne 1 -or
+            (($Observation.FinalStatusCode -isnot [int]) -and
+                ($Observation.FinalStatusCode -isnot [long])) -or
+            [long]$Observation.FinalStatusCode -ne 200 -or
+            (($Observation.ContentEncodingCount -isnot [int]) -and
+                ($Observation.ContentEncodingCount -isnot [long])) -or
+            [long]$Observation.ContentEncodingCount -ne 0 -or
+            (($Observation.TransferEncodingCount -isnot [int]) -and
+                ($Observation.TransferEncodingCount -isnot [long])) -or
+            [long]$Observation.TransferEncodingCount -ne 0 -or
+            (($Observation.DeclaredContentLengthBytes -isnot [int]) -and
+                ($Observation.DeclaredContentLengthBytes -isnot [long])) -or
+            [long]$Observation.DeclaredContentLengthBytes -lt
+                $script:CddsiD027ClaudeMsixMinimumBytes -or
+            [long]$Observation.DeclaredContentLengthBytes -gt
+                [long]$ArtifactDescriptor.MaximumBytes -or
+            $Observation.HeaderObservationBindingToken -isnot [string] -or
+            $Observation.HeaderObservationBindingToken -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $Observation.HeaderObservationBindingToken -cmatch
+                '^0{64}$' -or
+            $Observation.HeaderObservationBindingToken -cne
+                (Get-CddsiD027ClaudeTransportHeaderBindingToken `
+                    -Observation $Observation)
+        ) {
+            return $false
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function New-CddsiD027ClaudeTransportHeaderObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$ArtifactDescriptor,
+        [Parameter(Mandatory = $true)]$HeaderFacts
+    )
+
+    try {
+        if (
+            -not (Test-CddsiD027ClaudeDesktopSourceDescriptor `
+                -Descriptor $ArtifactDescriptor) -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $HeaderFacts `
+                -Expected `
+                    $script:CddsiD027ClaudeDownloadTransportFactFieldNames) -or
+            -not (Test-CddsiSchemaVersionOne `
+                -Value $HeaderFacts.SchemaVersion) -or
+            $HeaderFacts.ContractVersion -isnot [string] -or
+            $HeaderFacts.ContractVersion -cne
+                'cddsi-d027-claude-transport-header-facts-v1'
+        ) {
+            throw 'invalid'
+        }
+        foreach ($name in @(
+            'InitialStatusCode',
+            'RedirectCount',
+            'RedirectLocationHeaderCount',
+            'RedirectContentTypeHeaderCount',
+            'RedirectContentEncodingCount',
+            'RedirectTransferEncodingCount',
+            'RedirectContentLengthHeaderCount',
+            'RedirectContentLengthBytes',
+            'FinalStatusCode',
+            'FinalLocationHeaderCount',
+            'FinalContentTypeHeaderCount',
+            'FinalContentTypeParameterCount',
+            'FinalContentEncodingCount',
+            'FinalTransferEncodingCount',
+            'FinalContentLengthHeaderCount',
+            'FinalContentLengthBytes'
+        )) {
+            $value = $HeaderFacts.$name
+            if ($value -isnot [int] -and $value -isnot [long]) {
+                throw 'invalid'
+            }
+        }
+        if (
+            $HeaderFacts.InitialRequestMethod -isnot [string] -or
+            $HeaderFacts.InitialRequestMethod -cne 'GET' -or
+            $HeaderFacts.InitialRequestUri -isnot [string] -or
+            $HeaderFacts.InitialRequestUri -cne
+                $ArtifactDescriptor.SourceUri -or
+            [long]$HeaderFacts.InitialStatusCode -ne 307 -or
+            [long]$HeaderFacts.RedirectCount -ne 1 -or
+            [long]$HeaderFacts.RedirectLocationHeaderCount -ne 1 -or
+            $HeaderFacts.RedirectTargetTransportUri -isnot [string] -or
+            $HeaderFacts.FinalRequestMethod -isnot [string] -or
+            $HeaderFacts.FinalRequestMethod -cne 'GET' -or
+            $HeaderFacts.FinalRequestTransportUri -isnot [string] -or
+            -not [string]::Equals(
+                $HeaderFacts.RedirectTargetTransportUri,
+                $HeaderFacts.FinalRequestTransportUri,
+                [StringComparison]::Ordinal
+            ) -or
+            [long]$HeaderFacts.RedirectContentTypeHeaderCount -ne 0 -or
+            [long]$HeaderFacts.RedirectContentEncodingCount -ne 0 -or
+            [long]$HeaderFacts.RedirectTransferEncodingCount -ne 0 -or
+            -not (
+                (
+                    [long]$HeaderFacts.RedirectContentLengthHeaderCount -eq
+                        0 -and
+                    [long]$HeaderFacts.RedirectContentLengthBytes -eq -1
+                ) -or
+                (
+                    [long]$HeaderFacts.RedirectContentLengthHeaderCount -eq
+                        1 -and
+                    [long]$HeaderFacts.RedirectContentLengthBytes -eq 0
+                )
+            ) -or
+            [long]$HeaderFacts.FinalStatusCode -ne 200 -or
+            [long]$HeaderFacts.FinalLocationHeaderCount -ne 0 -or
+            [long]$HeaderFacts.FinalContentTypeHeaderCount -ne 1 -or
+            $HeaderFacts.FinalContentTypeMediaType -isnot [string] -or
+            $HeaderFacts.FinalContentTypeMediaType -cne
+                'application/octet-stream' -or
+            [long]$HeaderFacts.FinalContentTypeParameterCount -ne 0 -or
+            [long]$HeaderFacts.FinalContentEncodingCount -ne 0 -or
+            [long]$HeaderFacts.FinalTransferEncodingCount -ne 0 -or
+            [long]$HeaderFacts.FinalContentLengthHeaderCount -ne 1 -or
+            [long]$HeaderFacts.FinalContentLengthBytes -lt
+                $script:CddsiD027ClaudeMsixMinimumBytes -or
+            [long]$HeaderFacts.FinalContentLengthBytes -gt
+                [long]$ArtifactDescriptor.MaximumBytes
+        ) {
+            throw 'invalid'
+        }
+
+        $sanitizedRedirect =
+            ConvertTo-CddsiD027ClaudeSanitizedTransportUri `
+                -TransportUri $HeaderFacts.RedirectTargetTransportUri
+        $sanitizedFinal =
+            ConvertTo-CddsiD027ClaudeSanitizedTransportUri `
+                -TransportUri $HeaderFacts.FinalRequestTransportUri
+        if ($sanitizedRedirect -cne $sanitizedFinal) {
+            throw 'invalid'
+        }
+
+        $withoutBinding = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion =
+                'cddsi-d027-claude-transport-header-observation-v1'
+            TransportState = 'HEADERS_ACCEPTED_BODY_UNVERIFIED'
+            ArtifactProfile = 'VmAcceptance'
+            ArtifactType = 'ClaudeDesktopMsix'
+            DescriptorId = $ArtifactDescriptor.DescriptorId
+            SourceDescriptorBindingToken =
+                $ArtifactDescriptor.MetadataBindingToken
+            RequestUriBindingToken =
+                $ArtifactDescriptor.SourceUriBindingToken
+            RequestMethod = 'GET'
+            InitialStatusCode = [long]307
+            SanitizedFinalUri = $sanitizedFinal
+            SanitizedFinalUriBindingToken =
+                Get-CddsiSourceUriBindingToken `
+                    -SourceUri $sanitizedFinal
+            RedirectCount = [long]1
+            FinalStatusCode = [long]200
+            ContentTypeMediaType = 'application/octet-stream'
+            ContentEncodingCount = [long]0
+            TransferEncodingCount = [long]0
+            DeclaredContentLengthBytes =
+                [long]$HeaderFacts.FinalContentLengthBytes
+        }
+        $values = [ordered]@{}
+        foreach ($property in $withoutBinding.PSObject.Properties) {
+            $values[$property.Name] = $property.Value
+        }
+        $values['HeaderObservationBindingToken'] =
+            Get-CddsiD027ClaudeTransportHeaderBindingToken `
+                -Observation $withoutBinding
+        $result = [pscustomobject]$values
+        if (-not (Test-CddsiD027ClaudeTransportHeaderObservation `
+            -Observation $result `
+            -ArtifactDescriptor $ArtifactDescriptor)) {
+            throw 'invalid'
+        }
+        return $result
+    }
+    catch {
+        throw 'Claude transport header facts were not accepted.'
+    }
+}
+
 function Test-CddsiD027ClaudeDownloadDestinationPath {
     [CmdletBinding()]
     param(
@@ -4384,16 +4798,20 @@ function Save-CddsiOfficialClaudeDesktopMsix {
         Assert-CddsiMutationAllowed -ExecutionContext $Context -Operation 'DownloadClaudeDesktopMsix' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges
     }
     $data = [pscustomobject][ordered]@{
-        SchemaVersion         = 1
-        ArtifactType         = 'ClaudeDesktopMsix'
-        DestinationPathToken = $pathBindingToken
-        MetadataBindingToken = $ArtifactDescriptor.MetadataBindingToken
-        CacheKey              = $ArtifactDescriptor.MetadataBindingToken
-        CachePolicy           = 'unique-by-immutable-descriptor'
-        WriteImplemented      = $false
+        SchemaVersion = 1
+        ArtifactType = 'ClaudeDesktopMsix'
+        DestinationPathBindingToken = $pathBindingToken
+        SourceDescriptorBindingToken =
+            $ArtifactDescriptor.MetadataBindingToken
+        RequestUriBindingToken =
+            $ArtifactDescriptor.SourceUriBindingToken
+        ArtifactIdentityStatus = 'UNRESOLVED_UNTIL_BODY_HASHED'
+        CacheIdentityStatus = 'UNAVAILABLE_UNTIL_BODY_HASHED'
+        TransportImplementationStatus = 'NOT_CONNECTED'
+        WriteImplemented = $false
     }
     $errorCode = if ($ArtifactDescriptor.MetadataStatus -ceq 'READY') { 'P4_PLAN_ONLY' } else { 'MSIX_ARTIFACT_CONTRACT_UNRESOLVED' }
-    return New-CddsiOperationResult -Operation 'DownloadClaudeDesktopMsix' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode $errorCode -MessageSafe 'No network or file write occurred; only an immutable download/cache plan was returned.' -Data $data -PlannedChanges @('<DOWNLOAD:CLAUDE_DESKTOP_MSIX>')
+    return New-CddsiOperationResult -Operation 'DownloadClaudeDesktopMsix' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode $errorCode -MessageSafe 'No network or file write occurred; no artifact or cache identity exists until the response body is hashed.' -Data $data -PlannedChanges @('<DOWNLOAD:CLAUDE_DESKTOP_MSIX>')
 }
 
 function Test-CddsiClaudeDesktopMsixSignature {

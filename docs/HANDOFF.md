@@ -28,6 +28,7 @@ CLAUDE_CALLER_HELD_CORRELATION_REMAINS_NEGATIVE_ONLY /
 CLAUDE_PRIVATE_BOUNDED_BODY_WRITER_IMPLEMENTED /
 CLAUDE_PRIVATE_FILESHARE_READ_CONSTRUCTION_SITE_IMPLEMENTED /
 CLAUDE_ACQUISITION_SNAPSHOT_WORKLOAD_AND_SESSION_IMPLEMENTED_CONFIGURED_FALSE /
+CLAUDE_PURE_REDIRECT_AND_FINAL_HEADER_OBSERVATION_IMPLEMENTED /
 CLAUDE_OUTER_DOWNLOAD_BUNDLE_NOT_YET_IMPLEMENTED /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
@@ -39,6 +40,59 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 Claude MSIX 纯 redirect/final-header policy 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`42516ddbc70862732f906e642ed42fc3513b9abc`、tree
+`91793cf29fdcd0fae610c57756833fa558bf0957`。本批开始时唯一 branch
+`codex/repair/p10a-0a-fast-lane` 的 local HEAD、upstream、remote-tracking branch
+和 PR #1 head 均等于该 parent，PR open/draft/unmerged，index/worktree clean。本批
+没有执行产品网络、真实 Claude body 下载、文件创建/提交、AppX/DISM、进程、注册表、
+UAC 或安装，没有读取任何真实 Claude 配置、凭据或 key。
+
+- 新增纯 `cddsi-d027-claude-transport-header-facts-v1` 输入与精确 19 字段
+  `cddsi-d027-claude-transport-header-observation-v1` 安全输出。只接受当前经官方
+  来源核验的单次 `GET` 307 → `GET` 200 形状：初始 URI 必须逐字符等于 fixed x64
+  Standard descriptor，307 Location 恰好一个，redirect 响应无 content type/
+  encoding/transfer encoding 且长度只能缺失或为 0；终点无下一跳、content type
+  恰好为无参数 `application/octet-stream`、无 content/transfer encoding，并有唯一
+  64 bytes–1 GiB `Content-Length`。HEAD、302/308、多跳、206、chunked、压缩、缺失/
+  重复/越界长度全部 fail closed；若 Anthropic 改变官方链路，必须重新核验并更新合同，
+  不能预先放宽。
+- raw redirect/final transport URI 只存在于转换调用期间，可携带不透明易变 query；
+  它不进入输出、binding、receipt、异常、状态或日志，也不创建 raw URI/query hash。
+  安全输出只保留 canonical、无显式端口的
+  `https://downloads.claude.ai/releases/win32/x64/<numeric.version>/Claude-<40-lower-hex>.msix`
+  scheme/host/path projection。query 前的 raw projection 必须与它逐字节相等，因此
+  dot/percent canonicalization alias、Unicode control/separator、userinfo/fragment、
+  其他平台或架构全部 fail closed；文件名 hex 只作为已核验 routing grammar，不作为
+  hash evidence。两个 projection 相同但 query 不同的 synthetic transport URI 产生
+  逐字节相同的安全 observation/binding；真正 artifact identity 仍只能来自 body
+  SHA-256/length、physical file identity、manifest 和 same-state WVT。
+- 公开 `Save-CddsiOfficialClaudeDesktopMsix` 仍未消费 transport observation 或
+  acquisition session，也没有 HttpClient、writer 或文件 I/O。旧的
+  `CacheKey=latest descriptor token` / `unique-by-immutable-descriptor` 伪声明已删除；
+  plan 现在显式返回 artifact/cache identity 均须等 body hash 后才可用，transport
+  仍 `NOT_CONNECTED`、`WriteImplemented=false`。
+- 两路只读设计审计确认，公开 Save 接线前仍必须实现 owner/DACL/trusted-writer、
+  held-directory identity、显式 external snapshot receipt binding，以及从 downloader
+  `CreateNew` 到 hash/flush/manifest/WVT/receipt 的同一文件句柄连续性。现有 path token、
+  NTFS/reparse bootstrap、关闭 handle 的 body writer 与随后按路径重开文件的 correlator
+  不足以封闭目录 swap 或 close/move/reopen TOCTOU；这些仍是硬阻断，不由本批纯 claim
+  替代。
+
+本批最终在彼此独立的 fresh Windows PowerShell 5.1 进程中通过
+`D027ClaudeDownloadReceipt` 16/16、只筛选受影响 cache-neutral Save TestSafe
+contract 1/1、PublicFunctions 4/4、Config 18/18、Encoding 4/4，共 43 passed、
+0 failed/skipped/inconclusive；旧 `DesktopMsix` 文件其余 6 项明确 not run，不计通过。
+release inventory 为 tracked 183 = package 41 + development-only 142，duplicate/
+case-alias/overlap/missing/unknown 均 0；PowerShell sources 112 = execution-plane
+entries 112 且差异 0；PS5 parser 112 files/0 errors；tracked 183、release 41、
+evidence 0 files 的 secret findings 均 0，evidence roots 0，`git diff --check`
+通过。两路最终只读安全/测试复审均为 no blockers；后续 outer downloader 必须消费
+同一个 response/stream，不能用 sanitized URI refetch。当前仍不是网络、artifact、
+candidate、clean-snapshot acceptance 或发布证据。
 
 ### D-027 当前 Claude MSIX acquisition snapshot authority 批次
 

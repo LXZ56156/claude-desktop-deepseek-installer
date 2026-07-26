@@ -87,13 +87,24 @@ Describe 'P4 Anthropic MSIX supply-chain contract' {
         $context.AccessLedger.ProductNetworkRequestCount | Should -Be 0
     }
 
-    It 'returns a cache-bound plan without network or filesystem mutation' {
+    It 'returns a cache-neutral plan without network or filesystem mutation' {
         $descriptor = ConvertFrom-CddsiAnthropicMsixReleaseMetadata -ReleaseDocument $script:MsixFixture -Architecture x64 -Channel Standard
         $context = New-CddsiTestExecutionContext -SandboxRoot $TestDrive
         $result = Save-CddsiOfficialClaudeDesktopMsix -ExecutionContext $context -DestinationPath (Join-Path $TestDrive 'Claude.msix') -ArtifactDescriptor $descriptor -Mode TestSafe
         $result.Status | Should -BeExactly 'ACTION_REQUIRED'
         $result.Changed | Should -BeFalse
-        $result.Data.CacheKey | Should -BeExactly $descriptor.MetadataBindingToken
+        $result.Data.SourceDescriptorBindingToken |
+            Should -BeExactly $descriptor.MetadataBindingToken
+        $result.Data.RequestUriBindingToken |
+            Should -BeExactly $descriptor.SourceUriBindingToken
+        $result.Data.ArtifactIdentityStatus |
+            Should -BeExactly 'UNRESOLVED_UNTIL_BODY_HASHED'
+        $result.Data.CacheIdentityStatus |
+            Should -BeExactly 'UNAVAILABLE_UNTIL_BODY_HASHED'
+        @($result.Data.PSObject.Properties.Name) |
+            Should -Not -Contain 'CacheKey'
+        @($result.Data.PSObject.Properties.Name) |
+            Should -Not -Contain 'CachePolicy'
         $result.Data.WriteImplemented | Should -BeFalse
         Assert-CddsiFakeProviderExpectations -ExecutionContext $context -RequireNoMutations | Should -BeTrue
     }

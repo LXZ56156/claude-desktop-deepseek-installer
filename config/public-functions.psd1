@@ -124,6 +124,10 @@
             'New-CddsiD027ClaudeDesktopSourceDescriptor'
             'Test-CddsiD027ClaudeDesktopSourceDescriptor'
             'Test-CddsiD027ClaudeSanitizedDownloadUri'
+            'ConvertTo-CddsiD027ClaudeSanitizedTransportUri'
+            'Get-CddsiD027ClaudeTransportHeaderBindingToken'
+            'New-CddsiD027ClaudeTransportHeaderObservation'
+            'Test-CddsiD027ClaudeTransportHeaderObservation'
             'Test-CddsiD027ClaudeDownloadDestinationPath'
             'Get-CddsiD027ClaudeDownloadReceiptBindingToken'
             'Get-CddsiD027ClaudeFileIdentityToken'
@@ -535,6 +539,10 @@
         'New-CddsiD027ClaudeDesktopSourceDescriptor' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Test-CddsiD027ClaudeDesktopSourceDescriptor' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Test-CddsiD027ClaudeSanitizedDownloadUri' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'ConvertTo-CddsiD027ClaudeSanitizedTransportUri' = @{ Kind = 'Pure'; Mandatory = @('TransportUri'); Mode = $false }
+        'Get-CddsiD027ClaudeTransportHeaderBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Observation'); Mode = $false }
+        'New-CddsiD027ClaudeTransportHeaderObservation' = @{ Kind = 'Pure'; Mandatory = @('ArtifactDescriptor', 'HeaderFacts'); Mode = $false }
+        'Test-CddsiD027ClaudeTransportHeaderObservation' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'ArtifactDescriptor'); Mode = $false }
         'Test-CddsiD027ClaudeDownloadDestinationPath' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
         'Get-CddsiD027ClaudeDownloadReceiptBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Receipt'); Mode = $false }
         'Get-CddsiD027ClaudeFileIdentityToken' = @{ Kind = 'Pure'; Mandatory = @('FinalPathBindingToken', 'VolumeSerialNumberHex', 'FileIndexHex', 'ArtifactSha256', 'ArtifactSizeBytes'); Mode = $false }

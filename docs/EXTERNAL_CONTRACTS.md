@@ -263,6 +263,17 @@ snapshot workload 可以把精确候选、这个 source binding 和产品 temp �
 package identity 或安装权限；这些必须在实际 body 完成后由同句柄证据产生，并由独立的
 完整 provisioning workload 再授权。
 
+代码中的纯 transport header contract 目前精确固定官方核验到的单次 GET 307 →
+GET 200、唯一 Location、终点无下一跳、`application/octet-stream`、无 content/
+transfer encoding 和唯一有界 Content-Length。它允许 raw transport URI 在调用期间
+携带不透明易变 query，但 query 前的 raw URI 必须逐字节等于 canonical
+`https://downloads.claude.ai/releases/win32/x64/<numeric.version>/Claude-<40-lower-hex>.msix`
+projection，不允许 dot/percent canonicalization、显式端口、Unicode control/separator
+或平台/架构歧义。文件名 hex 只是 routing grammar，不作为 hash evidence。只保留这个
+scheme/host/path projection；raw URI/query 不被哈希、绑定或持久化。该 policy
+observation 不下载 body，也不是最终 URL、SHA-256、signer、Publisher、package identity
+或 cache identity；上游形状改变时必须 fail closed 后重新核验。
+
 每个实际 MSIX 的 URL、架构、SHA-256、Authenticode signer、证书链、Publisher、
 package identity 和最低 Desktop 版本仍属于**实物待验**，不能只靠固定字符串。
 

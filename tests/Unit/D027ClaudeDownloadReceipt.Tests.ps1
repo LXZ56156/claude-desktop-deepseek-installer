@@ -108,6 +108,47 @@ BeforeAll {
             ObservedAtUtc = $ObservedAtUtc
         }
     }
+
+    function New-CddsiD027ClaudeTransportHeaderFactsFixture {
+        param(
+            [string]$TransportUri =
+                (
+                    'https://downloads.claude.ai/releases/win32/x64/' +
+                    '1.2.3/Claude-' +
+                    '0123456789abcdef0123456789abcdef01234567.msix?v=1'
+                ),
+            [long]$ContentLengthBytes = [long]258383876
+        )
+
+        return [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion =
+                'cddsi-d027-claude-transport-header-facts-v1'
+            InitialRequestMethod = 'GET'
+            InitialRequestUri =
+                'https://claude.ai/api/desktop/win32/x64/msix/latest/redirect'
+            InitialStatusCode = [long]307
+            RedirectCount = [long]1
+            RedirectLocationHeaderCount = [long]1
+            RedirectTargetTransportUri = $TransportUri
+            RedirectContentTypeHeaderCount = [long]0
+            RedirectContentEncodingCount = [long]0
+            RedirectTransferEncodingCount = [long]0
+            RedirectContentLengthHeaderCount = [long]1
+            RedirectContentLengthBytes = [long]0
+            FinalRequestMethod = 'GET'
+            FinalRequestTransportUri = $TransportUri
+            FinalStatusCode = [long]200
+            FinalLocationHeaderCount = [long]0
+            FinalContentTypeHeaderCount = [long]1
+            FinalContentTypeMediaType = 'application/octet-stream'
+            FinalContentTypeParameterCount = [long]0
+            FinalContentEncodingCount = [long]0
+            FinalTransferEncodingCount = [long]0
+            FinalContentLengthHeaderCount = [long]1
+            FinalContentLengthBytes = $ContentLengthBytes
+        }
+    }
 }
 
 Describe 'D-027 Claude exact unresolved source descriptor' {
@@ -263,6 +304,290 @@ Describe 'D-027 Claude exact unresolved source descriptor' {
                 -DestinationPath $case.Path |
                 Should -BeFalse -Because $case.Path
         }
+    }
+}
+
+Describe 'D-027 Claude pure redirect and final-header observation' {
+    It 'accepts one exact 307 to 200 GET trace and emits only a safe projection' {
+        $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        $observation =
+            New-CddsiD027ClaudeTransportHeaderObservation `
+                -ArtifactDescriptor $descriptor `
+                -HeaderFacts (
+                    New-CddsiD027ClaudeTransportHeaderFactsFixture
+                )
+
+        (Test-CddsiExactPropertySet -InputObject $observation -Expected @(
+                'SchemaVersion',
+                'ContractVersion',
+                'TransportState',
+                'ArtifactProfile',
+                'ArtifactType',
+                'DescriptorId',
+                'SourceDescriptorBindingToken',
+                'RequestUriBindingToken',
+                'RequestMethod',
+                'InitialStatusCode',
+                'SanitizedFinalUri',
+                'SanitizedFinalUriBindingToken',
+                'RedirectCount',
+                'FinalStatusCode',
+                'ContentTypeMediaType',
+                'ContentEncodingCount',
+                'TransferEncodingCount',
+                'DeclaredContentLengthBytes',
+                'HeaderObservationBindingToken'
+            )) | Should -BeTrue
+        $observation.TransportState |
+            Should -BeExactly 'HEADERS_ACCEPTED_BODY_UNVERIFIED'
+        $observation.ArtifactProfile | Should -BeExactly 'VmAcceptance'
+        $observation.RequestMethod | Should -BeExactly 'GET'
+        $observation.InitialStatusCode | Should -Be ([long]307)
+        $observation.RedirectCount | Should -Be ([long]1)
+        $observation.FinalStatusCode | Should -Be ([long]200)
+        $observation.ContentTypeMediaType |
+            Should -BeExactly 'application/octet-stream'
+        $observation.DeclaredContentLengthBytes |
+            Should -Be ([long]258383876)
+        $observation.SanitizedFinalUri |
+            Should -BeExactly (
+                'https://downloads.claude.ai/releases/win32/x64/' +
+                '1.2.3/Claude-' +
+                '0123456789abcdef0123456789abcdef01234567.msix'
+            )
+        $observation.HeaderObservationBindingToken |
+            Should -Match '^[a-f0-9]{64}$'
+        Test-CddsiD027ClaudeTransportHeaderObservation `
+            -Observation $observation `
+            -ArtifactDescriptor $descriptor |
+            Should -BeTrue
+    }
+
+    It 'never persists or binds an opaque transport query' {
+        $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        $one = New-CddsiD027ClaudeTransportHeaderObservation `
+            -ArtifactDescriptor $descriptor `
+            -HeaderFacts (
+                New-CddsiD027ClaudeTransportHeaderFactsFixture `
+                    -TransportUri (
+                        'https://downloads.claude.ai/releases/win32/x64/' +
+                        '1.2.3/Claude-' +
+                        '0123456789abcdef0123456789abcdef01234567.msix?v=1'
+                    )
+            )
+        $two = New-CddsiD027ClaudeTransportHeaderObservation `
+            -ArtifactDescriptor $descriptor `
+            -HeaderFacts (
+                New-CddsiD027ClaudeTransportHeaderFactsFixture `
+                    -TransportUri (
+                        'https://downloads.claude.ai/releases/win32/x64/' +
+                        '1.2.3/Claude-' +
+                        '0123456789abcdef0123456789abcdef01234567.msix?v=2'
+                    )
+            )
+
+        ($one | ConvertTo-Json -Depth 4 -Compress) |
+            Should -BeExactly ($two | ConvertTo-Json -Depth 4 -Compress)
+        @($one.PSObject.Properties.Name) | Should -Not -Contain 'TransportUri'
+        @($one.PSObject.Properties.Name) | Should -Not -Contain 'Query'
+        ($one | ConvertTo-Json -Depth 4 -Compress) |
+            Should -Not -Match '\?'
+    }
+
+    It 'rejects nonofficial ambiguous or contradictory transport targets' {
+        $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        foreach ($uri in @(
+                'https://downloads.claude.com/Claude.msix',
+                'https://sub.downloads.claude.ai/Claude.msix',
+                'https://downloads.claude.ai:444/Claude.msix',
+                'https://downloads.claude.ai:443/releases/win32/x64/1.2.3/Claude-0123456789abcdef0123456789abcdef01234567.msix',
+                'http://downloads.claude.ai/Claude.msix',
+                'https://user@downloads.claude.ai/Claude.msix',
+                'https://downloads.claude.ai/Claude.msix#fragment',
+                '/relative/Claude.msix',
+                'https://downloads.claude.ai/Claude.msix',
+                'https://downloads.claude.ai/a/%43laude.msix',
+                'https://downloads.claude.ai/releases/win32/x64/./1.2.3/Claude-0123456789abcdef0123456789abcdef01234567.msix',
+                'https://downloads.claude.ai/releases/win32/x64/a/../1.2.3/Claude-0123456789abcdef0123456789abcdef01234567.msix',
+                'https://downloads.claude.ai/releases/win32/x64/a/%2e%2e/1.2.3/Claude-0123456789abcdef0123456789abcdef01234567.msix',
+                'https://downloads.claude.ai/releases/linux/x64/1.2.3/Claude.msix',
+                'https://downloads.claude.ai/releases/win32/arm-64/1.2.3/Claude.msix',
+                'https://downloads.claude.ai/releases/arm64/Claude.msix',
+                'https://downloads.claude.ai/releases/offline/Claude.msix',
+                'https://downloads.claude.ai/releases/win32/x64/1.2.3/Claude-arm-64.msix',
+                'https://downloads.claude.ai/releases/win32/x64/beta/Claude-0123456789abcdef0123456789abcdef01234567.msix',
+                'https://downloads.claude.ai/releases/win32/x64/1.2.3/Claude-arm32.msix',
+                'https://downloads.claude.ai/releases/win32/x64/1.2.3/Claude-i386.msix',
+                'https://downloads.claude.ai/releases/win32/x64/1.2.3/Claude-offlinebuild.msix',
+                (
+                    'https://downloads.claude.ai/releases/win32/x64/' +
+                    '1.2.3/Claude-' +
+                    '0123456789abcdef0123456789abcdef01234567.msix?x=' +
+                    [char]1
+                ),
+                (
+                    'https://downloads.claude.ai/releases/win32/x64/' +
+                    '1.2.3/Claude-' +
+                    '0123456789abcdef0123456789abcdef01234567.msix?x=' +
+                    [char]9
+                ),
+                (
+                    'https://downloads.claude.ai/releases/win32/x64/' +
+                    '1.2.3/Claude-' +
+                    '0123456789abcdef0123456789abcdef01234567.msix?x=' +
+                    [char]0x85
+                )
+            )) {
+            {
+                New-CddsiD027ClaudeTransportHeaderObservation `
+                    -ArtifactDescriptor $descriptor `
+                    -HeaderFacts (
+                        New-CddsiD027ClaudeTransportHeaderFactsFixture `
+                            -TransportUri $uri
+                    )
+            } | Should -Throw '*header facts*' -Because $uri
+        }
+    }
+
+    It 'rejects every redirect final-header and length policy drift' {
+        $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        $mutations = @(
+            @{ Name = 'InitialRequestMethod'; Value = 'HEAD' },
+            @{
+                Name = 'InitialRequestUri'
+                Value =
+                    'https://claude.ai/api/desktop/win32/x64/msix/latest'
+            },
+            @{ Name = 'InitialStatusCode'; Value = [long]302 },
+            @{ Name = 'RedirectCount'; Value = [long]2 },
+            @{ Name = 'RedirectLocationHeaderCount'; Value = [long]0 },
+            @{ Name = 'RedirectLocationHeaderCount'; Value = [long]2 },
+            @{ Name = 'RedirectContentTypeHeaderCount'; Value = [long]1 },
+            @{ Name = 'RedirectContentEncodingCount'; Value = [long]1 },
+            @{ Name = 'RedirectTransferEncodingCount'; Value = [long]1 },
+            @{ Name = 'RedirectContentLengthHeaderCount'; Value = [long]0 },
+            @{ Name = 'RedirectContentLengthBytes'; Value = [long]1 },
+            @{ Name = 'FinalRequestMethod'; Value = 'HEAD' },
+            @{
+                Name = 'FinalRequestTransportUri'
+                Value = 'https://downloads.claude.ai/other/Claude.msix'
+            },
+            @{ Name = 'FinalStatusCode'; Value = [long]206 },
+            @{ Name = 'FinalLocationHeaderCount'; Value = [long]1 },
+            @{ Name = 'FinalContentTypeHeaderCount'; Value = [long]0 },
+            @{ Name = 'FinalContentTypeHeaderCount'; Value = [long]2 },
+            @{ Name = 'FinalContentTypeMediaType'; Value = 'application/msix' },
+            @{ Name = 'FinalContentTypeParameterCount'; Value = [long]1 },
+            @{ Name = 'FinalContentEncodingCount'; Value = [long]1 },
+            @{ Name = 'FinalTransferEncodingCount'; Value = [long]1 },
+            @{ Name = 'FinalContentLengthHeaderCount'; Value = [long]0 },
+            @{ Name = 'FinalContentLengthHeaderCount'; Value = [long]2 },
+            @{ Name = 'FinalContentLengthBytes'; Value = [long]63 },
+            @{ Name = 'FinalContentLengthBytes'; Value = [long](1GB + 1) },
+            @{ Name = 'FinalStatusCode'; Value = '200' }
+        )
+        foreach ($mutation in $mutations) {
+            $facts = New-CddsiD027ClaudeTransportHeaderFactsFixture
+            $facts.PSObject.Properties[$mutation.Name].Value = $mutation.Value
+            {
+                New-CddsiD027ClaudeTransportHeaderObservation `
+                    -ArtifactDescriptor $descriptor `
+                    -HeaderFacts $facts
+            } | Should -Throw '*header facts*' -Because $mutation.Name
+        }
+
+        $missingRedirectLength =
+            New-CddsiD027ClaudeTransportHeaderFactsFixture
+        $missingRedirectLength.RedirectContentLengthHeaderCount = [long]0
+        $missingRedirectLength.RedirectContentLengthBytes = [long]-1
+        {
+            New-CddsiD027ClaudeTransportHeaderObservation `
+                -ArtifactDescriptor $descriptor `
+                -HeaderFacts $missingRedirectLength
+        } | Should -Not -Throw
+    }
+
+    It 'rejects exact-schema type and semantic tampering after rebinding' {
+        $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        $observation =
+            New-CddsiD027ClaudeTransportHeaderObservation `
+                -ArtifactDescriptor $descriptor `
+                -HeaderFacts (
+                    New-CddsiD027ClaudeTransportHeaderFactsFixture
+                )
+        foreach ($mutation in @(
+                @{ Name = 'FinalStatusCode'; Value = [long]201 },
+                @{ Name = 'InitialStatusCode'; Value = '307' },
+                @{ Name = 'ContentEncodingCount'; Value = [long]1 },
+                @{
+                    Name = 'SourceDescriptorBindingToken'
+                    Value = 'a' * 64
+                },
+                @{
+                    Name = 'RequestUriBindingToken'
+                    Value = 'b' * 64
+                },
+                @{
+                    Name = 'ContractVersion'
+                    Value = 'cddsi-d027-claude-transport-header-observation-v2'
+                },
+                @{ Name = 'TransferEncodingCount'; Value = [long]1 },
+                @{ Name = 'DeclaredContentLengthBytes'; Value = [long]63 }
+            )) {
+            $changed = $observation.PSObject.Copy()
+            $changed.PSObject.Properties[$mutation.Name].Value =
+                $mutation.Value
+            $changed.HeaderObservationBindingToken =
+                Get-CddsiD027ClaudeTransportHeaderBindingToken `
+                    -Observation $changed
+            Test-CddsiD027ClaudeTransportHeaderObservation `
+                -Observation $changed `
+                -ArtifactDescriptor $descriptor |
+                Should -BeFalse -Because $mutation.Name
+        }
+
+        $extra = $observation.PSObject.Copy()
+        Add-Member -InputObject $extra -NotePropertyName RawTransportUri `
+            -NotePropertyValue 'not-retained'
+        Test-CddsiD027ClaudeTransportHeaderObservation `
+            -Observation $extra `
+            -ArtifactDescriptor $descriptor |
+            Should -BeFalse
+        {
+            Get-CddsiD027ClaudeTransportHeaderBindingToken `
+                -Observation $extra
+        } | Should -Throw '*exact binding schema*'
+    }
+
+    It 'keeps transport policy pure and the public Save plan cache-neutral' {
+        foreach ($name in @(
+                'ConvertTo-CddsiD027ClaudeSanitizedTransportUri',
+                'Get-CddsiD027ClaudeTransportHeaderBindingToken',
+                'New-CddsiD027ClaudeTransportHeaderObservation',
+                'Test-CddsiD027ClaudeTransportHeaderObservation'
+            )) {
+            $definition = (Get-Command $name -CommandType Function).Definition
+            $definition | Should -Not -Match (
+                '(?i)Invoke-WebRequest|Invoke-RestMethod|HttpClient|' +
+                'Start-Process|Get-AuthenticodeSignature|' +
+                'Get-Item|New-Item|Remove-Item|Move-Item|Copy-Item|' +
+                'Get-Content|Set-Content|Add-Content|Out-File|' +
+                'Test-Path|Resolve-Path|Get-ChildItem|' +
+                'Get-ItemProperty|Set-ItemProperty|Add-Appx|' +
+                '\[System\.IO\.File\]'
+            )
+        }
+        $saveDefinition =
+            (Get-Command Save-CddsiOfficialClaudeDesktopMsix).
+                Definition
+        $saveDefinition | Should -Not -Match 'CacheKey'
+        $saveDefinition | Should -Not -Match 'unique-by-immutable-descriptor'
+        $saveDefinition | Should -Not -Match (
+            'New-CddsiD027ClaudeTransportHeaderObservation'
+        )
+        $saveDefinition | Should -Not -Match (
+            'Assert-CddsiD027ClaudeAcquisitionLiveContext'
+        )
     }
 }
 
@@ -671,6 +996,10 @@ Describe 'D-027 Claude held artifact TOCTOU contract' {
             'New-CddsiD027ClaudeDesktopSourceDescriptor',
             'Test-CddsiD027ClaudeDesktopSourceDescriptor',
             'Test-CddsiD027ClaudeSanitizedDownloadUri',
+            'ConvertTo-CddsiD027ClaudeSanitizedTransportUri',
+            'Get-CddsiD027ClaudeTransportHeaderBindingToken',
+            'New-CddsiD027ClaudeTransportHeaderObservation',
+            'Test-CddsiD027ClaudeTransportHeaderObservation',
             'Test-CddsiD027ClaudeDownloadDestinationPath',
             'Get-CddsiD027ClaudeDownloadReceiptBindingToken',
             'Get-CddsiD027ClaudeFileIdentityToken',
