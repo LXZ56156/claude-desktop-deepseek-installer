@@ -20,7 +20,9 @@ D027_SNAPSHOT_PRIVATE_COMMON_PROOF_AND_FIXED_DOMAIN_WRAPPERS_IMPLEMENTED /
 GIT_LIVE_INSTALL_BLOCKED_PENDING_CANDIDATE_WORKLOAD_BINDING /
 CLAUDE_OFFICIAL_X64_STANDARD_SOURCE_DESCRIPTOR_IMPLEMENTED_UNRESOLVED /
 CLAUDE_BOUNDED_MSIX_MANIFEST_PARSER_IMPLEMENTED_PROVISIONAL_IDENTITY /
+CLAUDE_MANIFEST_RAW_CONTENT_AND_IDENTITY_BINDING_IMPLEMENTED /
 CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
+CLAUDE_SAME_STATE_SIGNER_EVIDENCE_PURE_CONTRACT_IMPLEMENTED /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
 CLAUDE_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
@@ -32,7 +34,61 @@ REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
 
-### D-027 当前 Claude machine-wide snapshot workload 纯合同批次
+### D-027 当前 Claude MSIX raw-manifest 与 same-state signer claim 纯合同批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`1aa90fb56330141ef4951cd90037902eee125f0e`、tree
+`8978b1d73471a495891fc3ce6cb45216e9867597`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批只建立 raw manifest 与 signer evidence claim 的纯 schema、binding 和关联校验；
+没有执行 native WinVerifyTrust、产品网络、下载、文件/注册表写入、进程、UAC、
+AppX/DISM 或安装，也没有建立 Claude session、Live producer 或 trust policy。
+
+- `cddsi-d027-claude-appx-manifest-v1` 现在是精确 13 字段合同。入口先把调用方
+  `byte[]` 克隆成单一本地 snapshot，再以同一 snapshot 完成 SHA-256、长度和 XML
+  package identity 解析，避免调用期间的可变数组漂移。raw manifest SHA-256/长度与
+  package identity token 进入独立
+  `cddsi-d027-claude-manifest-binding-v1` domain；raw manifest binding 与 parsed
+  package identity binding 不是同一 token。
+- `cddsi-d027-claude-msix-signature-evidence-v1` 是精确 30 字段纯合同，固定
+  `VmAcceptance`、`ClaudeDesktopMsix`、`WinVerifyTrustGenericVerifyV2`、
+  `WinVerifyTrustStateDataPrimarySigner` 和
+  `VerifyExtractPrimarySignerClose`。它交叉绑定 run、最终路径、download receipt、
+  held-file identity/content、raw manifest、package identity、signer certificate
+  DER 及其 SHA-256/长度/SHA-1 thumbprint、Subject 文本/原始 X.500 编码摘要、
+  WinVerifyTrust 自报告字段和 UTC 时间窗，再进入独立 evidence binding domain。
+- signer certificate 输入只接受 canonical Base64 的单一公开 DER，最大
+  12,288 bytes；解析使用 `EphemeralKeySet`，并要求解析后的 `RawData` 与输入精确
+  相等且不含 private key。manifest Publisher 原文与证书 `Subject` 使用 ordinal、
+  case-sensitive、space-sensitive 精确相等。manifest 的 parsed-X500 raw hash 与
+  certificate `SubjectName.RawData` hash 分别绑定；在真实 artifact 校准前不要求两种
+  raw encoding 相等。
+- 这些字段只是 self-consistent same-state signer **claim**，不能证明
+  WinVerifyTrust 实际执行、DER 来自同一 `hWVTStateData`、signer/publisher 已获信任，
+  或 Anthropic identity 已冻结。未来私有 producer 必须持有最终 MSIX 的同一文件
+  句柄，在 `WinVerifyTrust` VERIFY 后从同一 state data 提取 primary signer，再执行
+  CLOSE；不得使用 `Get-AuthenticodeSignature`，也不得按路径重新打开文件。只有该
+  producer、真实 policy 和 process-scoped Claude session 完成后才可能授予 Live
+  authority。
+- 三个新增公开入口均登记为 Pure；没有 Context/Mode/Bypass 或 caller-selectable
+  signer/publisher/operation 参数。production snapshot authority 仍为
+  `Configured=false`，Claude session/Live 与 machine-wide provisioning 仍不存在。
+
+本批最终 Windows PowerShell 5.1 focused 结果为：
+`D027ClaudeMsixSignatureEvidence` 7/7、`D027ClaudeMsixManifest` 5/5、
+`D027ClaudeDownloadReceipt` 10/10、`PublicFunctions` 4/4、`Config` 18/18，
+以及 `LiveAdapters` 中仅与当前 bootstrap graph 相关的 filter 1/1；合计
+45 passed、0 failed、0 skipped、0 inconclusive，filter 有 5 not-run；
+`Encoding` 另为 4/4。tracked 加 intended untracked 共 180 files 中 109 个
+PowerShell source parser 为 0 error，`git diff --check` 通过。release manifest
+为 schema 1、41 package files、139 development-only files，
+duplicate/overlap/missing/unclassified/unknown 均为 0；109 个 PowerShell source 与
+109 个 execution plane entry 精确相等。180 个 inventory 和 41 个 package files
+的独立 secret scan 均为 0 findings，顶层 evidence/artifact/report/log root 为 0。
+当前不是 native signer proof、Claude Live/session、候选 ZIP、clean-snapshot
+acceptance 或发布证据。
+
+### D-027 前序已推送 Claude machine-wide snapshot workload 纯合同批次
 
 本批的精确 parent 为已普通 fast-forward 推送的 commit
 `0de0581b72362cb63bfa6b5fa8109c1c48de2523`、tree

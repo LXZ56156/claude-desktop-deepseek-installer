@@ -131,6 +131,9 @@
             'New-CddsiD027ClaudeDownloadReceipt'
             'Test-CddsiD027ClaudeDownloadReceipt'
             'Test-CddsiD027ClaudeDownloadedArtifactObservation'
+            'Get-CddsiD027ClaudeManifestBindingToken'
+            'Get-CddsiD027ClaudeMsixSignatureEvidenceBindingToken'
+            'Test-CddsiD027ClaudeMsixSignatureEvidenceContract'
             'ConvertFrom-CddsiD027ClaudeAppxManifestBytes'
             'Read-CddsiD027ClaudeMsixManifest'
             'Get-CddsiClaudeDesktopMsixStatus'
@@ -531,6 +534,9 @@
         'New-CddsiD027ClaudeDownloadReceipt' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'StagingRootPath', 'DestinationPath', 'FileIdentityToken', 'SanitizedRedirectUris', 'ArtifactSha256', 'ArtifactSizeBytes', 'ObservedAtUtc'); Mode = $false }
         'Test-CddsiD027ClaudeDownloadReceipt' = @{ Kind = 'Pure'; Mandatory = @('ExpectedRunId', 'ExpectedStagingRootPath', 'ExpectedDestinationPath', 'ExpectedFileIdentityToken', 'ExpectedArtifactSha256', 'ExpectedArtifactSizeBytes', 'ValidationTimeUtc'); Mode = $false }
         'Test-CddsiD027ClaudeDownloadedArtifactObservation' = @{ Kind = 'Pure'; Mandatory = @('ExpectedRunId', 'ExpectedStagingRootPath', 'ExpectedDestinationPath', 'ValidationTimeUtc'); Mode = $false }
+        'Get-CddsiD027ClaudeManifestBindingToken' = @{ Kind = 'Pure'; Mandatory = @('ManifestIdentity'); Mode = $false }
+        'Get-CddsiD027ClaudeMsixSignatureEvidenceBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Evidence'); Mode = $false }
+        'Test-CddsiD027ClaudeMsixSignatureEvidenceContract' = @{ Kind = 'Pure'; Mandatory = @('Evidence', 'ManifestIdentity', 'DownloadReceipt', 'HeldArtifactObservation', 'ExpectedRunId', 'ExpectedStagingRootPath', 'ExpectedDestinationPath', 'ValidationTimeUtc'); Mode = $false }
         'ConvertFrom-CddsiD027ClaudeAppxManifestBytes' = @{ Kind = 'Pure'; Mandatory = @('ManifestBytes'); Mode = $false }
         'Read-CddsiD027ClaudeMsixManifest' = @{ Kind = 'Pure'; Mandatory = @('PackageStream'); Mode = $false }
         'Get-CddsiClaudeDesktopMsixStatus' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion', 'RequiredScope', 'ExpectedArchitecture'); Mode = $false }

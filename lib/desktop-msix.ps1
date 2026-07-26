@@ -5,6 +5,7 @@ $script:CddsiD027ClaudeStandardX64SourceUri =
     'https://claude.ai/api/desktop/win32/x64/msix/latest/redirect'
 $script:CddsiD027ClaudeMsixMaximumBytes = [long](1GB)
 $script:CddsiD027ClaudeManifestMaximumBytes = [long](1MB)
+$script:CddsiD027ClaudeSignerCertificateMaximumBytes = 12288
 $script:CddsiD027ClaudeManifestNamespace =
     'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
 $script:CddsiD027ClaudeDownloadReceiptFieldNames = @(
@@ -46,6 +47,53 @@ $script:CddsiD027ClaudeHeldArtifactObservationFieldNames = @(
     'ArtifactSha256',
     'ArtifactSizeBytes',
     'ObservedAtUtc'
+)
+$script:CddsiD027ClaudeManifestIdentityFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'PackageName',
+    'Publisher',
+    'PublisherTextSha256',
+    'PublisherParsedX500RawDataSha256',
+    'PackageVersion',
+    'Architecture',
+    'ResourceId',
+    'PackageIdentityBindingToken',
+    'ManifestSha256',
+    'ManifestLengthBytes',
+    'ManifestBindingToken'
+)
+$script:CddsiD027ClaudeMsixSignatureEvidenceFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'EvidenceKind',
+    'VerificationMethod',
+    'SignerExtractionMethod',
+    'StateLifecycle',
+    'RunId',
+    'ArtifactProfile',
+    'ArtifactType',
+    'FinalPathBindingToken',
+    'DownloadReceiptBindingToken',
+    'FileIdentityToken',
+    'ArtifactSha256',
+    'ArtifactSizeBytes',
+    'ContentBindingToken',
+    'ManifestBindingToken',
+    'PackageIdentityBindingToken',
+    'WinVerifyTrustTrusted',
+    'WinVerifyTrustStatus',
+    'WinVerifyTrustNativeStatusHex',
+    'WinVerifyTrustRevocationMode',
+    'SignerCertificateDerBase64',
+    'SignerCertificateDerSha256',
+    'SignerCertificateDerLengthBytes',
+    'SignerCertificateThumbprintSha1',
+    'SignerSubject',
+    'SignerSubjectTextSha256',
+    'SignerSubjectNameRawDataSha256',
+    'ObservedAtUtc',
+    'EvidenceBindingToken'
 )
 
 function New-CddsiD027ClaudeDesktopSourceDescriptor {
@@ -806,6 +854,473 @@ function Test-CddsiD027ClaudeDownloadedArtifactObservation {
     }
 }
 
+function Get-CddsiD027ClaudeManifestBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$ManifestIdentity
+    )
+
+    $sha = $null
+    try {
+        $withoutBinding = @(
+            $script:CddsiD027ClaudeManifestIdentityFieldNames |
+                Where-Object { $_ -cne 'ManifestBindingToken' }
+        )
+        if (
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $ManifestIdentity `
+                -Expected $withoutBinding) -and
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $ManifestIdentity `
+                -Expected $script:CddsiD027ClaudeManifestIdentityFieldNames)
+        ) {
+            throw 'Claude manifest identity did not match the exact binding schema.'
+        }
+        if (
+            -not (Test-CddsiSchemaVersionOne `
+                -Value $ManifestIdentity.SchemaVersion) -or
+            $ManifestIdentity.ContractVersion -isnot [string] -or
+            $ManifestIdentity.ContractVersion -cne
+                'cddsi-d027-claude-appx-manifest-v1' -or
+            $ManifestIdentity.PackageName -isnot [string] -or
+            $ManifestIdentity.PackageName -cne 'Claude' -or
+            $ManifestIdentity.Publisher -isnot [string] -or
+            $ManifestIdentity.Publisher.Length -lt 3 -or
+            $ManifestIdentity.Publisher.Length -gt 8192 -or
+            $ManifestIdentity.Publisher -match '[\x00-\x1f]' -or
+            $ManifestIdentity.PublisherTextSha256 -isnot [string] -or
+            $ManifestIdentity.PublisherTextSha256 -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $ManifestIdentity.PublisherTextSha256 -cmatch '^0{64}$' -or
+            $ManifestIdentity.PublisherParsedX500RawDataSha256 -isnot
+                [string] -or
+            $ManifestIdentity.PublisherParsedX500RawDataSha256 -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $ManifestIdentity.PublisherParsedX500RawDataSha256 -cmatch
+                '^0{64}$' -or
+            $ManifestIdentity.PackageVersion -isnot [string] -or
+            $ManifestIdentity.Architecture -isnot [string] -or
+            $ManifestIdentity.Architecture -cne 'x64' -or
+            $ManifestIdentity.ResourceId -isnot [string] -or
+            $ManifestIdentity.ResourceId -cne '' -or
+            $ManifestIdentity.PackageIdentityBindingToken -isnot [string] -or
+            $ManifestIdentity.PackageIdentityBindingToken -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $ManifestIdentity.PackageIdentityBindingToken -cmatch '^0{64}$' -or
+            $ManifestIdentity.ManifestSha256 -isnot [string] -or
+            $ManifestIdentity.ManifestSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $ManifestIdentity.ManifestSha256 -cmatch '^0{64}$' -or
+            (($ManifestIdentity.ManifestLengthBytes -isnot [int]) -and
+                ($ManifestIdentity.ManifestLengthBytes -isnot [long])) -or
+            [long]$ManifestIdentity.ManifestLengthBytes -lt 32 -or
+            [long]$ManifestIdentity.ManifestLengthBytes -gt
+                $script:CddsiD027ClaudeManifestMaximumBytes
+        ) {
+            throw 'Claude manifest identity values were invalid.'
+        }
+
+        $versionMatch = [regex]::Match(
+            $ManifestIdentity.PackageVersion,
+            '^(?<a>0|[1-9][0-9]{0,4})\.(?<b>0|[1-9][0-9]{0,4})\.(?<c>0|[1-9][0-9]{0,4})\.(?<d>0|[1-9][0-9]{0,4})$',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+        )
+        if (-not $versionMatch.Success) {
+            throw 'Claude manifest package version was invalid.'
+        }
+        foreach ($groupName in @('a', 'b', 'c', 'd')) {
+            if ([int]::Parse(
+                $versionMatch.Groups[$groupName].Value,
+                [Globalization.CultureInfo]::InvariantCulture
+            ) -gt 65535) {
+                throw 'Claude manifest package version exceeded its bound.'
+            }
+        }
+
+        $distinguishedName =
+            New-Object System.Security.Cryptography.X509Certificates.X500DistinguishedName(
+                $ManifestIdentity.Publisher
+            )
+        if (
+            $null -eq $distinguishedName.RawData -or
+            $distinguishedName.RawData.Length -lt 3
+        ) {
+            throw 'Claude manifest publisher distinguished name was invalid.'
+        }
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $publisherTextSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash(
+                [System.Text.Encoding]::UTF8.GetBytes(
+                    $ManifestIdentity.Publisher
+                )
+            )
+        ).Replace('-', '').ToLowerInvariant()
+        $publisherParsedX500RawDataSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash($distinguishedName.RawData)
+        ).Replace('-', '').ToLowerInvariant()
+        $packageIdentityBindingToken =
+            Get-CddsiSupplyChainTextBindingToken -Text (@(
+                'ContractVersion=cddsi-d027-claude-package-identity-v1'
+                'Name=Claude'
+                ('PublisherTextSha256={0}' -f $publisherTextSha256)
+                (
+                    'PublisherParsedX500RawDataSha256={0}' -f
+                        $publisherParsedX500RawDataSha256
+                )
+                ('Version={0}' -f $ManifestIdentity.PackageVersion)
+                'ProcessorArchitecture=x64'
+                'ResourceId='
+            ) -join "`n")
+        if (
+            $ManifestIdentity.PublisherTextSha256 -cne
+                $publisherTextSha256 -or
+            $ManifestIdentity.PublisherParsedX500RawDataSha256 -cne
+                $publisherParsedX500RawDataSha256 -or
+            $ManifestIdentity.PackageIdentityBindingToken -cne
+                $packageIdentityBindingToken
+        ) {
+            throw 'Claude manifest publisher or package identity binding drifted.'
+        }
+
+        return Get-CddsiSupplyChainTextBindingToken -Text (@(
+            'cddsi-d027-claude-manifest-binding-v1'
+            ('ManifestSha256={0}' -f $ManifestIdentity.ManifestSha256)
+            (
+                'ManifestLengthBytes={0}' -f
+                    [Convert]::ToString(
+                        [long]$ManifestIdentity.ManifestLengthBytes,
+                        [Globalization.CultureInfo]::InvariantCulture
+                    )
+            )
+            (
+                'PackageIdentityBindingToken={0}' -f
+                    $ManifestIdentity.PackageIdentityBindingToken
+            )
+        ) -join "`n")
+    }
+    finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+    }
+}
+
+function Get-CddsiD027ClaudeMsixSignatureEvidenceBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Evidence
+    )
+
+    $withoutBinding = @(
+        $script:CddsiD027ClaudeMsixSignatureEvidenceFieldNames |
+            Where-Object { $_ -cne 'EvidenceBindingToken' }
+    )
+    if (
+        -not (Test-CddsiExactPropertySet `
+            -InputObject $Evidence `
+            -Expected $withoutBinding) -and
+        -not (Test-CddsiExactPropertySet `
+            -InputObject $Evidence `
+            -Expected $script:CddsiD027ClaudeMsixSignatureEvidenceFieldNames)
+    ) {
+        throw 'Claude MSIX signature evidence did not match the exact binding schema.'
+    }
+
+    $canonical = New-Object System.Collections.Generic.List[string]
+    $canonical.Add(
+        'cddsi-d027-claude-msix-signature-evidence-binding-v1'
+    )
+    foreach ($name in $withoutBinding) {
+        $value = $Evidence.$name
+        $text = if ($value -is [string]) {
+            $value
+        }
+        elseif ($value -is [bool]) {
+            $value.ToString().ToLowerInvariant()
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            [Convert]::ToString(
+                [long]$value,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+        else {
+            throw 'Claude MSIX signature evidence contained an unsupported field type.'
+        }
+        $canonical.Add(
+            ('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text)
+        )
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function Test-CddsiD027ClaudeMsixSignatureEvidenceContract {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Evidence,
+        [Parameter(Mandatory = $true)][AllowNull()]$ManifestIdentity,
+        [Parameter(Mandatory = $true)][AllowNull()]$DownloadReceipt,
+        [Parameter(Mandatory = $true)][AllowNull()]$HeldArtifactObservation,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][string]$ExpectedStagingRootPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedDestinationPath,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc
+    )
+
+    $certificate = $null
+    $sha = $null
+    try {
+        if (
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Evidence `
+                -Expected `
+                    $script:CddsiD027ClaudeMsixSignatureEvidenceFieldNames) -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $ManifestIdentity `
+                -Expected $script:CddsiD027ClaudeManifestIdentityFieldNames) -or
+            -not (Test-CddsiSchemaVersionOne -Value $Evidence.SchemaVersion) -or
+            $Evidence.ContractVersion -isnot [string] -or
+            $Evidence.ContractVersion -cne
+                'cddsi-d027-claude-msix-signature-evidence-v1' -or
+            $Evidence.EvidenceKind -isnot [string] -or
+            $Evidence.EvidenceKind -cne 'ClaudeDesktopMsixWinVerifyTrust' -or
+            $Evidence.VerificationMethod -isnot [string] -or
+            $Evidence.VerificationMethod -cne
+                'WinVerifyTrustGenericVerifyV2' -or
+            $Evidence.SignerExtractionMethod -isnot [string] -or
+            $Evidence.SignerExtractionMethod -cne
+                'WinVerifyTrustStateDataPrimarySigner' -or
+            $Evidence.StateLifecycle -isnot [string] -or
+            $Evidence.StateLifecycle -cne
+                'VerifyExtractPrimarySignerClose' -or
+            $Evidence.ArtifactProfile -isnot [string] -or
+            $Evidence.ArtifactProfile -cne 'VmAcceptance' -or
+            $Evidence.ArtifactType -isnot [string] -or
+            $Evidence.ArtifactType -cne 'ClaudeDesktopMsix' -or
+            $Evidence.WinVerifyTrustTrusted -isnot [bool] -or
+            -not $Evidence.WinVerifyTrustTrusted -or
+            $Evidence.WinVerifyTrustStatus -isnot [string] -or
+            $Evidence.WinVerifyTrustStatus -cne 'Trusted' -or
+            $Evidence.WinVerifyTrustNativeStatusHex -isnot [string] -or
+            $Evidence.WinVerifyTrustNativeStatusHex -cne '0x00000000' -or
+            $Evidence.WinVerifyTrustRevocationMode -isnot [string] -or
+            $Evidence.WinVerifyTrustRevocationMode -cne 'NotChecked'
+        ) {
+            return $false
+        }
+
+        $runId = [guid]::Empty
+        if (
+            $Evidence.RunId -isnot [string] -or
+            -not [guid]::TryParse($Evidence.RunId, [ref]$runId) -or
+            $runId -eq [guid]::Empty -or
+            $Evidence.RunId -cne $runId.ToString('D') -or
+            $Evidence.RunId -cne $ExpectedRunId -or
+            $Evidence.FinalPathBindingToken -isnot [string] -or
+            $Evidence.FinalPathBindingToken -cne
+                (Get-CddsiPathBindingToken -Path $ExpectedDestinationPath) -or
+            $Evidence.DownloadReceiptBindingToken -isnot [string] -or
+            $Evidence.DownloadReceiptBindingToken -cne
+                $DownloadReceipt.ReceiptBindingToken -or
+            $Evidence.FileIdentityToken -isnot [string] -or
+            $Evidence.FileIdentityToken -cne
+                $HeldArtifactObservation.FileIdentityToken -or
+            $Evidence.ArtifactSha256 -isnot [string] -or
+            $Evidence.ArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $Evidence.ArtifactSha256 -cmatch '^0{64}$' -or
+            $Evidence.ArtifactSha256 -cne
+                $HeldArtifactObservation.ArtifactSha256 -or
+            (($Evidence.ArtifactSizeBytes -isnot [int]) -and
+                ($Evidence.ArtifactSizeBytes -isnot [long])) -or
+            [long]$Evidence.ArtifactSizeBytes -lt 1 -or
+            [long]$Evidence.ArtifactSizeBytes -gt
+                $script:CddsiD027ClaudeMsixMaximumBytes -or
+            [long]$Evidence.ArtifactSizeBytes -ne
+                [long]$HeldArtifactObservation.ArtifactSizeBytes -or
+            $Evidence.ContentBindingToken -isnot [string] -or
+            $Evidence.ContentBindingToken -cne
+                (Get-CddsiD027ClaudeContentBindingToken `
+                    -ArtifactSha256 $Evidence.ArtifactSha256 `
+                    -ArtifactSizeBytes ([long]$Evidence.ArtifactSizeBytes))
+        ) {
+            return $false
+        }
+        if (-not (Test-CddsiD027ClaudeDownloadedArtifactObservation `
+            -Observation $HeldArtifactObservation `
+            -Receipt $DownloadReceipt `
+            -ExpectedRunId $ExpectedRunId `
+            -ExpectedStagingRootPath $ExpectedStagingRootPath `
+            -ExpectedDestinationPath $ExpectedDestinationPath `
+            -ValidationTimeUtc $ValidationTimeUtc)) {
+            return $false
+        }
+
+        $manifestBindingToken =
+            Get-CddsiD027ClaudeManifestBindingToken `
+                -ManifestIdentity $ManifestIdentity
+        if (
+            $ManifestIdentity.ManifestBindingToken -isnot [string] -or
+            $ManifestIdentity.ManifestBindingToken -cne
+                $manifestBindingToken -or
+            $Evidence.ManifestBindingToken -isnot [string] -or
+            $Evidence.ManifestBindingToken -cne $manifestBindingToken -or
+            $Evidence.PackageIdentityBindingToken -isnot [string] -or
+            $Evidence.PackageIdentityBindingToken -cne
+                $ManifestIdentity.PackageIdentityBindingToken
+        ) {
+            return $false
+        }
+
+        if (
+            $Evidence.SignerCertificateDerBase64 -isnot [string] -or
+            -not (Test-CddsiD027CanonicalBase64 `
+                -Value $Evidence.SignerCertificateDerBase64 `
+                -MinimumBytes 256 `
+                -MaximumBytes $script:CddsiD027ClaudeSignerCertificateMaximumBytes) -or
+            $Evidence.SignerCertificateDerSha256 -isnot [string] -or
+            $Evidence.SignerCertificateDerSha256 -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $Evidence.SignerCertificateDerSha256 -cmatch '^0{64}$' -or
+            (($Evidence.SignerCertificateDerLengthBytes -isnot [int]) -and
+                ($Evidence.SignerCertificateDerLengthBytes -isnot [long])) -or
+            $Evidence.SignerCertificateThumbprintSha1 -isnot [string] -or
+            $Evidence.SignerCertificateThumbprintSha1 -cnotmatch
+                '^[a-f0-9]{40}$' -or
+            $Evidence.SignerCertificateThumbprintSha1 -cmatch '^0{40}$' -or
+            $Evidence.SignerSubject -isnot [string] -or
+            $Evidence.SignerSubject.Length -lt 3 -or
+            $Evidence.SignerSubject.Length -gt 8192 -or
+            $Evidence.SignerSubject -match '[\x00-\x1f]' -or
+            $Evidence.SignerSubjectTextSha256 -isnot [string] -or
+            $Evidence.SignerSubjectTextSha256 -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $Evidence.SignerSubjectTextSha256 -cmatch '^0{64}$' -or
+            $Evidence.SignerSubjectNameRawDataSha256 -isnot [string] -or
+            $Evidence.SignerSubjectNameRawDataSha256 -cnotmatch
+                '^[a-f0-9]{64}$' -or
+            $Evidence.SignerSubjectNameRawDataSha256 -cmatch '^0{64}$'
+        ) {
+            return $false
+        }
+        $certificateBytes = [Convert]::FromBase64String(
+            $Evidence.SignerCertificateDerBase64
+        )
+        if (
+            [long]$Evidence.SignerCertificateDerLengthBytes -ne
+                [long]$certificateBytes.Length -or
+            $certificateBytes.Length -lt 256 -or
+            $certificateBytes.Length -gt
+                $script:CddsiD027ClaudeSignerCertificateMaximumBytes
+        ) {
+            return $false
+        }
+        $certificate =
+            [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                $certificateBytes,
+                [string]$null,
+                [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            )
+        if (
+            $certificate.HasPrivateKey -or
+            [Convert]::ToBase64String($certificate.RawData) -cne
+                $Evidence.SignerCertificateDerBase64 -or
+            -not [string]::Equals(
+                $certificate.Subject,
+                $Evidence.SignerSubject,
+                [StringComparison]::Ordinal
+            ) -or
+            -not [string]::Equals(
+                $Evidence.SignerSubject,
+                $ManifestIdentity.Publisher,
+                [StringComparison]::Ordinal
+            )
+        ) {
+            return $false
+        }
+
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $certificateSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash($certificate.RawData)
+        ).Replace('-', '').ToLowerInvariant()
+        $subjectTextSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash(
+                [System.Text.Encoding]::UTF8.GetBytes(
+                    $certificate.Subject
+                )
+            )
+        ).Replace('-', '').ToLowerInvariant()
+        $subjectNameRawDataSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash($certificate.SubjectName.RawData)
+        ).Replace('-', '').ToLowerInvariant()
+        if (
+            $Evidence.SignerCertificateDerSha256 -cne
+                $certificateSha256 -or
+            $Evidence.SignerCertificateThumbprintSha1 -cne
+                ([string]$certificate.Thumbprint).ToLowerInvariant() -or
+            $Evidence.SignerSubjectTextSha256 -cne
+                $subjectTextSha256 -or
+            $Evidence.SignerSubjectNameRawDataSha256 -cne
+                $subjectNameRawDataSha256
+        ) {
+            return $false
+        }
+
+        foreach ($timestamp in @(
+                $Evidence.ObservedAtUtc,
+                $ValidationTimeUtc
+            )) {
+            if (
+                $timestamp -isnot [string] -or
+                $timestamp -notmatch
+                    '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+                -not (Test-CddsiUtcTimestampValue -Value $timestamp)
+            ) {
+                return $false
+            }
+        }
+        $style = [Globalization.DateTimeStyles]::AssumeUniversal -bor
+            [Globalization.DateTimeStyles]::AdjustToUniversal
+        $format = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        $evidenceTime = [DateTimeOffset]::ParseExact(
+            $Evidence.ObservedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $heldTime = [DateTimeOffset]::ParseExact(
+            $HeldArtifactObservation.ObservedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $validationTime = [DateTimeOffset]::ParseExact(
+            $ValidationTimeUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        if (
+            $evidenceTime -lt $heldTime -or
+            $evidenceTime -gt $heldTime.AddMinutes(5) -or
+            $evidenceTime -gt $validationTime.AddSeconds(30) -or
+            $validationTime -gt $evidenceTime.AddMinutes(5) -or
+            $Evidence.EvidenceBindingToken -isnot [string] -or
+            $Evidence.EvidenceBindingToken -cnotmatch '^[a-f0-9]{64}$' -or
+            $Evidence.EvidenceBindingToken -cmatch '^0{64}$' -or
+            $Evidence.EvidenceBindingToken -cne
+                (Get-CddsiD027ClaudeMsixSignatureEvidenceBindingToken `
+                    -Evidence $Evidence)
+        ) {
+            return $false
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+        if ($null -ne $certificate) { $certificate.Dispose() }
+    }
+}
+
 function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
     [CmdletBinding()]
     param(
@@ -823,6 +1338,11 @@ function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
         ) {
             throw 'Manifest bytes were outside the allowed bound.'
         }
+        $manifestSnapshot = [byte[]]$ManifestBytes.Clone()
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $manifestSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash($manifestSnapshot)
+        ).Replace('-', '').ToLowerInvariant()
         $settings = New-Object System.Xml.XmlReaderSettings
         $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
         $settings.XmlResolver = $null
@@ -834,9 +1354,9 @@ function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
         $settings.IgnoreWhitespace = $false
 
         $memory = New-Object System.IO.MemoryStream(
-            $ManifestBytes,
+            $manifestSnapshot,
             0,
-            $ManifestBytes.Length,
+            $manifestSnapshot.Length,
             $false,
             $true
         )
@@ -954,7 +1474,6 @@ function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
         ) {
             throw 'Claude package publisher distinguished name was invalid.'
         }
-        $sha = [System.Security.Cryptography.SHA256]::Create()
         $publisherTextSha256 = [BitConverter]::ToString(
             $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($publisher))
         ).Replace('-', '').ToLowerInvariant()
@@ -974,7 +1493,7 @@ function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
             ('ResourceId={0}' -f $resourceId)
         ) -join "`n")
 
-        return [pscustomobject][ordered]@{
+        $withoutBinding = [pscustomobject][ordered]@{
             SchemaVersion = 1
             ContractVersion = 'cddsi-d027-claude-appx-manifest-v1'
             PackageName = $packageName
@@ -986,7 +1505,17 @@ function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
             Architecture = $architecture
             ResourceId = $resourceId
             PackageIdentityBindingToken = $identityBindingToken
+            ManifestSha256 = $manifestSha256
+            ManifestLengthBytes = [long]$manifestSnapshot.Length
         }
+        $values = [ordered]@{}
+        foreach ($property in $withoutBinding.PSObject.Properties) {
+            $values[$property.Name] = $property.Value
+        }
+        $values['ManifestBindingToken'] =
+            Get-CddsiD027ClaudeManifestBindingToken `
+                -ManifestIdentity $withoutBinding
+        return [pscustomobject]$values
     }
     catch {
         throw 'Claude Desktop AppxManifest.xml did not match the bounded D-027 x64 identity contract.'

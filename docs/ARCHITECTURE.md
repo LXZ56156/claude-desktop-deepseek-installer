@@ -156,6 +156,25 @@ identity/signature evidence token，并把 receipt 的 execution artifact 固定
 held-handle 已获信任。Claude process-scoped session、Enable/Assert 和 Live machine-wide
 provisioning 仍未实现；production snapshot authority 仍为 `Configured=false`。
 
+`desktop-msix.ps1` 的 D-027 manifest 纯解析结果为精确 13 字段：调用方 bytes 先
+克隆成单一本地 snapshot，raw manifest SHA-256/长度与 parsed package identity
+分别绑定，再组成独立 manifest binding。same-state signer evidence 纯合同为精确
+30 字段，交叉绑定 run/path/download receipt/held-file/content/manifest/package、
+公开 certificate DER 及其 SHA-256/长度/SHA-1 thumbprint、Subject 文本与
+`SubjectName.RawData` 摘要、固定 WinVerifyTrust claim 和时间窗。manifest Publisher
+原文必须与 DER 解析出的 certificate Subject 做 ordinal/case/space-sensitive 精确
+相等；manifest parsed-X500 raw hash 与 certificate SubjectName raw hash 分别保留，
+在真实 artifact 校准前不假设两者编码相等。证书解析使用 `EphemeralKeySet`，且输入
+必须是与解析后 `RawData` 精确相等、不含 private key 的单一 DER。
+
+这一层只验证 evidence claim 的结构与相互一致性，没有 native WinVerifyTrust、I/O、
+held-handle producer、policy、session 或 Live authority，固定
+Trusted/`0x00000000`/Verify→Extract→Close 仍只是被校验的自报告字段。未来私有
+producer 必须持有最终 MSIX 的同一文件句柄，在 WinVerifyTrust VERIFY 后通过同一
+state data 提取 primary signer，再执行 CLOSE；不得使用
+`Get-AuthenticodeSignature`，也不得按路径重新打开文件。只有 producer 内部创建且
+未外泄的 same-state evidence 才能由后续 Claude process-scoped session 消费。
+
 领域模块之间不形成循环依赖，也不能直接调用系统 cmdlet/.NET I/O。跨域协调只在
 orchestrator。acceptance 消费结果，不成为安装实现的依赖。
 

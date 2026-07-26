@@ -22,6 +22,20 @@ BeforeAll {
         return [System.Text.Encoding]::UTF8.GetBytes($Xml)
     }
 
+    function Get-CddsiD027TestManifestSha256 {
+        param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return [BitConverter]::ToString(
+                $sha.ComputeHash($Bytes)
+            ).Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $sha.Dispose()
+        }
+    }
+
     function New-CddsiD027TestMsixStream {
         param(
             [Parameter(Mandatory = $true)][object[]]$Entries
@@ -90,11 +104,12 @@ BeforeAll {
 
 Describe 'D-027 Claude Desktop bounded MSIX manifest parser' {
     It 'extracts one exact Claude x64 package identity from bounded XML bytes' {
+        $manifestBytes = ConvertTo-CddsiD027TestManifestBytes `
+            -Xml $script:ValidClaudeManifest
+        $expectedManifestSha256 =
+            Get-CddsiD027TestManifestSha256 -Bytes $manifestBytes
         $result = ConvertFrom-CddsiD027ClaudeAppxManifestBytes `
-            -ManifestBytes (
-                ConvertTo-CddsiD027TestManifestBytes `
-                    -Xml $script:ValidClaudeManifest
-            )
+            -ManifestBytes $manifestBytes
 
         (Test-CddsiExactPropertySet -InputObject $result -Expected @(
                 'SchemaVersion',
@@ -106,7 +121,10 @@ Describe 'D-027 Claude Desktop bounded MSIX manifest parser' {
                 'PackageVersion',
                 'Architecture',
                 'ResourceId',
-                'PackageIdentityBindingToken'
+                'PackageIdentityBindingToken',
+                'ManifestSha256',
+                'ManifestLengthBytes',
+                'ManifestBindingToken'
             )) | Should -BeTrue
         $result.SchemaVersion | Should -Be 1
         $result.ContractVersion |
@@ -121,6 +139,19 @@ Describe 'D-027 Claude Desktop bounded MSIX manifest parser' {
         $result.Architecture | Should -BeExactly 'x64'
         $result.ResourceId | Should -BeExactly ''
         $result.PackageIdentityBindingToken | Should -Match '^[a-f0-9]{64}$'
+        $result.ManifestSha256 |
+            Should -BeExactly $expectedManifestSha256
+        $result.ManifestLengthBytes | Should -Be $manifestBytes.Length
+        $result.ManifestBindingToken |
+            Should -BeExactly (
+                Get-CddsiD027ClaudeManifestBindingToken `
+                    -ManifestIdentity $result
+            )
+        (Get-Command ConvertFrom-CddsiD027ClaudeAppxManifestBytes).
+            Definition | Should -Match (
+                '\$manifestSnapshot\s*=\s*' +
+                '\[byte\[\]\]\$ManifestBytes\.Clone\(\)'
+            )
     }
 
     It 'reads only one exact root AppxManifest.xml and restores the caller stream position' {
@@ -157,6 +188,28 @@ Describe 'D-027 Claude Desktop bounded MSIX manifest parser' {
         }
         finally {
             $pastEnd.Dispose()
+        }
+
+        $invalidEntries = Add-CddsiD027TestCriticalMsixEntries `
+            -ManifestEntries @(
+                [pscustomobject]@{
+                    Name = 'AppxManifest.xml'
+                    Content = $script:ValidClaudeManifest.Replace(
+                        'Name="Claude"',
+                        'Name="Other"'
+                    )
+                }
+            )
+        $invalid = New-CddsiD027TestMsixStream -Entries $invalidEntries
+        try {
+            $invalid.Position = 5
+            {
+                Read-CddsiD027ClaudeMsixManifest -PackageStream $invalid
+            } | Should -Throw
+            $invalid.Position | Should -Be 5
+        }
+        finally {
+            $invalid.Dispose()
         }
     }
 
