@@ -203,6 +203,29 @@ unsigned 负路径与 ABI/static lifecycle 已验证，真实官方 MSIX 的 pos
 provider-reopen、secondary/primary signer、DER/publisher 行为仍是 disposable VM
 clean-snapshot calibration gate。
 
+在该 native observation 之上新增的仍只是私有、未消费的
+`CallerHeldReadOnlyFileStreamCorrelation`。同一 native type 通过 handle 额外取得
+NTFS、volume serial、file index、attributes、creation/write time、size、link count
+与 final-path binding；`GetVolumeInformationByHandleW` 的 serial 必须与
+`GetFileInformationByHandle` 精确相等，全部不透明 facts 再进入私有 binding token。
+correlator 固定在同一个 caller-held stream 上执行
+identity A → SHA-256 A → raw manifest → same-state WVT → SHA-256 B → identity B，
+不按路径重开。hash/length/path/full-facts/WVT readback 的前后采样即使全部相等，
+也只到达最终 share-policy gate；本批无正向/material-return branch，固定以
+`CALLER_FILE_SHARE_POLICY_UNPROVEN` 停止。所有失败都清空 token/hash/size 与三个
+嵌套 claim，只保留 path-free 阶段状态，并恢复但不关闭 caller stream。
+
+这个 seam 没有 RunId、redirect trace、download completion time、receipt、30 字段
+evidence、policy、session 或 installer consumer。`FileStream.CanWrite=false` 也不能
+反推出原始 share flags；前后采样相等也无法排除中间被改写后恢复，所以架构只称其为
+negative-only caller-held correlation，不称为 downloader-owned 或 authoritative。
+未来真实 downloader 必须在自身 lexical scope
+内以精确 `FileMode.Open/FileAccess.Read/FileShare.Read` 创建并保持最终句柄，再把
+真实 redirect/time 与 correlation material 一起组合、验证现有 receipt/held/evidence
+合同；source descriptor 的 Anthropic SHA/signer/publisher/identity 仍未冻结，且
+verify-to-install 的句柄连续性尚未实现，因此当前没有可传给安装或发布门的正向
+correlation 结果。
+
 领域模块之间不形成循环依赖，也不能直接调用系统 cmdlet/.NET I/O。跨域协调只在
 orchestrator。acceptance 消费结果，不成为安装实现的依赖。
 

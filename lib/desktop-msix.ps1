@@ -95,6 +95,30 @@ $script:CddsiD027ClaudeMsixSignatureEvidenceFieldNames = @(
     'ObservedAtUtc',
     'EvidenceBindingToken'
 )
+$script:CddsiD027ClaudeMsixSameStateNativeObservationFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'ObservationMethod',
+    'VerificationMethod',
+    'SignerExtractionMethod',
+    'StateLifecycle',
+    'FinalPathBindingToken',
+    'CallerFileHandleSupplied',
+    'FinalPathStableAcrossVerification',
+    'FileFactsStableAcrossVerification',
+    'ProviderOpenedFile',
+    'PrimarySignerCount',
+    'SecondarySignatureCount',
+    'WinVerifyTrustTrusted',
+    'WinVerifyTrustStatus',
+    'WinVerifyTrustNativeStatusHex',
+    'WinVerifyTrustRevocationMode',
+    'StateCloseCompleted',
+    'StateCloseNativeStatusHex',
+    'StreamPositionRestored',
+    'PrimarySignerCertificateDerBytes',
+    'PrimarySignerCertificateDerLengthBytes'
+)
 
 if (
     $null -eq (Get-Variable `
@@ -297,6 +321,20 @@ namespace Cddsi.D027 {
             public Nullable<uint> PrimarySignerCertificateDerLengthBytes;
         }
 
+        public sealed class HeldFileIdentityObservation {
+            public bool Eligible;
+            public string Status;
+            public string FinalPathBindingToken;
+            public string FileSystemName;
+            public uint NumberOfLinks;
+            public bool IsDirectory;
+            public bool IsReparsePoint;
+            public string VolumeSerialNumberHex;
+            public string FileIndexHex;
+            public long ArtifactSizeBytes;
+            public string FileFactsBindingToken;
+        }
+
         [DllImport("ntdll.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern int RtlGetVersion(
             ref RTL_OSVERSIONINFOEXW versionInformation);
@@ -333,6 +371,22 @@ namespace Cddsi.D027 {
         private static extern bool GetFileInformationByHandle(
             IntPtr fileHandle,
             out BY_HANDLE_FILE_INFORMATION information);
+
+        [DllImport(
+            "kernel32.dll",
+            CharSet = CharSet.Unicode,
+            ExactSpelling = true,
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumeInformationByHandleW(
+            IntPtr fileHandle,
+            StringBuilder volumeNameBuffer,
+            uint volumeNameSize,
+            out uint volumeSerialNumber,
+            out uint maximumComponentLength,
+            out uint fileSystemFlags,
+            StringBuilder fileSystemNameBuffer,
+            uint fileSystemNameSize);
 
         [DllImport(
             "wintrust.dll",
@@ -392,6 +446,119 @@ namespace Cddsi.D027 {
                 Marshal.SizeOf(typeof(CRYPT_PROVIDER_CERT_HEAD));
             result.CertContext =
                 Marshal.SizeOf(typeof(CERT_CONTEXT));
+            return result;
+        }
+
+        public static HeldFileIdentityObservation ObserveHeldFileIdentity(
+            FileStream stream) {
+            HeldFileIdentityObservation result =
+                NewHeldFileIdentityObservation("InvalidInput");
+            if (!IsWindows11X64()) {
+                result.Status = "UnsupportedRuntime";
+                return result;
+            }
+            if (stream == null) {
+                return result;
+            }
+            try {
+                if (!stream.CanRead || !stream.CanSeek || stream.CanWrite) {
+                    return result;
+                }
+            }
+            catch (ObjectDisposedException) {
+                return result;
+            }
+
+            SafeFileHandle safeHandle = null;
+            bool handleAddRef = false;
+            try {
+                safeHandle = stream.SafeFileHandle;
+                if (safeHandle == null ||
+                    safeHandle.IsInvalid ||
+                    safeHandle.IsClosed) {
+                    return result;
+                }
+                safeHandle.DangerousAddRef(ref handleAddRef);
+                IntPtr rawHandle = safeHandle.DangerousGetHandle();
+                if (rawHandle == IntPtr.Zero ||
+                    rawHandle == new IntPtr(-1)) {
+                    return result;
+                }
+
+                BY_HANDLE_FILE_INFORMATION facts =
+                    GetHeldFileFacts(rawHandle);
+                string finalPath =
+                    NormalizeFinalPath(GetFinalPath(rawHandle));
+                string fileSystemName;
+                uint volumeSerialNumber;
+                GetHeldVolumeInformation(
+                    rawHandle,
+                    out fileSystemName,
+                    out volumeSerialNumber);
+                if (volumeSerialNumber != facts.VolumeSerialNumber) {
+                    result.Status = "VolumeIdentityMismatch";
+                    return result;
+                }
+
+                long artifactSizeBytes =
+                    ((long)facts.FileSizeHigh << 32) |
+                    facts.FileSizeLow;
+                bool isDirectory =
+                    (facts.FileAttributes &
+                        FILE_ATTRIBUTE_DIRECTORY) != 0;
+                bool isReparsePoint =
+                    (facts.FileAttributes &
+                        FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+                string finalPathBindingToken =
+                    GetPathBindingToken(finalPath);
+
+                result.FinalPathBindingToken =
+                    finalPathBindingToken;
+                result.FileSystemName = fileSystemName;
+                result.NumberOfLinks = facts.NumberOfLinks;
+                result.IsDirectory = isDirectory;
+                result.IsReparsePoint = isReparsePoint;
+                result.VolumeSerialNumberHex =
+                    facts.VolumeSerialNumber.ToString(
+                        "X8",
+                        CultureInfo.InvariantCulture);
+                result.FileIndexHex =
+                    facts.FileIndexHigh.ToString(
+                        "X8",
+                        CultureInfo.InvariantCulture) +
+                    facts.FileIndexLow.ToString(
+                        "X8",
+                        CultureInfo.InvariantCulture);
+                result.ArtifactSizeBytes = artifactSizeBytes;
+                result.FileFactsBindingToken =
+                    GetFileFactsBindingToken(
+                        facts,
+                        fileSystemName,
+                        finalPathBindingToken);
+                result.Eligible = (
+                    IsEligibleHeldFile(facts) &&
+                    String.Equals(
+                        fileSystemName,
+                        "NTFS",
+                        StringComparison.Ordinal) &&
+                    String.Equals(
+                        Path.GetExtension(finalPath),
+                        ".msix",
+                        StringComparison.OrdinalIgnoreCase)
+                );
+                result.Status = result.Eligible
+                    ? "Eligible"
+                    : "HeldFileIneligible";
+            }
+            catch {
+                result = NewHeldFileIdentityObservation(
+                    "HeldFileUnavailable");
+            }
+            finally {
+                if (handleAddRef && safeHandle != null) {
+                    safeHandle.DangerousRelease();
+                }
+            }
             return result;
         }
 
@@ -914,6 +1081,24 @@ namespace Cddsi.D027 {
             return result;
         }
 
+        private static HeldFileIdentityObservation
+            NewHeldFileIdentityObservation(string status) {
+            HeldFileIdentityObservation result =
+                new HeldFileIdentityObservation();
+            result.Eligible = false;
+            result.Status = status;
+            result.FinalPathBindingToken = null;
+            result.FileSystemName = null;
+            result.NumberOfLinks = 0;
+            result.IsDirectory = false;
+            result.IsReparsePoint = false;
+            result.VolumeSerialNumberHex = null;
+            result.FileIndexHex = null;
+            result.ArtifactSizeBytes = 0;
+            result.FileFactsBindingToken = null;
+            return result;
+        }
+
         private static bool IsWindows11X64() {
             if (
                 !Environment.Is64BitOperatingSystem ||
@@ -962,6 +1147,33 @@ namespace Cddsi.D027 {
             return information;
         }
 
+        private static void GetHeldVolumeInformation(
+            IntPtr rawHandle,
+            out string fileSystemName,
+            out uint volumeSerialNumber) {
+            StringBuilder volumeNameBuffer = new StringBuilder(261);
+            StringBuilder fileSystemNameBuffer = new StringBuilder(32);
+            uint maximumComponentLength;
+            uint fileSystemFlags;
+            if (!GetVolumeInformationByHandleW(
+                rawHandle,
+                volumeNameBuffer,
+                (uint)volumeNameBuffer.Capacity,
+                out volumeSerialNumber,
+                out maximumComponentLength,
+                out fileSystemFlags,
+                fileSystemNameBuffer,
+                (uint)fileSystemNameBuffer.Capacity)) {
+                throw new IOException(
+                    "The held volume information was unavailable.");
+            }
+            fileSystemName = fileSystemNameBuffer.ToString();
+            if (String.IsNullOrEmpty(fileSystemName)) {
+                throw new IOException(
+                    "The held volume file system was unavailable.");
+            }
+        }
+
         private static bool IsEligibleHeldFile(
             BY_HANDLE_FILE_INFORMATION information) {
             long size =
@@ -999,6 +1211,67 @@ namespace Cddsi.D027 {
                 before.FileIndexHigh == after.FileIndexHigh &&
                 before.FileIndexLow == after.FileIndexLow
             );
+        }
+
+        private static string GetFileFactsBindingToken(
+            BY_HANDLE_FILE_INFORMATION facts,
+            string fileSystemName,
+            string finalPathBindingToken) {
+            long artifactSizeBytes =
+                ((long)facts.FileSizeHigh << 32) |
+                facts.FileSizeLow;
+            string canonical = String.Join(
+                "\n",
+                new string[] {
+                    "cddsi-d027-claude-held-file-facts-v1",
+                    "FinalPathBindingToken=" +
+                        finalPathBindingToken,
+                    "FileSystemName=" + fileSystemName,
+                    "FileAttributesHex=" +
+                        facts.FileAttributes.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture),
+                    "CreationTimeHighHex=" +
+                        facts.CreationTime.dwHighDateTime.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture),
+                    "CreationTimeLowHex=" +
+                        facts.CreationTime.dwLowDateTime.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture),
+                    "LastWriteTimeHighHex=" +
+                        facts.LastWriteTime.dwHighDateTime.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture),
+                    "LastWriteTimeLowHex=" +
+                        facts.LastWriteTime.dwLowDateTime.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture),
+                    "VolumeSerialNumberHex=" +
+                        facts.VolumeSerialNumber.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture),
+                    "ArtifactSizeBytes=" +
+                        artifactSizeBytes.ToString(
+                            CultureInfo.InvariantCulture),
+                    "NumberOfLinks=" +
+                        facts.NumberOfLinks.ToString(
+                            CultureInfo.InvariantCulture),
+                    "FileIndexHex=" +
+                        facts.FileIndexHigh.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture) +
+                        facts.FileIndexLow.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture)
+                });
+            using (SHA256 sha = SHA256.Create()) {
+                return BitConverter.ToString(
+                    sha.ComputeHash(
+                        Encoding.UTF8.GetBytes(canonical)))
+                    .Replace("-", String.Empty)
+                    .ToLowerInvariant();
+            }
         }
 
         private static string GetFinalPath(IntPtr rawHandle) {
@@ -1079,6 +1352,227 @@ namespace Cddsi.D027 {
 }
 '@
 
+$script:CddsiD027ClaudeMsixSameStateSignerNativeTypeResolver =
+    [System.Func[object]]{
+        $nativeTypeFullName =
+            'Cddsi.D027.ClaudeMsixSameStateWinVerifyTrustV1'
+        try {
+            if (
+                $null -eq
+                    $script:CddsiD027ClaudeMsixSameStateSignerNativeType
+            ) {
+                $preexistingTypes = @(
+                    foreach (
+                        $assembly in
+                            [AppDomain]::CurrentDomain.GetAssemblies()
+                    ) {
+                        $candidate = $assembly.GetType(
+                            $nativeTypeFullName,
+                            $false,
+                            $false
+                        )
+                        if ($null -ne $candidate) {
+                            $candidate
+                        }
+                    }
+                )
+                if ($preexistingTypes.Count -ne 0) {
+                    return $null
+                }
+                $compiledTypes = @(
+                    Add-Type `
+                        -TypeDefinition `
+                            $script:CddsiD027ClaudeMsixSameStateSignerNativeTypeDefinition `
+                        -Language CSharp `
+                        -PassThru `
+                        -ErrorAction Stop
+                )
+                $matchingTypes = @(
+                    $compiledTypes |
+                        Where-Object {
+                            $_.FullName -ceq $nativeTypeFullName
+                        }
+                )
+                if ($matchingTypes.Count -ne 1) {
+                    return $null
+                }
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeType =
+                    $matchingTypes[0]
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName =
+                    $matchingTypes[0].Assembly.FullName
+            }
+
+            $nativeType =
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeType
+            $loadedMatches = @(
+                foreach (
+                    $assembly in
+                        [AppDomain]::CurrentDomain.GetAssemblies()
+                ) {
+                    $candidate = $assembly.GetType(
+                        $nativeTypeFullName,
+                        $false,
+                        $false
+                    )
+                    if ($null -ne $candidate) {
+                        $candidate
+                    }
+                }
+            )
+            if (
+                $null -eq $nativeType -or
+                $nativeType.FullName -cne $nativeTypeFullName -or
+                $nativeType.Assembly.FullName -cne
+                    $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName -or
+                $loadedMatches.Count -ne 1 -or
+                -not [object]::ReferenceEquals(
+                    $loadedMatches[0],
+                    $nativeType
+                )
+            ) {
+                return $null
+            }
+            return $nativeType
+        }
+        catch {
+            return $null
+        }
+    }
+
+$script:CddsiD027ClaudeMsixHeldFileIdentityObserver =
+    [System.Func[System.IO.FileStream, object]]{
+        param([AllowNull()][System.IO.FileStream]$Stream)
+
+        $result = [ordered]@{
+            SchemaVersion          = 1
+            ContractVersion       =
+                'cddsi-d027-claude-msix-held-file-native-observation-v1'
+            ObservationMethod     =
+                'CallerHeldFileStreamNativeIdentity'
+            Eligible              = $false
+            Status                = 'InvalidInput'
+            FinalPathBindingToken = $null
+            FileSystemName        = $null
+            NumberOfLinks         = $null
+            IsDirectory           = $null
+            IsReparsePoint        = $null
+            VolumeSerialNumberHex = $null
+            FileIndexHex          = $null
+            ArtifactSizeBytes     = $null
+            FileFactsBindingToken = $null
+        }
+        if ($null -eq $Stream) {
+            return [pscustomobject]$result
+        }
+        if (
+            $PSVersionTable.PSVersion.Major -ne 5 -or
+            $PSVersionTable.PSVersion.Minor -ne 1 -or
+            -not [Environment]::Is64BitOperatingSystem -or
+            -not [Environment]::Is64BitProcess
+        ) {
+            $result.Status = 'UnsupportedRuntime'
+            return [pscustomobject]$result
+        }
+
+        try {
+            $nativeType =
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeTypeResolver.
+                    Invoke()
+            if ($null -eq $nativeType) {
+                $result.Status = 'NativeTypeUnavailable'
+                return [pscustomobject]$result
+            }
+            $observeMethod = $nativeType.GetMethod(
+                'ObserveHeldFileIdentity',
+                [Reflection.BindingFlags]'Public,Static'
+            )
+            if ($null -eq $observeMethod) {
+                $result.Status = 'NativeTypeUnavailable'
+                return [pscustomobject]$result
+            }
+            $native = $observeMethod.Invoke(
+                $null,
+                [object[]]@($Stream)
+            )
+            if ($null -eq $native) {
+                $result.Status = 'InvalidNativeObservation'
+                return [pscustomobject]$result
+            }
+
+            $result.Eligible = [bool]$native.Eligible
+            $result.Status = [string]$native.Status
+            $result.FinalPathBindingToken =
+                [string]$native.FinalPathBindingToken
+            $result.FileSystemName =
+                [string]$native.FileSystemName
+            $result.NumberOfLinks =
+                [long]$native.NumberOfLinks
+            $result.IsDirectory =
+                [bool]$native.IsDirectory
+            $result.IsReparsePoint =
+                [bool]$native.IsReparsePoint
+            $result.VolumeSerialNumberHex =
+                [string]$native.VolumeSerialNumberHex
+            $result.FileIndexHex =
+                [string]$native.FileIndexHex
+            $result.ArtifactSizeBytes =
+                [long]$native.ArtifactSizeBytes
+            $result.FileFactsBindingToken =
+                [string]$native.FileFactsBindingToken
+
+            $eligibleShape = (
+                $result.Eligible -and
+                $result.Status -ceq 'Eligible' -and
+                $result.FinalPathBindingToken -cmatch
+                    '^[a-f0-9]{64}$' -and
+                $result.FinalPathBindingToken -cnotmatch
+                    '^0{64}$' -and
+                $result.FileSystemName -ceq 'NTFS' -and
+                $result.NumberOfLinks -eq 1 -and
+                -not $result.IsDirectory -and
+                -not $result.IsReparsePoint -and
+                $result.VolumeSerialNumberHex -cmatch
+                    '^[0-9A-F]{8}$' -and
+                $result.VolumeSerialNumberHex -cne
+                    '00000000' -and
+                $result.FileIndexHex -cmatch
+                    '^[0-9A-F]{16}$' -and
+                $result.FileIndexHex -cne
+                    '0000000000000000' -and
+                $result.ArtifactSizeBytes -is [long] -and
+                $result.ArtifactSizeBytes -ge 1 -and
+                $result.ArtifactSizeBytes -le
+                    $script:CddsiD027ClaudeMsixMaximumBytes -and
+                $result.FileFactsBindingToken -cmatch
+                    '^[a-f0-9]{64}$' -and
+                $result.FileFactsBindingToken -cnotmatch
+                    '^0{64}$'
+            )
+            if (-not $eligibleShape) {
+                $result.Eligible = $false
+                if ($result.Status -ceq 'Eligible') {
+                    $result.Status = 'InvalidNativeObservation'
+                }
+            }
+        }
+        catch {
+            $result.Eligible = $false
+            $result.Status = 'NativeUnavailable'
+        }
+        if (-not $result.Eligible) {
+            $result.FinalPathBindingToken = $null
+            $result.FileSystemName = $null
+            $result.NumberOfLinks = $null
+            $result.IsDirectory = $null
+            $result.IsReparsePoint = $null
+            $result.VolumeSerialNumberHex = $null
+            $result.FileIndexHex = $null
+            $result.ArtifactSizeBytes = $null
+            $result.FileFactsBindingToken = $null
+        }
+        return [pscustomobject]$result
+    }
+
 $script:CddsiD027ClaudeMsixSameStateSignerObserver =
     [System.Func[System.IO.FileStream, object]]{
         param([AllowNull()][System.IO.FileStream]$Stream)
@@ -1126,85 +1620,10 @@ $script:CddsiD027ClaudeMsixSameStateSignerObserver =
         }
 
         try {
-            $nativeTypeFullName =
-                'Cddsi.D027.ClaudeMsixSameStateWinVerifyTrustV1'
-            if (
-                $null -eq
-                    $script:CddsiD027ClaudeMsixSameStateSignerNativeType
-            ) {
-                $preexistingTypes = @(
-                    foreach (
-                        $assembly in
-                            [AppDomain]::CurrentDomain.GetAssemblies()
-                    ) {
-                        $candidate = $assembly.GetType(
-                            $nativeTypeFullName,
-                            $false,
-                            $false
-                        )
-                        if ($null -ne $candidate) {
-                            $candidate
-                        }
-                    }
-                )
-                if ($preexistingTypes.Count -ne 0) {
-                    $result.WinVerifyTrustStatus =
-                        'NativeTypeUnavailable'
-                    return [pscustomobject]$result
-                }
-                $compiledTypes = @(
-                    Add-Type `
-                        -TypeDefinition `
-                            $script:CddsiD027ClaudeMsixSameStateSignerNativeTypeDefinition `
-                        -Language CSharp `
-                        -PassThru `
-                        -ErrorAction Stop
-                )
-                $matchingTypes = @(
-                    $compiledTypes |
-                        Where-Object {
-                            $_.FullName -ceq $nativeTypeFullName
-                        }
-                )
-                if ($matchingTypes.Count -ne 1) {
-                    $result.WinVerifyTrustStatus =
-                        'NativeTypeUnavailable'
-                    return [pscustomobject]$result
-                }
-                $script:CddsiD027ClaudeMsixSameStateSignerNativeType =
-                    $matchingTypes[0]
-                $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName =
-                    $matchingTypes[0].Assembly.FullName
-            }
-
             $nativeType =
-                $script:CddsiD027ClaudeMsixSameStateSignerNativeType
-            $loadedMatches = @(
-                foreach (
-                    $assembly in
-                        [AppDomain]::CurrentDomain.GetAssemblies()
-                ) {
-                    $candidate = $assembly.GetType(
-                        $nativeTypeFullName,
-                        $false,
-                        $false
-                    )
-                    if ($null -ne $candidate) {
-                        $candidate
-                    }
-                }
-            )
-            if (
-                $null -eq $nativeType -or
-                $nativeType.FullName -cne $nativeTypeFullName -or
-                $nativeType.Assembly.FullName -cne
-                    $script:CddsiD027ClaudeMsixSameStateSignerNativeAssemblyFullName -or
-                $loadedMatches.Count -ne 1 -or
-                -not [object]::ReferenceEquals(
-                    $loadedMatches[0],
-                    $nativeType
-                )
-            ) {
+                $script:CddsiD027ClaudeMsixSameStateSignerNativeTypeResolver.
+                    Invoke()
+            if ($null -eq $nativeType) {
                 $result.WinVerifyTrustStatus =
                     'NativeTypeUnavailable'
                 return [pscustomobject]$result
@@ -1322,6 +1741,381 @@ $script:CddsiD027ClaudeMsixSameStateSignerObserver =
             $result.WinVerifyTrustStatus = 'NativeUnavailable'
             $result.PrimarySignerCertificateDerBytes = $null
             $result.PrimarySignerCertificateDerLengthBytes = $null
+        }
+        return [pscustomobject]$result
+    }
+
+$script:CddsiD027ClaudeMsixHeldHandleCorrelator =
+    [System.Func[System.IO.FileStream, string, object]]{
+        param(
+            [AllowNull()][System.IO.FileStream]$Stream,
+            [AllowNull()][string]$ExpectedDestinationPath
+        )
+
+        $result = [ordered]@{
+            SchemaVersion                        = 1
+            ContractVersion                     =
+                'cddsi-d027-claude-msix-held-handle-correlation-v1'
+            ObservationMethod                   =
+                'CallerHeldReadOnlyFileStreamCorrelation'
+            Status                              = 'FAILED'
+            ErrorCode                           = 'INVALID_INPUT'
+            ExpectedDestinationMatched          = $false
+            PreVerificationHashCompleted        = $false
+            ManifestReadCompleted               = $false
+            SameStateVerificationCompleted      = $false
+            PostVerificationHashCompleted       = $false
+            PreAndPostContentHashMatched         = $false
+            PreAndPostFileFactsMatched           = $false
+            StreamPositionRestored              = $false
+            WinVerifyTrustStatus                = $null
+            StateCloseCompleted                 = $false
+            FinalPathBindingToken               = $null
+            ArtifactSha256                      = $null
+            ArtifactSizeBytes                   = $null
+            HeldFileIdentityObservation         = $null
+            ManifestIdentity                    = $null
+            SameStateSignerObservation          = $null
+        }
+        $initialPosition = [long]0
+        $initialPositionCaptured = $false
+        $preHasher = $null
+        $postHasher = $null
+        try {
+            if (
+                $null -eq $Stream -or
+                $ExpectedDestinationPath -isnot [string] -or
+                $ExpectedDestinationPath.Length -lt 8 -or
+                $ExpectedDestinationPath.Length -gt 32767 -or
+                $ExpectedDestinationPath.IndexOf([char]0) -ge 0 -or
+                $ExpectedDestinationPath.Contains('/') -or
+                $ExpectedDestinationPath -cnotmatch
+                    '^[A-Za-z]:\\' -or
+                [IO.Path]::GetFullPath($ExpectedDestinationPath) -cne
+                    $ExpectedDestinationPath -or
+                [IO.Path]::GetExtension($ExpectedDestinationPath) -cne
+                    '.msix' -or
+                -not $Stream.CanRead -or
+                -not $Stream.CanSeek -or
+                $Stream.CanWrite
+            ) {
+                throw 'Invalid held-handle correlation input.'
+            }
+            $initialPosition = [long]$Stream.Position
+            $initialPositionCaptured = $true
+            if (
+                $initialPosition -lt 0 -or
+                $initialPosition -gt $Stream.Length -or
+                $Stream.Length -lt 1 -or
+                $Stream.Length -gt
+                    $script:CddsiD027ClaudeMsixMaximumBytes
+            ) {
+                throw 'Invalid held-handle correlation stream bounds.'
+            }
+            $result.ErrorCode = 'HELD_HANDLE_CORRELATION_FAILED'
+
+            $beforeIdentity =
+                $script:CddsiD027ClaudeMsixHeldFileIdentityObserver.
+                    Invoke($Stream)
+            if (
+                $null -eq $beforeIdentity -or
+                -not $beforeIdentity.Eligible
+            ) {
+                $result.ErrorCode =
+                    'HELD_FILE_IDENTITY_UNAVAILABLE'
+                throw 'Held file identity was unavailable.'
+            }
+            $expectedPathBindingToken =
+                Get-CddsiPathBindingToken `
+                    -Path $ExpectedDestinationPath
+            if (
+                $beforeIdentity.FinalPathBindingToken -cne
+                    $expectedPathBindingToken
+            ) {
+                $result.ErrorCode =
+                    'DESTINATION_BINDING_MISMATCH'
+                throw 'Held file destination binding did not match.'
+            }
+            $result.ExpectedDestinationMatched = $true
+
+            $preHasher =
+                [System.Security.Cryptography.SHA256]::Create()
+            $Stream.Position = 0
+            $preHash = [BitConverter]::ToString(
+                $preHasher.ComputeHash($Stream)
+            ).Replace('-', '').ToLowerInvariant()
+            $preLength = [long]$Stream.Length
+            $Stream.Position = $initialPosition
+            if (
+                $preHash -cnotmatch '^[a-f0-9]{64}$' -or
+                $preHash -cmatch '^0{64}$' -or
+                $preLength -ne
+                    [long]$beforeIdentity.ArtifactSizeBytes
+            ) {
+                $result.ErrorCode = 'PRE_VERIFICATION_HASH_INVALID'
+                throw 'Pre-verification hash was invalid.'
+            }
+            $result.PreVerificationHashCompleted = $true
+
+            try {
+                $manifestIdentity =
+                    Read-CddsiD027ClaudeMsixManifest `
+                        -PackageStream $Stream
+            }
+            catch {
+                $result.ErrorCode = 'MSIX_MANIFEST_INVALID'
+                throw 'MSIX manifest was invalid.'
+            }
+            if ([long]$Stream.Position -ne $initialPosition) {
+                $result.ErrorCode =
+                    'STREAM_POSITION_NOT_RESTORED'
+                throw 'Manifest reader did not restore stream position.'
+            }
+            $result.ManifestReadCompleted = $true
+
+            $signerObservation =
+                $script:CddsiD027ClaudeMsixSameStateSignerObserver.
+                    Invoke($Stream)
+            if ($null -eq $signerObservation) {
+                $result.ErrorCode =
+                    'MSIX_SIGNATURE_OBSERVATION_INVALID'
+                throw 'MSIX signature observation was invalid.'
+            }
+            $allowedWinVerifyTrustStatuses = @(
+                'InvalidInput',
+                'UnsupportedRuntime',
+                'HeldFileIneligible',
+                'SignatureSettingsUnavailable',
+                'NoSignature',
+                'UnsupportedSubject',
+                'Untrusted',
+                'PolicyRejected',
+                'StateUnavailable',
+                'StateCloseFailed',
+                'FileFactsChanged',
+                'FileFactsUnavailable',
+                'FinalPathChanged',
+                'FinalPathUnavailable',
+                'NativeCleanupFailed',
+                'StreamPositionRestoreFailed',
+                'ProviderDataUnavailable',
+                'ProviderDataInvalid',
+                'ProviderOpenedFile',
+                'AmbiguousPrimarySigners',
+                'PrimarySignerUnavailable',
+                'PrimarySignerInvalid',
+                'SignerCertificateUnavailable',
+                'SignerCertificateInvalid',
+                'SignerCertificateDerInvalid',
+                'Trusted',
+                'NativeTypeUnavailable',
+                'InvalidNativeObservation',
+                'NativeUnavailable'
+            )
+            $result.WinVerifyTrustStatus = if (
+                $signerObservation.WinVerifyTrustStatus -is [string] -and
+                $allowedWinVerifyTrustStatuses -ccontains
+                    $signerObservation.WinVerifyTrustStatus
+            ) {
+                [string]$signerObservation.WinVerifyTrustStatus
+            }
+            else {
+                'InvalidObservation'
+            }
+            $result.StateCloseCompleted =
+                [bool]$signerObservation.StateCloseCompleted
+            $result.SameStateVerificationCompleted = (
+                $signerObservation.WinVerifyTrustNativeStatusHex -is
+                    [string] -and
+                $signerObservation.StateCloseCompleted -and
+                $signerObservation.StreamPositionRestored
+            )
+            if ([long]$Stream.Position -ne $initialPosition) {
+                $result.ErrorCode =
+                    'STREAM_POSITION_NOT_RESTORED'
+                throw 'Signature observer did not restore stream position.'
+            }
+
+            $postHasher =
+                [System.Security.Cryptography.SHA256]::Create()
+            $Stream.Position = 0
+            $postHash = [BitConverter]::ToString(
+                $postHasher.ComputeHash($Stream)
+            ).Replace('-', '').ToLowerInvariant()
+            $postLength = [long]$Stream.Length
+            $Stream.Position = $initialPosition
+            if (
+                $postHash -cnotmatch '^[a-f0-9]{64}$' -or
+                $postHash -cmatch '^0{64}$'
+            ) {
+                $result.ErrorCode =
+                    'POST_VERIFICATION_HASH_INVALID'
+                throw 'Post-verification hash was invalid.'
+            }
+            $result.PostVerificationHashCompleted = $true
+            $result.PreAndPostContentHashMatched = (
+                $postHash -ceq $preHash -and
+                $postLength -eq $preLength
+            )
+
+            $afterIdentity =
+                $script:CddsiD027ClaudeMsixHeldFileIdentityObserver.
+                    Invoke($Stream)
+            if (
+                $null -eq $afterIdentity -or
+                -not $afterIdentity.Eligible
+            ) {
+                $result.ErrorCode =
+                    'HELD_FILE_IDENTITY_UNAVAILABLE'
+                throw 'Held file readback identity was unavailable.'
+            }
+            $result.PreAndPostFileFactsMatched = (
+                $afterIdentity.FinalPathBindingToken -ceq
+                    $beforeIdentity.FinalPathBindingToken -and
+                $afterIdentity.FileFactsBindingToken -ceq
+                    $beforeIdentity.FileFactsBindingToken -and
+                $afterIdentity.FileSystemName -ceq
+                    $beforeIdentity.FileSystemName -and
+                [long]$afterIdentity.NumberOfLinks -eq
+                    [long]$beforeIdentity.NumberOfLinks -and
+                [bool]$afterIdentity.IsDirectory -eq
+                    [bool]$beforeIdentity.IsDirectory -and
+                [bool]$afterIdentity.IsReparsePoint -eq
+                    [bool]$beforeIdentity.IsReparsePoint -and
+                $afterIdentity.VolumeSerialNumberHex -ceq
+                    $beforeIdentity.VolumeSerialNumberHex -and
+                $afterIdentity.FileIndexHex -ceq
+                    $beforeIdentity.FileIndexHex -and
+                [long]$afterIdentity.ArtifactSizeBytes -eq
+                    [long]$beforeIdentity.ArtifactSizeBytes -and
+                [long]$afterIdentity.ArtifactSizeBytes -eq
+                    $postLength
+            )
+            if (-not $result.PreAndPostContentHashMatched) {
+                $result.ErrorCode =
+                    'HELD_FILE_CONTENT_CHANGED'
+                throw 'Held file content changed.'
+            }
+            if (-not $result.PreAndPostFileFactsMatched) {
+                $result.ErrorCode =
+                    'HELD_FILE_IDENTITY_CHANGED'
+                throw 'Held file identity changed.'
+            }
+            if (-not $result.SameStateVerificationCompleted) {
+                $result.ErrorCode =
+                    'MSIX_SIGNATURE_OBSERVATION_INCOMPLETE'
+                throw 'MSIX signature observation was incomplete.'
+            }
+            if (-not $signerObservation.WinVerifyTrustTrusted) {
+                $result.ErrorCode = 'MSIX_SIGNATURE_NOT_TRUSTED'
+                throw 'MSIX signature was not trusted.'
+            }
+            $trustedSignerShape = (
+                (Test-CddsiExactPropertySet `
+                    -InputObject $signerObservation `
+                    -Expected `
+                        $script:CddsiD027ClaudeMsixSameStateNativeObservationFieldNames) -and
+                (Test-CddsiSchemaVersionOne `
+                    -Value $signerObservation.SchemaVersion) -and
+                $signerObservation.ContractVersion -is [string] -and
+                $signerObservation.ContractVersion -ceq
+                    'cddsi-d027-claude-msix-same-state-native-observation-v1' -and
+                $signerObservation.ObservationMethod -is [string] -and
+                $signerObservation.ObservationMethod -ceq
+                    'CallerHeldFileStreamNativeObservation' -and
+                $signerObservation.VerificationMethod -is [string] -and
+                $signerObservation.VerificationMethod -ceq
+                    'WinVerifyTrustExGenericVerifyV2' -and
+                $signerObservation.SignerExtractionMethod -is [string] -and
+                $signerObservation.SignerExtractionMethod -ceq
+                    'WTHelperPrimarySignerCertificateFromSameState' -and
+                $signerObservation.StateLifecycle -is [string] -and
+                $signerObservation.StateLifecycle -ceq
+                    'VerifyExtractCopyCloseRequired' -and
+                $signerObservation.FinalPathBindingToken -is [string] -and
+                $signerObservation.FinalPathBindingToken -ceq
+                    $beforeIdentity.FinalPathBindingToken -and
+                $signerObservation.CallerFileHandleSupplied -is [bool] -and
+                $signerObservation.CallerFileHandleSupplied -and
+                $signerObservation.FinalPathStableAcrossVerification -is
+                    [bool] -and
+                $signerObservation.FinalPathStableAcrossVerification -and
+                $signerObservation.FileFactsStableAcrossVerification -is
+                    [bool] -and
+                $signerObservation.FileFactsStableAcrossVerification -and
+                $signerObservation.ProviderOpenedFile -is [bool] -and
+                -not $signerObservation.ProviderOpenedFile -and
+                $signerObservation.PrimarySignerCount -is [long] -and
+                $signerObservation.PrimarySignerCount -eq 1 -and
+                $signerObservation.SecondarySignatureCount -is [long] -and
+                $signerObservation.SecondarySignatureCount -eq 0 -and
+                $signerObservation.WinVerifyTrustStatus -is [string] -and
+                $signerObservation.WinVerifyTrustStatus -ceq 'Trusted' -and
+                $signerObservation.WinVerifyTrustNativeStatusHex -is
+                    [string] -and
+                $signerObservation.WinVerifyTrustNativeStatusHex -ceq
+                    '0x00000000' -and
+                $signerObservation.WinVerifyTrustRevocationMode -is
+                    [string] -and
+                $signerObservation.WinVerifyTrustRevocationMode -ceq
+                    'NotChecked' -and
+                $signerObservation.StateCloseCompleted -is [bool] -and
+                $signerObservation.StateCloseCompleted -and
+                $signerObservation.StateCloseNativeStatusHex -is
+                    [string] -and
+                $signerObservation.StateCloseNativeStatusHex -ceq
+                    '0x00000000' -and
+                $signerObservation.StreamPositionRestored -is [bool] -and
+                $signerObservation.StreamPositionRestored -and
+                $signerObservation.PrimarySignerCertificateDerBytes -is
+                    [byte[]] -and
+                $signerObservation.PrimarySignerCertificateDerBytes.Length -ge
+                    256 -and
+                $signerObservation.PrimarySignerCertificateDerBytes.Length -le
+                    $script:CddsiD027ClaudeSignerCertificateMaximumBytes -and
+                $signerObservation.PrimarySignerCertificateDerLengthBytes -is
+                    [long] -and
+                $signerObservation.PrimarySignerCertificateDerLengthBytes -eq
+                    $signerObservation.PrimarySignerCertificateDerBytes.Length
+            )
+            if (-not $trustedSignerShape) {
+                $result.ErrorCode =
+                    'MSIX_SIGNATURE_OBSERVATION_INVALID'
+                throw 'MSIX trusted signature observation was invalid.'
+            }
+            $result.ErrorCode =
+                'CALLER_FILE_SHARE_POLICY_UNPROVEN'
+            throw 'Caller file share policy was not proven.'
+        }
+        catch {
+            # Raw exception data is intentionally discarded from this
+            # path-free private observation.
+        }
+        finally {
+            if ($null -ne $postHasher) {
+                $postHasher.Dispose()
+            }
+            if ($null -ne $preHasher) {
+                $preHasher.Dispose()
+            }
+            if ($initialPositionCaptured) {
+                try {
+                    $Stream.Position = $initialPosition
+                    $result.StreamPositionRestored = (
+                        [long]$Stream.Position -eq $initialPosition
+                    )
+                }
+                catch {
+                    $result.StreamPositionRestored = $false
+                }
+            }
+            if (
+                $initialPositionCaptured -and
+                -not $result.StreamPositionRestored
+            ) {
+                $result.ErrorCode =
+                    'STREAM_POSITION_NOT_RESTORED'
+            }
         }
         return [pscustomobject]$result
     }

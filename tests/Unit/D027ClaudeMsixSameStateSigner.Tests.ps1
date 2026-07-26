@@ -73,10 +73,12 @@ Describe 'D-027 Claude MSIX private same-state signer observation' {
                 -CommandType Function `
                 -ErrorAction SilentlyContinue
         ).Count | Should -Be 0
-        ([regex]::Matches(
-            $script:DesktopMsixSource,
-            '\[System\.Func\[System\.IO\.FileStream, object\]\]'
-        )).Count | Should -Be 1
+        $script:DesktopMsixSource |
+            Should -Match (
+                '\$script:CddsiD027ClaudeMsixSameStateSignerObserver' +
+                '\s*=\s*' +
+                '\[System\.Func\[System\.IO\.FileStream, object\]\]'
+            )
     }
 
     It 'returns one exact path-free fail-closed schema for invalid input' {

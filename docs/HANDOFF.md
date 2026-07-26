@@ -24,6 +24,7 @@ CLAUDE_MANIFEST_RAW_CONTENT_AND_IDENTITY_BINDING_IMPLEMENTED /
 CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
 CLAUDE_SAME_STATE_SIGNER_EVIDENCE_PURE_CONTRACT_IMPLEMENTED /
 CLAUDE_PRIVATE_SAME_STATE_NATIVE_OBSERVATION_IMPLEMENTED_NEGATIVE_ONLY /
+CLAUDE_PRIVATE_HELD_HANDLE_CORRELATION_IMPLEMENTED_NEGATIVE_ONLY /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
 CLAUDE_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
@@ -34,6 +35,74 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 Claude MSIX 私有 caller-held correlation 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`925909a2b5f08ee9b41f33e6e542387f2c2a822d`、tree
+`b9356c90fbe05089dce755d2652a616f1a7d1001`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批没有执行产品网络、真实 Claude 下载、AppX/DISM、进程、注册表、UAC 或安装，
+没有读取任何真实 Claude 配置，也没有创建 download receipt、30 字段 signature
+evidence、session 或 Live authority。
+
+- native type 的 guarded lazy load 被集中到一个私有强类型 resolver；干净 sentinel
+  下的 exact-type preload 拒绝、唯一 type reference 与 assembly identity 校验均
+  保持不变。新增的私有 held-file observer 仍调用同一个按版本命名的 C# type，不是
+  PowerShell function/command。
+- `cddsi-d027-claude-msix-held-file-native-observation-v1` 是精确 14 字段、
+  path-free 的瞬态观察。它只借用 caller-held、readable/seekable/non-writable
+  `FileStream`，以 `SafeFileHandle.DangerousAddRef` 保护句柄，通过
+  `GetFileInformationByHandle`、`GetFinalPathNameByHandleW` 和
+  `GetVolumeInformationByHandleW` 取得 identity；volume API 与 handle facts 的
+  serial 必须精确相等。只接受 Win11 Workstation/native AMD64/64-bit PS5.1、
+  NTFS、单 hard link、非 directory、非 reparse point、`.msix`、1 byte–1 GiB。
+  attributes、creation/write time、volume、size、link count、file index、filesystem
+  和 final-path binding 进入私有 `FileFactsBindingToken`。
+- `cddsi-d027-claude-msix-held-handle-correlation-v1` 是精确 21 字段的
+  script-scoped `Func<FileStream,string,object>`。唯一顺序固定为
+  `identity A -> SHA-256 A -> raw manifest -> same-state WVT -> SHA-256 B ->
+  identity B`；所有步骤使用调用方提供的同一个 stream，本项目不按路径重开，也不
+  调用 `Get-FileHash` 或 `Get-AuthenticodeSignature`。expected destination 只转成
+  binding token，并须与 handle-derived final-path token 精确相等。两个 hash/长度、
+  两份完整 file-facts token、NTFS identity 字段和 WVT 自身的 path/facts/position
+  readback 全部一致后，仍必须停在 `CALLER_FILE_SHARE_POLICY_UNPROVEN`；本批没有任何
+  正向 terminal 或 material-return branch。
+- 任一失败只保留 allowlisted、path-free 阶段状态和 ErrorCode；final path token、
+  artifact hash/size、held identity、manifest identity 与 signer observation 全部为
+  null。correlator 只 dispose 自己的 SHA-256 instances，必须恢复 caller position，
+  从不 dispose caller stream。有效但未签名的 synthetic MSIX 已完整走过两次 hash、
+  bounded raw manifest、WVT VERIFY/CLOSE 和两次 native identity observation，最后
+  精确为 `MSIX_SIGNATURE_NOT_TRUSTED`；所有 pre/post match flag 为 true，caller
+  handle 仍可用，authority payload 为空。
+
+任意 caller-supplied `FileStream` 无法反查其原始 share flags；攻击者可能在两个
+采样点之间改变再恢复 bytes/facts，所以前后 hash/facts 相等不证明连续稳定。本批
+因此刻意保持 negative-only，使用
+`CallerHeldReadOnlyFileStreamCorrelation` 而不称其为 downloader-owned；即使未来
+本地遇到完整 trusted WVT shape，也只能得到
+`CALLER_FILE_SHARE_POLICY_UNPROVEN` 和空 material。真实 downloader 必须自己创建并
+持续持有精确
+`FileMode.Open/FileAccess.Read/FileShare.Read` 的最终句柄，并携带真实 redirect trace
+与下载完成时间，才能在内部消费 correlation material、构造 download receipt/held
+observation/30 字段 evidence。当前 official descriptor 的 SHA/signer/publisher/
+identity 仍为 `UNRESOLVED`，公开 Install/Update 也未消费本合同；正式正向结果只留给
+disposable VM clean-snapshot 校准。
+
+本批最终在彼此独立的 fresh Windows PowerShell 5.1 进程中运行必要 focused 门：
+held-handle correlation 8/8、same-state signer 8/8、manifest 5/5、download receipt
+10/10、signature evidence 7/7、public functions 4/4、config 18/18，以及只筛选默认
+bootstrap graph disjointness 的 LiveAdapters 1/1，共 61 passed、0
+failed/skipped/inconclusive；LiveAdapters 中其余 5 个非筛选用例为 not run。Encoding
+另为 4/4。fresh PS5.1 对抗探测预载 exact native type 后仍精确得到
+`NativeTypeUnavailable`、Trusted=false、path/certificate 为空且 caller handle 未
+关闭。182 个 tracked/untracked inventory 由 release manifest 精确分成 41 个
+package files 与 141 个 development-only files，无
+overlap/duplicate/missing/unknown；111 个 PowerShell sources 与 111 个
+execution-boundary entries 精确相等，其中 Tests plane 53 个，PS5.1 parser 为 0
+errors。182 个 inventory、41 个 package files 和 0 个 evidence paths 的独立 stream
+secret scan 均为 0 findings；顶层 evidence/artifact/report/log root 为 0，
+`git diff --check` 通过。没有运行退役历史测试、ProductReleaseGate 或 PS7 parity。
 
 ### D-027 当前 Claude MSIX 私有 same-state native observation 批次
 
