@@ -224,7 +224,8 @@ Describe 'common safety helpers' {
     It 'accepts only exact official artifact routes without query fragments or encoded traversal' {
         (Test-CddsiOfficialArtifactUri -SourceUri 'https://downloads.claude.com/releases/Claude.msix' -ExpectedOwner Anthropic) | Should -BeTrue
         (Test-CddsiOfficialArtifactUri -SourceUri 'https://downloads.claude.ai/windows/Claude.msix' -ExpectedOwner Anthropic) | Should -BeTrue
-        (Test-CddsiOfficialArtifactUri -SourceUri 'https://claude.ai/api/desktop/win32/x64/latest/redirect' -ExpectedOwner Anthropic) | Should -BeTrue
+        (Test-CddsiOfficialArtifactUri -SourceUri 'https://claude.ai/api/desktop/win32/x64/msix/latest/redirect' -ExpectedOwner Anthropic) | Should -BeTrue
+        (Test-CddsiOfficialArtifactUri -SourceUri 'https://claude.ai/api/desktop/win32/x64/latest/redirect' -ExpectedOwner Anthropic) | Should -BeFalse
         (Test-CddsiOfficialArtifactUri -SourceUri 'https://downloads.claude.com/releases/Claude.msix?token=synthetic' -ExpectedOwner Anthropic) | Should -BeFalse
         (Test-CddsiOfficialArtifactUri -SourceUri 'https://downloads.claude.com:8443/releases/Claude.msix' -ExpectedOwner Anthropic) | Should -BeFalse
         (Test-CddsiOfficialArtifactUri -SourceUri 'https://downloads.claude.com/releases/../Other.msix' -ExpectedOwner Anthropic) | Should -BeFalse

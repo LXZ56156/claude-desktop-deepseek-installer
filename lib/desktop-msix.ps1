@@ -1,6 +1,361 @@
 ﻿# desktop-msix.ps1 - Claude Desktop MSIX lifecycle contracts.
 # Signature verification is mandatory and has no bypass parameter.
 
+$script:CddsiD027ClaudeStandardX64SourceUri =
+    'https://claude.ai/api/desktop/win32/x64/msix/latest/redirect'
+$script:CddsiD027ClaudeMsixMaximumBytes = [long](1GB)
+$script:CddsiD027ClaudeManifestMaximumBytes = [long](1MB)
+$script:CddsiD027ClaudeManifestNamespace =
+    'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
+
+function New-CddsiD027ClaudeDesktopSourceDescriptor {
+    [CmdletBinding()]
+    param()
+
+    $withoutBinding = [pscustomobject][ordered]@{
+        SchemaVersion              = 1
+        DescriptorId               = 'claude-desktop-standard-x64-latest'
+        ArtifactType               = 'ClaudeDesktopMsix'
+        SourcePolicy               = 'anthropic_official_only'
+        SourceUri                  = $script:CddsiD027ClaudeStandardX64SourceUri
+        SourceUriBindingToken      = Get-CddsiSourceUriBindingToken `
+            -SourceUri $script:CddsiD027ClaudeStandardX64SourceUri
+        ReleaseVersion             = $null
+        Architecture               = 'x64'
+        Channel                    = 'Standard'
+        FileNameToken              = '<ARTIFACT_FILE:CLAUDE_X64_STANDARD_MSIX>'
+        ExpectedArtifactSha256     = $null
+        ExpectedArtifactSizeBytes  = $null
+        ExpectedSignerThumbprint   = $null
+        ExpectedSignerSubjectToken = $null
+        ExpectedPublisherToken     = $null
+        ExpectedIdentityToken      = $null
+        RedirectPolicy             = 'same-owner-https-only'
+        MaximumBytes               = $script:CddsiD027ClaudeMsixMaximumBytes
+        MetadataStatus             = 'UNRESOLVED'
+    }
+    $values = [ordered]@{}
+    foreach ($property in $withoutBinding.PSObject.Properties) {
+        $values[$property.Name] = $property.Value
+    }
+    $values['MetadataBindingToken'] =
+        Get-CddsiArtifactDescriptorBindingToken -Descriptor $withoutBinding
+    $descriptor = [pscustomobject]$values
+    if (-not (Test-CddsiArtifactDescriptor `
+        -Descriptor $descriptor `
+        -ExpectedArtifactType ClaudeDesktopMsix)) {
+        throw 'D-027 Claude Desktop source descriptor failed its exact unresolved contract.'
+    }
+    return $descriptor
+}
+
+function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$ManifestBytes
+    )
+
+    $memory = $null
+    $reader = $null
+    $sha = $null
+    try {
+        if (
+            $null -eq $ManifestBytes -or
+            $ManifestBytes.Length -lt 32 -or
+            $ManifestBytes.Length -gt $script:CddsiD027ClaudeManifestMaximumBytes
+        ) {
+            throw 'Manifest bytes were outside the allowed bound.'
+        }
+        $settings = New-Object System.Xml.XmlReaderSettings
+        $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+        $settings.XmlResolver = $null
+        $settings.MaxCharactersInDocument =
+            $script:CddsiD027ClaudeManifestMaximumBytes
+        $settings.MaxCharactersFromEntities = 0
+        $settings.IgnoreComments = $false
+        $settings.IgnoreProcessingInstructions = $false
+        $settings.IgnoreWhitespace = $false
+
+        $memory = New-Object System.IO.MemoryStream(
+            $ManifestBytes,
+            0,
+            $ManifestBytes.Length,
+            $false,
+            $true
+        )
+        $reader = [System.Xml.XmlReader]::Create($memory, $settings)
+        $document = New-Object System.Xml.XmlDocument
+        $document.PreserveWhitespace = $true
+        $document.XmlResolver = $null
+        $document.Load($reader)
+        if ($null -ne $document.DocumentType) {
+            throw 'Manifest document type declarations are prohibited.'
+        }
+        $root = $document.DocumentElement
+        if (
+            $null -eq $root -or
+            $root.LocalName -cne 'Package' -or
+            $root.NamespaceURI -cne $script:CddsiD027ClaudeManifestNamespace
+        ) {
+            throw 'Manifest package root identity was invalid.'
+        }
+
+        $identityCandidates = @(
+            $root.ChildNodes |
+                Where-Object {
+                    $_.NodeType -eq [System.Xml.XmlNodeType]::Element -and
+                    $_.LocalName -ceq 'Identity'
+                }
+        )
+        if (
+            $identityCandidates.Count -ne 1 -or
+            $identityCandidates[0].NamespaceURI -cne
+                $script:CddsiD027ClaudeManifestNamespace
+        ) {
+            throw 'Manifest requires one exact foundation Identity element.'
+        }
+        $identity = $identityCandidates[0]
+        if ($identity.HasChildNodes) {
+            throw 'Manifest Identity must not contain child nodes.'
+        }
+        $attributeNames = New-Object System.Collections.Generic.List[string]
+        foreach ($attribute in @($identity.Attributes)) {
+            if (
+                $attribute.NamespaceURI -ceq
+                    'http://www.w3.org/2000/xmlns/' -or
+                $attribute.Prefix -ceq 'xmlns'
+            ) {
+                continue
+            }
+            if (-not [string]::IsNullOrEmpty($attribute.NamespaceURI)) {
+                throw 'Manifest Identity attributes must be unqualified.'
+            }
+            $attributeNames.Add([string]$attribute.LocalName)
+        }
+        $requiredAttributes = @(
+            'Name',
+            'ProcessorArchitecture',
+            'Publisher',
+            'Version'
+        )
+        $allowedWithResourceId = @($requiredAttributes + 'ResourceId')
+        $actualAttributeText =
+            @($attributeNames.ToArray() | Sort-Object -CaseSensitive) -join "`n"
+        $requiredAttributeText =
+            @($requiredAttributes | Sort-Object -CaseSensitive) -join "`n"
+        $resourceAttributeText =
+            @($allowedWithResourceId | Sort-Object -CaseSensitive) -join "`n"
+        if (
+            $actualAttributeText -cne $requiredAttributeText -and
+            $actualAttributeText -cne $resourceAttributeText
+        ) {
+            throw 'Manifest Identity attribute set was invalid.'
+        }
+
+        $packageName = [string]$identity.GetAttribute('Name')
+        $publisher = [string]$identity.GetAttribute('Publisher')
+        $packageVersion = [string]$identity.GetAttribute('Version')
+        $architecture = [string]$identity.GetAttribute('ProcessorArchitecture')
+        $resourceId = if ($attributeNames -ccontains 'ResourceId') {
+            [string]$identity.GetAttribute('ResourceId')
+        }
+        else {
+            ''
+        }
+        $versionMatch = [regex]::Match(
+            $packageVersion,
+            '^(?<a>0|[1-9][0-9]{0,4})\.(?<b>0|[1-9][0-9]{0,4})\.(?<c>0|[1-9][0-9]{0,4})\.(?<d>0|[1-9][0-9]{0,4})$',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+        )
+        if (
+            $packageName -cne 'Claude' -or
+            $architecture -cne 'x64' -or
+            -not $versionMatch.Success -or
+            $publisher.Length -lt 3 -or
+            $publisher.Length -gt 8192 -or
+            $publisher -match '[\x00-\x1f]' -or
+            $resourceId -cne ''
+        ) {
+            throw 'Claude package name, publisher, version, architecture or resource identity was invalid.'
+        }
+        foreach ($groupName in @('a', 'b', 'c', 'd')) {
+            if ([int]::Parse(
+                $versionMatch.Groups[$groupName].Value,
+                [Globalization.CultureInfo]::InvariantCulture
+            ) -gt 65535) {
+                throw 'Claude package version component exceeded the MSIX bound.'
+            }
+        }
+
+        $distinguishedName =
+            New-Object System.Security.Cryptography.X509Certificates.X500DistinguishedName(
+                $publisher
+            )
+        if (
+            $null -eq $distinguishedName.RawData -or
+            $distinguishedName.RawData.Length -lt 3
+        ) {
+            throw 'Claude package publisher distinguished name was invalid.'
+        }
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $publisherTextSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($publisher))
+        ).Replace('-', '').ToLowerInvariant()
+        $publisherParsedX500RawDataSha256 = [BitConverter]::ToString(
+            $sha.ComputeHash($distinguishedName.RawData)
+        ).Replace('-', '').ToLowerInvariant()
+        $identityBindingToken = Get-CddsiSupplyChainTextBindingToken -Text (@(
+            'ContractVersion=cddsi-d027-claude-package-identity-v1'
+            'Name=Claude'
+            ('PublisherTextSha256={0}' -f $publisherTextSha256)
+            (
+                'PublisherParsedX500RawDataSha256={0}' -f
+                    $publisherParsedX500RawDataSha256
+            )
+            ('Version={0}' -f $packageVersion)
+            'ProcessorArchitecture=x64'
+            ('ResourceId={0}' -f $resourceId)
+        ) -join "`n")
+
+        return [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-claude-appx-manifest-v1'
+            PackageName = $packageName
+            Publisher = $publisher
+            PublisherTextSha256 = $publisherTextSha256
+            PublisherParsedX500RawDataSha256 =
+                $publisherParsedX500RawDataSha256
+            PackageVersion = $packageVersion
+            Architecture = $architecture
+            ResourceId = $resourceId
+            PackageIdentityBindingToken = $identityBindingToken
+        }
+    }
+    catch {
+        throw 'Claude Desktop AppxManifest.xml did not match the bounded D-027 x64 identity contract.'
+    }
+    finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+        if ($null -ne $reader) { $reader.Dispose() }
+        if ($null -ne $memory) { $memory.Dispose() }
+    }
+}
+
+function Read-CddsiD027ClaudeMsixManifest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.IO.Stream]$PackageStream
+    )
+
+    $archive = $null
+    $entryStream = $null
+    $initialPosition = [long]0
+    $restorePosition = $false
+    try {
+        if (
+            $null -eq $PackageStream -or
+            -not $PackageStream.CanRead -or
+            -not $PackageStream.CanSeek
+        ) {
+            throw 'MSIX package stream must be readable and seekable.'
+        }
+        $initialPosition = [long]$PackageStream.Position
+        if (
+            $PackageStream.Length -lt 64 -or
+            $PackageStream.Length -gt $script:CddsiD027ClaudeMsixMaximumBytes -or
+            $initialPosition -lt 0 -or
+            $initialPosition -gt $PackageStream.Length
+        ) {
+            throw 'MSIX package stream length or caller position was outside the standard x64 bound.'
+        }
+        $PackageStream.Position = 0
+        $restorePosition = $true
+        Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+        $archive = [System.IO.Compression.ZipArchive]::new(
+            $PackageStream,
+            [System.IO.Compression.ZipArchiveMode]::Read,
+            $true
+        )
+        $entries = @($archive.Entries)
+        if ($entries.Count -lt 1 -or $entries.Count -gt 4096) {
+            throw 'MSIX ZIP entry count was outside the allowed range.'
+        }
+        $requiredRootEntries = @(
+            'AppxManifest.xml',
+            'AppxSignature.p7x',
+            'AppxBlockMap.xml',
+            '[Content_Types].xml'
+        )
+        $criticalEntries = @{}
+        foreach ($requiredName in $requiredRootEntries) {
+            $candidates = @(
+                $entries |
+                    Where-Object {
+                        [string]::Equals(
+                            $_.FullName,
+                            $requiredName,
+                            [StringComparison]::OrdinalIgnoreCase
+                        )
+                    }
+            )
+            if (
+                $candidates.Count -ne 1 -or
+                $candidates[0].FullName -cne $requiredName
+            ) {
+                throw 'MSIX requires one exact copy of every critical root entry.'
+            }
+            $criticalEntries[$requiredName] = $candidates[0]
+        }
+        $manifestEntry = $criticalEntries['AppxManifest.xml']
+        if (
+            $manifestEntry.Length -lt 32 -or
+            $manifestEntry.Length -gt $script:CddsiD027ClaudeManifestMaximumBytes -or
+            $manifestEntry.CompressedLength -lt 1 -or
+            (
+                $manifestEntry.Length -gt 65536 -and
+                $manifestEntry.CompressedLength -lt
+                    [Math]::Floor($manifestEntry.Length / 1000)
+            )
+        ) {
+            throw 'MSIX manifest entry length or compression ratio was invalid.'
+        }
+        $manifestBytes = New-Object byte[] ([int]$manifestEntry.Length)
+        $entryStream = $manifestEntry.Open()
+        $offset = 0
+        while ($offset -lt $manifestBytes.Length) {
+            $read = $entryStream.Read(
+                $manifestBytes,
+                $offset,
+                $manifestBytes.Length - $offset
+            )
+            if ($read -le 0) {
+                throw 'MSIX manifest entry read was truncated.'
+            }
+            $offset += $read
+        }
+        if ($entryStream.ReadByte() -ne -1) {
+            throw 'MSIX manifest entry exceeded its declared length.'
+        }
+        return ConvertFrom-CddsiD027ClaudeAppxManifestBytes `
+            -ManifestBytes $manifestBytes
+    }
+    catch {
+        throw 'Claude Desktop MSIX manifest could not be read from one bounded root ZIP entry.'
+    }
+    finally {
+        if ($null -ne $entryStream) { $entryStream.Dispose() }
+        if ($null -ne $archive) { $archive.Dispose() }
+        if (
+            $restorePosition -and
+            $null -ne $PackageStream -and
+            $PackageStream.CanSeek
+        ) {
+            $PackageStream.Position = $initialPosition
+        }
+    }
+}
+
 function Get-CddsiClaudeDesktopMsixStatus {
     [CmdletBinding()]
     param(

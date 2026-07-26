@@ -16,6 +16,9 @@ GIT_INSTALLER_WINVERIFYTRUST_IDENTITY_TOCTOU_IMPLEMENTED /
 GIT_SILENT_INSTALL_GLOBAL_CONFIG_SAFE_POLICY_EXIT_AND_PATH_READBACK_IMPLEMENTED /
 GIT_VM_ACCEPTANCE_RSA_SNAPSHOT_SESSION_GATE_IMPLEMENTED_CONFIGURED_FALSE /
 GIT_LIVE_INSTALL_BLOCKED_PENDING_CANDIDATE_WORKLOAD_BINDING /
+CLAUDE_OFFICIAL_X64_STANDARD_SOURCE_DESCRIPTOR_IMPLEMENTED_UNRESOLVED /
+CLAUDE_BOUNDED_MSIX_MANIFEST_PARSER_IMPLEMENTED_PROVISIONAL_IDENTITY /
+CLAUDE_DOWNLOAD_SIGNATURE_MACHINE_PROVISION_NOT_YET_IMPLEMENTED /
 REAL_READ_ONLY_GIT_2_54_OBSERVED /
 GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
 REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
@@ -23,7 +26,66 @@ REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
 
-### D-027 当前 Git 官方安装实现批次
+### D-027 当前 Claude Desktop 来源与 MSIX manifest 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`03a93b4de4ce4469140c37a6467a725b57ae4aa9`、tree
+`e9d367e25898e5d25f1b8fd2190de4bcd1bc4758`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批只建立官方入口的未解析描述符和离线有界 MSIX manifest parser；没有执行产品
+网络、下载、WinVerifyTrust、AppX/DISM、UAC、注册表、Claude 进程或 Live。
+
+- D-027 固定唯一 x64 Standard 来源为 Anthropic 文档中的
+  `https://claude.ai/api/desktop/win32/x64/msix/latest/redirect`。描述符不接受
+  caller 提供的 architecture、channel 或 URI，并把 version、SHA-256、长度、
+  signer、publisher 和 package identity 全部保留为 null、
+  `MetadataStatus=UNRESOLVED`。`latest` 是可变来源；当前 binding 只绑定来源策略，
+  绝不是 immutable artifact identity、cache key、候选哈希或安装信任证据。
+- 通用官方 URI 检查已修正为要求显式 `msix` 或 `offline` channel segment，
+  D-027 描述符另行固定 `x64/msix`；旧的缺失 channel segment 路径明确拒绝。
+  最终 `downloads.claude.ai` Location 的真实 path、
+  query/MIME/长度和 redirect chain 尚未在 disposable VM clean snapshot 观察；
+  因此本批没有把任何猜测的最终 path 正则写成已确认 Live allowlist。
+  旧 generic `downloads.claude.{com,ai}/any.msix` 识别只属历史非 Live 合同，
+  不能授权 D-027 下载；后续必须用 clean-VM 观察建立独立精确 gate。
+- `Read-CddsiD027ClaudeMsixManifest` 只接受可读、可 seek、1 GiB 内的 bounded ZIP，
+  entry 数限制为 1..4096，并要求精确各一份根级 `AppxManifest.xml`、
+  `AppxSignature.p7x`、`AppxBlockMap.xml` 和 `[Content_Types].xml`。manifest
+  读取限制为 1 MiB，禁止 DTD/entity resolver，要求 foundation Windows 10
+  namespace 和唯一、无子节点、属性集合精确的 `Identity`。
+- 当前 manifest 门 fail closed 为 `Name=Claude`、`ProcessorArchitecture=x64`、
+  空 `ResourceId`、canonical 四段且每段 <=65535 的 version，以及语法合法的
+  X.500 Publisher。`Name=Claude` 和空 `ResourceId` 仍是待 clean-VM 官方实物确认
+  的 provisional identity；测试 Publisher 是明确标记的 synthetic fixture，不是
+  Anthropic publisher 事实或 trust anchor。真实包必须在同一次 WinVerifyTrust
+  state 中提取 signer certificate，随后将 manifest Publisher 原文与 signer
+  canonical Subject 精确、大小写和空白敏感地比较，并分别绑定 manifest Publisher
+  原文 SHA-256、其 parsed X.500 raw-data SHA-256、signer `SubjectName.RawData`
+  SHA-256、cert DER、thumbprint 和 package identity。未用真实官方包校准前，
+  不假设重新编码的 manifest X.500 raw data 必然与证书原始 ASN.1 bytes 相等；
+  这些门本批尚未实现。
+- Git 的 snapshot receipt/session 精确硬编码 Git operation，不能授权 Claude。
+  Claude machine-wide provisioning 仍需独立
+  `ProvisionClaudeDesktopMachineWide` workload/session，绑定候选 commit/tree/ZIP/
+  SBOM、helper code、MSIX SHA-256/长度、manifest/signature evidence，并在每个
+  mutation/readback 边界重新鉴权。production authority 继续
+  `Configured=false`，故任何 destructive Claude Live 必须保持硬阻塞。
+
+本批 Windows PowerShell 5.1 focused 结果为：
+`D027ClaudeDesktopInstallerLive` 3/3、`D027ClaudeMsixManifest` 5/5、
+`PublicFunctions` 4/4、`Common` 20/20；合计 32 passed、0 failed、
+0 skipped、0 inconclusive、0 not-run；`Encoding` 另为 4/4。tracked 加 intended
+untracked 共 177 files 中 106 个 PowerShell source parser 为 0 error，
+`git diff --check` 通过。release manifest 为 schema 1、40 package files、
+137 development-only files，duplicate/overlap/missing/unclassified/unknown 均为
+0；177 个 inventory 和 40 个 package files 的独立 secret scan 均为 0 findings，
+顶层 evidence/artifact/report/log root 为 0。当前不是候选、clean-snapshot
+acceptance 或发布证据；
+download receipt/TOCTOU、WinVerifyTrust signer/publisher、machine-wide provisioning、
+current-user registration、UAC/NoRestart/restart/readback、幂等、Repair/Restore 和
+Computer Use 的 Chat/Code/Cowork 均未实现或通过。
+
+### D-027 已推送 Git 官方安装实现批次
 
 本批的精确 parent 为 commit
 `f38f6dc8e74b661cef31ba5617bafa7220b25f90`、tree
@@ -32,6 +94,11 @@ upstream、remote branch 和 PR #1 head 均绑定该 parent，index/worktree cle
 下述实现和验证均相对于该 parent；它们不是候选、clean-snapshot acceptance 或发布
 证据。提交和普通 fast-forward push 前仍须 fetch 并确认 remote/PR head 未离开该
 parent，推送后须把新 commit/tree 作为下一批的唯一 parent。
+
+本批已作为 commit `03a93b4de4ce4469140c37a6467a725b57ae4aa9`、
+tree `e9d367e25898e5d25f1b8fd2190de4bcd1bc4758` 普通 fast-forward
+推送；推送后 local、upstream、remote branch 和 PR #1 head 均精确对齐，工作树和
+index clean。该 commit 是当前 Claude 批次的唯一 parent。
 
 - Git metadata 只接受官方 `git-for-windows/git` latest release API 的精确响应，
   严格要求 GitHub `immutable=true`，有界读取 JSON/MIME/长度/时间，只选择唯一

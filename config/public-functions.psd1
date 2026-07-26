@@ -121,6 +121,9 @@
             'Restart-CddsiClaudeDesktop'
         )
         'lib/desktop-msix.ps1' = @(
+            'New-CddsiD027ClaudeDesktopSourceDescriptor'
+            'ConvertFrom-CddsiD027ClaudeAppxManifestBytes'
+            'Read-CddsiD027ClaudeMsixManifest'
             'Get-CddsiClaudeDesktopMsixStatus'
             'ConvertFrom-CddsiAnthropicMsixReleaseMetadata'
             'Get-CddsiOfficialMsixMetadata'
@@ -504,6 +507,9 @@
         'Stop-CddsiClaudeDesktop' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'Start-CddsiClaudeDesktop' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'Restart-CddsiClaudeDesktop' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
+        'New-CddsiD027ClaudeDesktopSourceDescriptor' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'ConvertFrom-CddsiD027ClaudeAppxManifestBytes' = @{ Kind = 'Pure'; Mandatory = @('ManifestBytes'); Mode = $false }
+        'Read-CddsiD027ClaudeMsixManifest' = @{ Kind = 'Pure'; Mandatory = @('PackageStream'); Mode = $false }
         'Get-CddsiClaudeDesktopMsixStatus' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion', 'RequiredScope', 'ExpectedArchitecture'); Mode = $false }
         'ConvertFrom-CddsiAnthropicMsixReleaseMetadata' = @{ Kind = 'Pure'; Mandatory = @('ReleaseDocument', 'Architecture', 'Channel'); Mode = $false }
         'Get-CddsiOfficialMsixMetadata' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Architecture', 'Channel'); Mode = $false }

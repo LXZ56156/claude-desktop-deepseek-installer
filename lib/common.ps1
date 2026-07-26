@@ -359,7 +359,7 @@ function Test-CddsiOfficialArtifactUri {
         }
         return (
             $hostName -ceq 'claude.ai' -and
-            [regex]::IsMatch($path, '^/api/desktop/win32/(?:x64|arm64)/(?:offline/)?latest/redirect$')
+            [regex]::IsMatch($path, '^/api/desktop/win32/(?:x64|arm64)/(?:msix|offline)/latest/redirect$')
         )
     }
     if ($hostName -ceq 'api.github.com') {
@@ -581,7 +581,20 @@ function Test-CddsiArtifactDescriptor {
     if ($Descriptor.SourceUriBindingToken -isnot [string] -or $Descriptor.SourceUriBindingToken -cne $expectedSourceBinding) { return $false }
     if (-not (Test-CddsiSafeIdentifierValue -Value $Descriptor.DescriptorId -MaxLength 128)) { return $false }
     $parsedVersion = $null
-    if ($Descriptor.ReleaseVersion -isnot [string] -or -not [version]::TryParse($Descriptor.ReleaseVersion, [ref]$parsedVersion)) { return $false }
+    if ($null -eq $Descriptor.ReleaseVersion) {
+        if (
+            $ExpectedArtifactType -cne 'ClaudeDesktopMsix' -or
+            $Descriptor.MetadataStatus -cne 'UNRESOLVED'
+        ) {
+            return $false
+        }
+    }
+    elseif (
+        $Descriptor.ReleaseVersion -isnot [string] -or
+        -not [version]::TryParse($Descriptor.ReleaseVersion, [ref]$parsedVersion)
+    ) {
+        return $false
+    }
     if ($Descriptor.Architecture -isnot [string] -or @('x64', 'arm64') -cnotcontains $Descriptor.Architecture) { return $false }
     if ($Descriptor.Channel -isnot [string] -or @('Standard', 'Offline', 'Installer') -cnotcontains $Descriptor.Channel) { return $false }
     if (
