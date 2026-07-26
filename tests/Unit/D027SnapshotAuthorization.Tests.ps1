@@ -216,6 +216,32 @@ BeforeAll {
             -DestinationPath (Join-Path $stagingRoot $DestinationLeafName)
     }
 
+    function New-CddsiD027ClaudeAcquisitionSnapshotProofFixture {
+        param(
+            [string]$ValidationTimeUtc = '2030-01-01T00:02:00Z'
+        )
+
+        $workload = New-CddsiD027ClaudeAcquisitionWorkloadFixture
+        $receipt = New-CddsiD027SnapshotReceiptFixture `
+            -Operation 'AcquireClaudeDesktopMsix' `
+            -ExecutionArtifactSha256 $workload.CandidateZipSha256 `
+            -WorkloadBindingToken $workload.WorkloadBindingToken
+        $proof =
+            New-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+                -Receipt $receipt `
+                -WorkloadDescriptor $workload `
+                -ExpectedRunId $script:SnapshotRunId `
+                -PlatformObservation $script:PlatformObservation `
+                -ValidationTimeUtc $ValidationTimeUtc `
+                -AuthorityPolicy $script:AuthorityPolicy
+        return [pscustomobject]@{
+            Workload = $workload
+            Receipt = $receipt
+            Proof = $proof
+            ValidationTimeUtc = $ValidationTimeUtc
+        }
+    }
+
     function Copy-CddsiD027SnapshotObject {
         param([Parameter(Mandatory = $true)]$Value)
 
@@ -881,6 +907,274 @@ Describe 'D-027 Claude MSIX acquisition snapshot workload binding' {
                 -ValidationTimeUtc '2030-01-01T00:02:00Z' `
                 -AuthorityPolicy $script:AuthorityPolicy) |
                     Should -BeFalse
+        }
+    }
+}
+
+Describe 'D-027 Claude acquisition external snapshot proof projection' {
+    It 'projects one exact signed receipt without retaining raw signature material' {
+        $fixture =
+            New-CddsiD027ClaudeAcquisitionSnapshotProofFixture
+        $proof = $fixture.Proof
+
+        @($proof.PSObject.Properties.Name) -join "`n" |
+            Should -BeExactly (@(
+                'SchemaVersion',
+                'ContractVersion',
+                'ProofKind',
+                'ExternalSource',
+                'RestoreState',
+                'VmDisposition',
+                'RunId',
+                'Stage',
+                'EnvironmentTier',
+                'ArtifactProfile',
+                'WorkloadKind',
+                'Operation',
+                'ExecutionArtifactSha256',
+                'WorkloadBindingToken',
+                'ReceiptBindingToken',
+                'AuthorityId',
+                'AuthorityKeySha256',
+                'SignatureAlgorithm',
+                'AuthoritySignatureSha256',
+                'SnapshotIdentitySha256',
+                'VmIdentitySha256',
+                'RestorerIdentitySha256',
+                'WindowsMajorVersion',
+                'WindowsBuildNumber',
+                'WindowsProductType',
+                'WindowsProductInfoCode',
+                'NativeArchitecture',
+                'ProcessArchitecture',
+                'PowerShellVersion',
+                'RestoreCompletedAtUtc',
+                'ExpiresAtUtc',
+                'ValidatedAtUtc',
+                'ProofBindingToken'
+            ) -join "`n")
+        $proof.ProofKind |
+            Should -BeExactly 'ExternallySignedCleanSnapshot'
+        $proof.WorkloadKind |
+            Should -BeExactly 'ClaudeDesktopMsixAcquisition'
+        $proof.Operation |
+            Should -BeExactly 'AcquireClaudeDesktopMsix'
+        $proof.ExecutionArtifactSha256 |
+            Should -BeExactly $fixture.Workload.CandidateZipSha256
+        $proof.ReceiptBindingToken |
+            Should -BeExactly $fixture.Receipt.ReceiptBindingToken
+        $signatureSha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $expectedSignatureSha256 = (
+                [BitConverter]::ToString(
+                    $signatureSha.ComputeHash(
+                        [Convert]::FromBase64String(
+                            $fixture.Receipt.AuthoritySignatureBase64
+                        )
+                    )
+                )
+            ).Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $signatureSha.Dispose()
+        }
+        $proof.AuthoritySignatureSha256 |
+            Should -BeExactly $expectedSignatureSha256
+        $proof.ProofBindingToken |
+            Should -BeExactly (
+                Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken `
+                    -Proof $proof
+            )
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $proof `
+            -Receipt $fixture.Receipt `
+            -WorkloadDescriptor $fixture.Workload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeTrue
+
+        foreach ($forbidden in @(
+                'AuthoritySignatureBase64',
+                'RsaModulusBase64',
+                'RsaExponentBase64',
+                'Receipt',
+                'Authorized',
+                'CanDownload',
+                'CanInstall'
+            )) {
+            $proof.PSObject.Properties.Name |
+                Should -Not -Contain $forbidden
+        }
+    }
+
+    It 'requires the full matching signed acquisition receipt and workload' {
+        $fixture =
+            New-CddsiD027ClaudeAcquisitionSnapshotProofFixture
+        $gitReceipt = New-CddsiD027SnapshotReceiptFixture
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $fixture.Proof `
+            -Receipt $gitReceipt `
+            -WorkloadDescriptor $fixture.Workload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeFalse
+        {
+            New-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+                -Receipt $gitReceipt `
+                -WorkloadDescriptor $fixture.Workload `
+                -ExpectedRunId $script:SnapshotRunId `
+                -PlatformObservation $script:PlatformObservation `
+                -ValidationTimeUtc $fixture.ValidationTimeUtc `
+                -AuthorityPolicy $script:AuthorityPolicy
+        } | Should -Throw '*receipt was not accepted*'
+
+        $differentWorkload =
+            New-CddsiD027ClaudeAcquisitionWorkloadFixture `
+                -DestinationLeafName 'Different.msix'
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $fixture.Proof `
+            -Receipt $fixture.Receipt `
+            -WorkloadDescriptor $differentWorkload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeFalse
+
+        $badSignatureReceipt =
+            Copy-CddsiD027SnapshotObject -Value $fixture.Receipt
+        $signatureBytes = [Convert]::FromBase64String(
+            $badSignatureReceipt.AuthoritySignatureBase64
+        )
+        $signatureBytes[0] = $signatureBytes[0] -bxor 1
+        $badSignatureReceipt.AuthoritySignatureBase64 =
+            [Convert]::ToBase64String($signatureBytes)
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $fixture.Proof `
+            -Receipt $badSignatureReceipt `
+            -WorkloadDescriptor $fixture.Workload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeFalse
+    }
+
+    It 'rejects semantic drift even after the proof binding is recomputed' {
+        $fixture =
+            New-CddsiD027ClaudeAcquisitionSnapshotProofFixture
+        foreach ($mutation in @(
+                @{ Name = 'ContractVersion'; Value = 'other-contract' },
+                @{ Name = 'ProofKind'; Value = 'CallerAssertedSnapshot' },
+                @{ Name = 'WorkloadKind'; Value = 'ClaudeDesktopMachineWide' },
+                @{ Name = 'Operation'; Value = 'InstallGitForWindows' },
+                @{ Name = 'ExecutionArtifactSha256'; Value = ('9' * 64) },
+                @{ Name = 'AuthoritySignatureSha256'; Value = ('8' * 64) },
+                @{ Name = 'SnapshotIdentitySha256'; Value = ('7' * 64) },
+                @{ Name = 'VmIdentitySha256'; Value = ('6' * 64) },
+                @{ Name = 'WindowsBuildNumber'; Value = '26100' },
+                @{ Name = 'ValidatedAtUtc'; Value = '2030-01-01T00:03:00Z' }
+            )) {
+            $changed =
+                Copy-CddsiD027SnapshotObject -Value $fixture.Proof
+            $changed.PSObject.Properties[$mutation.Name].Value =
+                $mutation.Value
+            $changed.ProofBindingToken =
+                Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken `
+                    -Proof $changed
+            Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+                -Proof $changed `
+                -Receipt $fixture.Receipt `
+                -WorkloadDescriptor $fixture.Workload `
+                -ExpectedRunId $script:SnapshotRunId `
+                -PlatformObservation $script:PlatformObservation `
+                -ValidationTimeUtc $fixture.ValidationTimeUtc `
+                -AuthorityPolicy $script:AuthorityPolicy |
+                    Should -BeFalse -Because $mutation.Name
+        }
+    }
+
+    It 'rejects missing extra and unbound proof fields' {
+        $fixture =
+            New-CddsiD027ClaudeAcquisitionSnapshotProofFixture
+
+        $extra = Copy-CddsiD027SnapshotObject -Value $fixture.Proof
+        Add-Member -InputObject $extra `
+            -NotePropertyName SnapshotAuthorized `
+            -NotePropertyValue $true
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $extra `
+            -Receipt $fixture.Receipt `
+            -WorkloadDescriptor $fixture.Workload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeFalse
+        {
+            Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken `
+                -Proof $extra
+        } | Should -Throw '*exact binding schema*'
+
+        $missing = Copy-CddsiD027SnapshotObject -Value $fixture.Proof
+        $missing.PSObject.Properties.Remove('ProofKind')
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $missing `
+            -Receipt $fixture.Receipt `
+            -WorkloadDescriptor $fixture.Workload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeFalse
+        {
+            Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken `
+                -Proof $missing
+        } | Should -Throw '*exact binding schema*'
+
+        $unbound = Copy-CddsiD027SnapshotObject -Value $fixture.Proof
+        $unbound.ProofBindingToken = 'f' * 64
+        Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $unbound `
+            -Receipt $fixture.Receipt `
+            -WorkloadDescriptor $fixture.Workload `
+            -ExpectedRunId $script:SnapshotRunId `
+            -PlatformObservation $script:PlatformObservation `
+            -ValidationTimeUtc $fixture.ValidationTimeUtc `
+            -AuthorityPolicy $script:AuthorityPolicy |
+                Should -BeFalse
+    }
+
+    It 'remains pure and grants no Save session or install capability' {
+        foreach ($name in @(
+                'Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken',
+                'New-CddsiD027ClaudeAcquisitionExternalSnapshotProof',
+                'Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof'
+            )) {
+            $definition = (Get-Command $name -CommandType Function).Definition
+            $definition | Should -Not -Match (
+                '(?i)Invoke-WebRequest|Invoke-RestMethod|HttpClient|' +
+                'Start-Process|Get-AuthenticodeSignature|' +
+                'Get-Item|New-Item|Remove-Item|Move-Item|Copy-Item|' +
+                'Get-Content|Set-Content|Add-Content|Out-File|' +
+                'Test-Path|Resolve-Path|Get-ChildItem|Get-Acl|' +
+                'Get-ItemProperty|Set-ItemProperty|Add-Appx|' +
+                '\[System\.IO\.File\]|Assert-CddsiMutationAllowed'
+            )
+            $definition | Should -Not -Match '\$(?:Context|Mode)\b'
+        }
+
+        foreach ($consumer in @(
+                'Save-CddsiOfficialClaudeDesktopMsix',
+                'Assert-CddsiD027ClaudeAcquisitionLiveContext',
+                'Install-CddsiClaudeDesktopMsix'
+            )) {
+            (Get-Command $consumer -CommandType Function).Definition |
+                Should -Not -Match 'ExternalSnapshotProof'
         }
     }
 }

@@ -8,6 +8,8 @@
 D026_CHECKPOINT=NON_RELEASE_SUPERSEDED /
 D027_SCOPE_HANDOFF_ACTIVE / WINDOWS_11_X64_ONLY /
 WINDOWS_POWERSHELL_5_1_RUNTIME_ONLY /
+D027_HOST_CONTINUATION_CHECKPOINT /
+CLAUDE_ACQUISITION_EXTERNAL_SNAPSHOT_PROOF_WIP_COMMITTED_NON_AUTHORITY /
 GIT_OFFICIAL_IMMUTABLE_METADATA_AND_DOWNLOAD_POLICY_IMPLEMENTED /
 NATIVE_WIN11_AMD64_WORKSTATION_PREFLIGHT_IMPLEMENTED /
 GIT_UNIQUE_PROTECTED_BUNDLE_OBSERVER_IMPLEMENTED /
@@ -40,6 +42,71 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 宿主机续开发检查点：Claude acquisition external snapshot proof WIP
+
+用户于 2026-07-26 明确要求把当前修改与 HANDOFF 一并推送，后续直接在宿主机继续开发。
+本段所在提交是一个可恢复开发上下文的 `NON_AUTHORITY` 检查点，不是功能完成、候选、
+VM 验收或发布提交。当前唯一 branch 仍为 `codex/repair/p10a-0a-fast-lane`；准备该提交
+前已 fetch 并确认 local HEAD、upstream、remote-tracking branch、FETCH_HEAD 和 PR #1
+head 全部精确等于 parent commit
+`75e37cebca1208ffd5cdb21992b18dd1477e8102`、tree
+`0b5f7094b94b6d7de374d0aab901fde3810d30f3`，PR 为 open/draft/unmerged，index 未暂存，
+没有未知远端提交。该检查点只封存以下 4 个文件：
+
+- `lib/d027-snapshot-authorization.ps1`
+- `config/public-functions.psd1`
+- `tests/Unit/D027SnapshotAuthorization.Tests.ps1`
+- `docs/HANDOFF.md`
+
+WIP 已新增 Claude acquisition 专用、domain-separated 的 33 字段 external snapshot
+proof projection。它只有在重新验证完整 22 字段 acquisition workload、完整外部签名
+receipt、调用方提供的精确 platform observation/validation timestamp 和 RSA authority
+policy 彼此一致后才可构造；这只证明所传 policy/observation/timestamp 与签名
+receipt/workload 的字段和密码学自洽，不证明 policy provenance、真实外部 clean
+snapshot 已恢复、observation 来自当前主机或 timestamp 来自实时 UTC clock。只有未来由
+context-bound observer、实时 UTC clock 和内部加载的 tracked/pinned policy 共同约束的
+Live 路径，才能形成当前主机/freshness authority；该路径仍须携带完整
+receipt/workload/platform/current-time 重验，绝不能只消费 `ProofBindingToken`。
+`AuthoritySignatureSha256` 从 canonical Base64 解码后的签名字节计算。projection 不保留
+raw signature、RSA modulus/exponent 或 receipt object，也没有 `Authorized`、
+`CanDownload`、`CanInstall`、Status/Changed 或 Live capability。它尚未被 Save、
+acquisition session 或 installer 消费，不能证明 staging directory 的 handle
+provenance、NTFS/ancestor、owner/DACL/trusted-writer，也不能授权网络、写入、安装或
+provisioning。
+
+该检查点在彼此独立的 Windows PowerShell 5.1 进程中已得到：
+
+- `D027SnapshotAuthorization` 35/35 passed，0 failed/skipped/inconclusive。
+- 其中包含独立 golden assertion：`AuthoritySignatureSha256` 精确等于 canonical
+  Base64 解码后签名字节的 SHA-256。
+- `Config` 18/18 passed，0 failed/skipped/inconclusive。
+- `PublicFunctions` 4/4 passed，0 failed/skipped/inconclusive。
+- 受影响 source/test/config 的 PS5 parser 3 files/0 errors。
+- 两路只读安全/测试复审均完成且 source/config/tests 无阻塞项；确认精确 schema、
+  type/domain binding、完整 receipt wrapper 重验、PS5.1 兼容和无 Live consumer。
+  测试复审自己的独立冷启动复跑在外层 60 秒超时且无残留进程，不计作额外测试证据。
+- `New-*` 当前固定执行两次完整 RSA receipt 验证，属于低频、尚未消费路径上的性能冗余，
+  不是当前安全或正确性阻塞。
+
+检查点最终门为：`Encoding` 4/4 passed，0 failed/skipped/inconclusive；release
+inventory 为 tracked 183 = package 41 + development-only 142，duplicate/case-alias/
+missing/unknown 均 0；PowerShell sources 112 = execution-plane entries 112，双方差异和
+重复均 0；PS5 parser 112 files/0 errors；tracked 183、release 41、evidence 0 files 的
+独立 stream secret scan 均为 0 findings，顶层 evidence/artifact/report/log roots 为 0；
+`git diff --check` 通过。两路最终只读 source/config/test 与 HANDOFF 复审均为 no
+blockers。未运行退役历史测试，也没有执行产品网络、真实下载、文件落盘、AppX/DISM、
+进程、注册表、UAC、安装、真实 Claude 配置或凭据访问。本提交只能在精确暂存 4 文件并
+通过第二次 fetch/PR 竞争校验后，以普通 fast-forward push 送入现有 branch/PR。
+
+宿主机恢复时先 fetch 当前唯一 branch，确认 local HEAD/upstream/remote-tracking
+branch/PR #1 head 精确相等且工作树/index clean，再完整阅读 D-027 权威文档并从
+Architecture/External Contracts/HANDOFF 的最终文档收口继续；已通过的 focused PS5.1
+测试无需仅因迁移宿主机而重复，但任何 source/config/test bytes 或运行环境变化都会使
+相关证据失效。目录层后续只允许增加 `FACTS_BOUND_NO_LIVE_AUTHORITY` 的 exact claim
+contract，不得用 caller token 或纯工厂生成 `Trusted/Eligible/Observed`；真正正向证据
+必须来自内部 downloader-owned held-directory/ancestor handle、handle-based security
+descriptor observer 和不可序列化 process capability。
 
 ### D-027 当前 Claude MSIX 纯 redirect/final-header policy 批次
 

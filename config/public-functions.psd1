@@ -193,6 +193,9 @@
             'Get-CddsiD027ExternalSnapshotReceiptBindingToken'
             'Test-CddsiD027ExternalSnapshotReceipt'
             'Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt'
+            'Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken'
+            'New-CddsiD027ClaudeAcquisitionExternalSnapshotProof'
+            'Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof'
             'Test-CddsiD027ClaudeExternalSnapshotReceipt'
             'Get-CddsiD027SnapshotReceiptHeldFileObservation'
             'Read-CddsiD027ExternalSnapshotReceipt'
@@ -602,6 +605,9 @@
         'Get-CddsiD027ExternalSnapshotReceiptBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Receipt'); Mode = $false }
         'Test-CddsiD027ExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'ExpectedRunId', 'ExpectedExecutionArtifactSha256', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
         'Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'WorkloadDescriptor', 'ExpectedRunId', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
+        'Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Proof'); Mode = $false }
+        'New-CddsiD027ClaudeAcquisitionExternalSnapshotProof' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'WorkloadDescriptor', 'ExpectedRunId', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
+        'Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof' = @{ Kind = 'Pure'; Mandatory = @('Proof', 'Receipt', 'WorkloadDescriptor', 'ExpectedRunId', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
         'Test-CddsiD027ClaudeExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'WorkloadDescriptor', 'ExpectedRunId', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
         'Get-CddsiD027SnapshotReceiptHeldFileObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Stream'); Mode = $false }
         'Read-CddsiD027ExternalSnapshotReceipt' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ReceiptPath', 'ExpectedReceiptSha256'); Mode = $false }

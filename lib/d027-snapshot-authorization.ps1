@@ -10,6 +10,8 @@ $script:CddsiD027ClaudeSnapshotWorkloadBindingDomain =
     'cddsi-d027-claude-machine-wide-snapshot-workload-binding-v1'
 $script:CddsiD027ClaudeAcquisitionWorkloadBindingDomain =
     'cddsi-d027-claude-msix-acquisition-workload-binding-v1'
+$script:CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingDomain =
+    'cddsi-d027-claude-acquisition-external-snapshot-proof-binding-v1'
 $script:CddsiD027SnapshotAuthorityPolicyFieldNames = @(
     'SchemaVersion',
     'ContractVersion',
@@ -108,6 +110,41 @@ $script:CddsiD027ClaudeAcquisitionWorkloadFieldNames = @(
     'DestinationPathBindingToken',
     'WorkloadBindingToken'
 )
+$script:CddsiD027ClaudeAcquisitionExternalSnapshotProofFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'ProofKind',
+    'ExternalSource',
+    'RestoreState',
+    'VmDisposition',
+    'RunId',
+    'Stage',
+    'EnvironmentTier',
+    'ArtifactProfile',
+    'WorkloadKind',
+    'Operation',
+    'ExecutionArtifactSha256',
+    'WorkloadBindingToken',
+    'ReceiptBindingToken',
+    'AuthorityId',
+    'AuthorityKeySha256',
+    'SignatureAlgorithm',
+    'AuthoritySignatureSha256',
+    'SnapshotIdentitySha256',
+    'VmIdentitySha256',
+    'RestorerIdentitySha256',
+    'WindowsMajorVersion',
+    'WindowsBuildNumber',
+    'WindowsProductType',
+    'WindowsProductInfoCode',
+    'NativeArchitecture',
+    'ProcessArchitecture',
+    'PowerShellVersion',
+    'RestoreCompletedAtUtc',
+    'ExpiresAtUtc',
+    'ValidatedAtUtc',
+    'ProofBindingToken'
+)
 $script:CddsiD027GitLiveSessionAuthorizationFieldNames = @(
     'SchemaVersion',
     'ContractVersion',
@@ -132,6 +169,91 @@ $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorizationFieldNames = @(
 $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization = $null
 $script:CddsiD027SnapshotReceiptSignatureDomain =
     'cddsi-d027-external-clean-snapshot-receipt-signature-v1'
+$script:CddsiD027SnapshotAuthoritySignatureSha256 =
+    [Func[string, string]]{
+    param([string]$AuthoritySignatureBase64)
+
+    $sha = $null
+    try {
+        if (-not (Test-CddsiD027CanonicalBase64 `
+            -Value $AuthoritySignatureBase64 `
+            -MinimumBytes 256 `
+            -MaximumBytes 512)) {
+            throw 'invalid'
+        }
+        $signatureBytes =
+            [Convert]::FromBase64String($AuthoritySignatureBase64)
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        return (
+            [BitConverter]::ToString(
+                $sha.ComputeHash($signatureBytes)
+            )
+        ).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+    }
+}
+$script:CddsiD027ClaudeAcquisitionExternalSnapshotProofProjection =
+    [Func[object, object, object, string, object]]{
+    param(
+        $Receipt,
+        $WorkloadDescriptor,
+        $PlatformObservation,
+        [string]$ValidationTimeUtc
+    )
+
+    return [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        ContractVersion =
+            'cddsi-d027-claude-acquisition-external-snapshot-proof-v1'
+        ProofKind = 'ExternallySignedCleanSnapshot'
+        ExternalSource = 'VmExternalHypervisor'
+        RestoreState = 'CleanSnapshotRestored'
+        VmDisposition = 'Disposable'
+        RunId = [string]$WorkloadDescriptor.RunId
+        Stage = 'VmAcceptance'
+        EnvironmentTier = 'VmAcceptance'
+        ArtifactProfile = 'VmAcceptance'
+        WorkloadKind = 'ClaudeDesktopMsixAcquisition'
+        Operation = 'AcquireClaudeDesktopMsix'
+        ExecutionArtifactSha256 =
+            [string]$WorkloadDescriptor.CandidateZipSha256
+        WorkloadBindingToken =
+            [string]$WorkloadDescriptor.WorkloadBindingToken
+        ReceiptBindingToken = [string]$Receipt.ReceiptBindingToken
+        AuthorityId = [string]$Receipt.AuthorityId
+        AuthorityKeySha256 = [string]$Receipt.AuthorityKeySha256
+        SignatureAlgorithm = 'RSA-SHA256-PKCS1-v1_5'
+        AuthoritySignatureSha256 =
+            $script:CddsiD027SnapshotAuthoritySignatureSha256.Invoke(
+                [string]$Receipt.AuthoritySignatureBase64
+            )
+        SnapshotIdentitySha256 =
+            [string]$Receipt.SnapshotIdentitySha256
+        VmIdentitySha256 = [string]$PlatformObservation.VmIdentitySha256
+        RestorerIdentitySha256 =
+            [string]$Receipt.RestorerIdentitySha256
+        WindowsMajorVersion =
+            [long]$PlatformObservation.WindowsMajorVersion
+        WindowsBuildNumber =
+            [long]$PlatformObservation.WindowsBuildNumber
+        WindowsProductType =
+            [string]$PlatformObservation.WindowsProductType
+        WindowsProductInfoCode =
+            [long]$PlatformObservation.WindowsProductInfoCode
+        NativeArchitecture =
+            [string]$PlatformObservation.NativeArchitecture
+        ProcessArchitecture =
+            [string]$PlatformObservation.ProcessArchitecture
+        PowerShellVersion =
+            [string]$PlatformObservation.PowerShellVersion
+        RestoreCompletedAtUtc =
+            [string]$Receipt.RestoreCompletedAtUtc
+        ExpiresAtUtc = [string]$Receipt.ExpiresAtUtc
+        ValidatedAtUtc = $ValidationTimeUtc
+    }
+}
 
 function Test-CddsiD027Windows11X64Platform {
     [CmdletBinding()]
@@ -1367,6 +1489,191 @@ function Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt {
     }
     catch {
         return $false
+    }
+}
+
+function Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Proof
+    )
+
+    $withoutBinding = @(
+        $script:CddsiD027ClaudeAcquisitionExternalSnapshotProofFieldNames |
+            Where-Object { $_ -cne 'ProofBindingToken' }
+    )
+    $validNames = (
+        (Test-CddsiExactPropertySet `
+            -InputObject $Proof `
+            -Expected $withoutBinding) -or
+        (Test-CddsiExactPropertySet `
+            -InputObject $Proof `
+            -Expected `
+                $script:CddsiD027ClaudeAcquisitionExternalSnapshotProofFieldNames)
+    )
+    if (-not $validNames) {
+        throw 'D-027 Claude acquisition snapshot proof did not match the exact binding schema.'
+    }
+
+    $canonical = New-Object System.Collections.Generic.List[string]
+    $canonical.Add(
+        $script:CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingDomain
+    )
+    foreach ($name in $withoutBinding) {
+        $value = $Proof.$name
+        if ($value -is [string]) {
+            $type = 's'
+            $text = $value
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            $type = 'i'
+            $text = [Convert]::ToString(
+                [long]$value,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+        else {
+            throw 'D-027 Claude acquisition snapshot proof contained an unsupported field type.'
+        }
+        $canonical.Add(
+            ('{0}:{1}:{2}={3}:{4}' -f
+                $type.Length,
+                $type,
+                $name.Length,
+                $name,
+                $text.Length) +
+            ':' + $text
+        )
+    }
+    return Get-CddsiSupplyChainTextBindingToken `
+        -Text ($canonical -join "`n")
+}
+
+function Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Proof,
+        [Parameter(Mandatory = $true)]$Receipt,
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)]$PlatformObservation,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
+        [Parameter(Mandatory = $true)]$AuthorityPolicy
+    )
+
+    try {
+        if (
+            $null -eq $Proof -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Proof `
+                -Expected `
+                    $script:CddsiD027ClaudeAcquisitionExternalSnapshotProofFieldNames) -or
+            -not (Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt `
+                -Receipt $Receipt `
+                -WorkloadDescriptor $WorkloadDescriptor `
+                -ExpectedRunId $ExpectedRunId `
+                -PlatformObservation $PlatformObservation `
+                -ValidationTimeUtc $ValidationTimeUtc `
+                -AuthorityPolicy $AuthorityPolicy)
+        ) {
+            return $false
+        }
+
+        $expected =
+            $script:CddsiD027ClaudeAcquisitionExternalSnapshotProofProjection.
+                Invoke(
+                    $Receipt,
+                    $WorkloadDescriptor,
+                    $PlatformObservation,
+                    $ValidationTimeUtc
+                )
+        foreach ($property in $expected.PSObject.Properties) {
+            $actual = $Proof.($property.Name)
+            if (
+                $null -eq $actual -or
+                $actual.GetType() -ne $property.Value.GetType()
+            ) {
+                return $false
+            }
+            if ($property.Value -is [string]) {
+                if ($actual -cne $property.Value) {
+                    return $false
+                }
+            }
+            elseif ($actual -ne $property.Value) {
+                return $false
+            }
+        }
+
+        if (
+            $Proof.ProofBindingToken -isnot [string] -or
+            $Proof.ProofBindingToken -cnotmatch '^[a-f0-9]{64}$' -or
+            $Proof.ProofBindingToken -cmatch '^0{64}$' -or
+            $Proof.ProofBindingToken -cne
+                (Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken `
+                    -Proof $Proof)
+        ) {
+            return $false
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function New-CddsiD027ClaudeAcquisitionExternalSnapshotProof {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt,
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)]$PlatformObservation,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
+        [Parameter(Mandatory = $true)]$AuthorityPolicy
+    )
+
+    if (-not (Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt `
+        -Receipt $Receipt `
+        -WorkloadDescriptor $WorkloadDescriptor `
+        -ExpectedRunId $ExpectedRunId `
+        -PlatformObservation $PlatformObservation `
+        -ValidationTimeUtc $ValidationTimeUtc `
+        -AuthorityPolicy $AuthorityPolicy)) {
+        throw 'The D-027 Claude acquisition external snapshot receipt was not accepted.'
+    }
+
+    try {
+        $withoutBinding =
+            $script:CddsiD027ClaudeAcquisitionExternalSnapshotProofProjection.
+                Invoke(
+                    $Receipt,
+                    $WorkloadDescriptor,
+                    $PlatformObservation,
+                    $ValidationTimeUtc
+                )
+        $values = [ordered]@{}
+        foreach ($property in $withoutBinding.PSObject.Properties) {
+            $values[$property.Name] = $property.Value
+        }
+        $values['ProofBindingToken'] =
+            Get-CddsiD027ClaudeAcquisitionExternalSnapshotProofBindingToken `
+                -Proof $withoutBinding
+        $proof = [pscustomobject]$values
+        if (-not (Test-CddsiD027ClaudeAcquisitionExternalSnapshotProof `
+            -Proof $proof `
+            -Receipt $Receipt `
+            -WorkloadDescriptor $WorkloadDescriptor `
+            -ExpectedRunId $ExpectedRunId `
+            -PlatformObservation $PlatformObservation `
+            -ValidationTimeUtc $ValidationTimeUtc `
+            -AuthorityPolicy $AuthorityPolicy)) {
+            throw 'invalid'
+        }
+        return $proof
+    }
+    catch {
+        throw 'The D-027 Claude acquisition external snapshot proof could not be projected.'
     }
 }
 
