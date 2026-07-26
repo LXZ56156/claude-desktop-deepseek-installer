@@ -143,17 +143,31 @@ TestSafe/DryRun 测试缺 fake provider 时失败，不能回退到真实环境�
 - `desktop-acceptance.ps1`
 
 `d027-snapshot-authorization.ps1` 是 D-027 外部 clean-snapshot authority、
-receipt、平台绑定和 process-scoped Git session 的窄公共核心；它在
+receipt、平台绑定、process-scoped Git session 和 Claude MSIX acquisition session
+的窄公共核心；它在
 `execution-context.ps1` 后、Claude/Git 领域模块前加载。纯 common-proof validator
 只验证共享 schema、平台、时间窗、调用方绑定的 execution artifact 和 RSA proof；
-它不选择 operation、不比较 domain workload pairing，也不建立 session。Git wrapper
-固定 `InstallGitForWindows`，Claude wrapper 固定
-`ProvisionClaudeDesktopMachineWide`，两者不接受 caller-selectable operation 或
-workload token。Claude workload descriptor 绑定候选 commit/tree/ZIP/内容清单/SBOM、
-credential helper 源码与 PE、Claude MSIX 内容、下载/held-file/manifest/package
-identity/signature evidence token，并把 receipt 的 execution artifact 固定为候选 ZIP。
+它不选择 operation、不比较 domain workload pairing，也不建立 session。三个固定 wrapper
+分别固定 `InstallGitForWindows`、`AcquireClaudeDesktopMsix` 和
+`ProvisionClaudeDesktopMachineWide`，都不接受 caller-selectable operation 或 workload
+token。
+
+Claude acquisition workload 是精确 22 字段的独立 domain：只绑定 run、候选
+commit/tree/ZIP/内容清单/SBOM、精确官方 unresolved x64 Standard source descriptor/URI
+和 staging-root/final-destination path token；它明确没有任何下载后 artifact、receipt、
+held-file、manifest、package、signer 或 credential-helper 字段。Enable 只接受签名外部
+clean-snapshot receipt，要求 signed staging root 等于 canonical `Context.Paths.Temp`
+token，并把 caller workload 逐字段复制到 8 字段 process session。Assert 以实际 raw
+staging/destination 重新验证 direct-child/240-char 边界、context-temp 与 path token，
+并再次验证当前 Win11 x64/PS5.1 平台、receipt freshness/signature 和固定 workload；
+失败会清空 session。该 authority 当前没有 Save/install consumer，不能授权网络或写入，
+更不能授权安装。
+
+完整 Claude machine-wide workload descriptor 继续绑定候选 commit/tree/ZIP/内容清单/
+SBOM、credential helper 源码与 PE、Claude MSIX 内容、下载/held-file/manifest/package
+identity/signature evidence token，并把 receipt execution artifact 固定为候选 ZIP。
 这些 evidence token 在本层只作引用绑定，形状正确不等于 signer、publisher、下载或
-held-handle 已获信任。Claude process-scoped session、Enable/Assert 和 Live machine-wide
+held-handle 已获信任。完整 provisioning process session 和 Live machine-wide
 provisioning 仍未实现；production snapshot authority 仍为 `Configured=false`。
 
 `desktop-msix.ps1` 的 D-027 manifest 纯解析结果为精确 13 字段：调用方 bytes 先

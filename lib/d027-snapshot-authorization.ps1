@@ -8,6 +8,8 @@ $script:CddsiD027CredentialHelperPeMaximumBytes = [long](100MB)
 $script:CddsiD027ClaudeSnapshotMsixMaximumBytes = [long](1GB)
 $script:CddsiD027ClaudeSnapshotWorkloadBindingDomain =
     'cddsi-d027-claude-machine-wide-snapshot-workload-binding-v1'
+$script:CddsiD027ClaudeAcquisitionWorkloadBindingDomain =
+    'cddsi-d027-claude-msix-acquisition-workload-binding-v1'
 $script:CddsiD027SnapshotAuthorityPolicyFieldNames = @(
     'SchemaVersion',
     'ContractVersion',
@@ -82,6 +84,30 @@ $script:CddsiD027ClaudeSnapshotWorkloadFieldNames = @(
     'ClaudeSignatureEvidenceBindingToken',
     'WorkloadBindingToken'
 )
+$script:CddsiD027ClaudeAcquisitionWorkloadFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'WorkloadKind',
+    'RunId',
+    'Stage',
+    'EnvironmentTier',
+    'ArtifactProfile',
+    'Operation',
+    'CandidateCommitSha',
+    'CandidateTreeSha',
+    'CandidateZipSha256',
+    'CandidateZipLengthBytes',
+    'CandidateContentManifestBindingToken',
+    'CandidateSbomSha256',
+    'CandidateSbomLengthBytes',
+    'SourceDescriptorBindingToken',
+    'SourceUriBindingToken',
+    'Architecture',
+    'Channel',
+    'StagingRootPathBindingToken',
+    'DestinationPathBindingToken',
+    'WorkloadBindingToken'
+)
 $script:CddsiD027GitLiveSessionAuthorizationFieldNames = @(
     'SchemaVersion',
     'ContractVersion',
@@ -93,6 +119,17 @@ $script:CddsiD027GitLiveSessionAuthorizationFieldNames = @(
     'InitialPlatformObservation'
 )
 $script:CddsiD027GitLiveSessionAuthorization = $null
+$script:CddsiD027ClaudeAcquisitionLiveSessionAuthorizationFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'Receipt',
+    'ReceiptSha256',
+    'ReceiptLengthBytes',
+    'WorkloadDescriptor',
+    'AuthorizedAtUtc',
+    'InitialPlatformObservation'
+)
+$script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization = $null
 $script:CddsiD027SnapshotReceiptSignatureDomain =
     'cddsi-d027-external-clean-snapshot-receipt-signature-v1'
 
@@ -433,6 +470,238 @@ function Get-CddsiD027GitSnapshotWorkloadBindingToken {
         $canonical.Add(('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text))
     }
     return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function Get-CddsiD027ClaudeAcquisitionWorkloadBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor
+    )
+
+    $withoutBinding = @(
+        $script:CddsiD027ClaudeAcquisitionWorkloadFieldNames |
+            Where-Object { $_ -cne 'WorkloadBindingToken' }
+    )
+    $validNames = (
+        (Test-CddsiExactPropertySet `
+            -InputObject $WorkloadDescriptor `
+            -Expected $withoutBinding) -or
+        (Test-CddsiExactPropertySet `
+            -InputObject $WorkloadDescriptor `
+            -Expected $script:CddsiD027ClaudeAcquisitionWorkloadFieldNames)
+    )
+    if (-not $validNames) {
+        throw 'D-027 Claude acquisition workload did not match the exact binding schema.'
+    }
+
+    $canonical = New-Object System.Collections.Generic.List[string]
+    $canonical.Add($script:CddsiD027ClaudeAcquisitionWorkloadBindingDomain)
+    foreach ($name in $withoutBinding) {
+        $value = $WorkloadDescriptor.$name
+        $text = if ($value -is [string]) {
+            $value
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            [Convert]::ToString(
+                [long]$value,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+        else {
+            throw 'D-027 Claude acquisition workload contained an unsupported field type.'
+        }
+        $canonical.Add(
+            ('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text)
+        )
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function New-CddsiD027ClaudeAcquisitionWorkloadDescriptor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][string]$CandidateCommitSha,
+        [Parameter(Mandatory = $true)][string]$CandidateTreeSha,
+        [Parameter(Mandatory = $true)][string]$CandidateZipSha256,
+        [Parameter(Mandatory = $true)][long]$CandidateZipLengthBytes,
+        [Parameter(Mandatory = $true)]
+        [string]$CandidateContentManifestBindingToken,
+        [Parameter(Mandatory = $true)][string]$CandidateSbomSha256,
+        [Parameter(Mandatory = $true)][long]$CandidateSbomLengthBytes,
+        [Parameter(Mandatory = $true)][string]$StagingRootPath,
+        [Parameter(Mandatory = $true)][string]$DestinationPath
+    )
+
+    $sourceDescriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+    if (
+        $StagingRootPath.Length -gt 240 -or
+        $DestinationPath.Length -gt 240 -or
+        -not (Test-CddsiD027ClaudeDesktopSourceDescriptor `
+            -Descriptor $sourceDescriptor) -or
+        -not (Test-CddsiD027ClaudeDownloadDestinationPath `
+            -StagingRootPath $StagingRootPath `
+            -DestinationPath $DestinationPath)
+    ) {
+        throw 'D-027 Claude acquisition source or destination was invalid.'
+    }
+
+    $withoutBinding = [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        ContractVersion =
+            'cddsi-d027-claude-msix-acquisition-workload-v1'
+        WorkloadKind = 'ClaudeDesktopMsixAcquisition'
+        RunId = $RunId
+        Stage = 'VmAcceptance'
+        EnvironmentTier = 'VmAcceptance'
+        ArtifactProfile = 'VmAcceptance'
+        Operation = 'AcquireClaudeDesktopMsix'
+        CandidateCommitSha = $CandidateCommitSha
+        CandidateTreeSha = $CandidateTreeSha
+        CandidateZipSha256 = $CandidateZipSha256
+        CandidateZipLengthBytes = [long]$CandidateZipLengthBytes
+        CandidateContentManifestBindingToken =
+            $CandidateContentManifestBindingToken
+        CandidateSbomSha256 = $CandidateSbomSha256
+        CandidateSbomLengthBytes = [long]$CandidateSbomLengthBytes
+        SourceDescriptorBindingToken = $sourceDescriptor.MetadataBindingToken
+        SourceUriBindingToken = $sourceDescriptor.SourceUriBindingToken
+        Architecture = 'x64'
+        Channel = 'Standard'
+        StagingRootPathBindingToken =
+            Get-CddsiPathBindingToken -Path $StagingRootPath
+        DestinationPathBindingToken =
+            Get-CddsiPathBindingToken -Path $DestinationPath
+    }
+    $values = [ordered]@{}
+    foreach ($property in $withoutBinding.PSObject.Properties) {
+        $values[$property.Name] = $property.Value
+    }
+    $values['WorkloadBindingToken'] =
+        Get-CddsiD027ClaudeAcquisitionWorkloadBindingToken `
+            -WorkloadDescriptor $withoutBinding
+    $descriptor = [pscustomobject]$values
+    if (-not (Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor `
+        -WorkloadDescriptor $descriptor)) {
+        throw 'D-027 Claude acquisition workload failed its exact contract.'
+    }
+    return $descriptor
+}
+
+function Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$WorkloadDescriptor
+    )
+
+    try {
+        if (
+            $null -eq $WorkloadDescriptor -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $WorkloadDescriptor `
+                -Expected $script:CddsiD027ClaudeAcquisitionWorkloadFieldNames)
+        ) {
+            return $false
+        }
+
+        $runId = [guid]::Empty
+        if (
+            -not (Test-CddsiSchemaVersionOne `
+                -Value $WorkloadDescriptor.SchemaVersion) -or
+            $WorkloadDescriptor.ContractVersion -isnot [string] -or
+            $WorkloadDescriptor.ContractVersion -cne
+                'cddsi-d027-claude-msix-acquisition-workload-v1' -or
+            $WorkloadDescriptor.WorkloadKind -isnot [string] -or
+            $WorkloadDescriptor.WorkloadKind -cne
+                'ClaudeDesktopMsixAcquisition' -or
+            $WorkloadDescriptor.RunId -isnot [string] -or
+            -not [guid]::TryParse(
+                $WorkloadDescriptor.RunId,
+                [ref]$runId
+            ) -or
+            $runId -eq [guid]::Empty -or
+            $WorkloadDescriptor.RunId -cne $runId.ToString('D') -or
+            $WorkloadDescriptor.Stage -isnot [string] -or
+            $WorkloadDescriptor.Stage -cne 'VmAcceptance' -or
+            $WorkloadDescriptor.EnvironmentTier -isnot [string] -or
+            $WorkloadDescriptor.EnvironmentTier -cne 'VmAcceptance' -or
+            $WorkloadDescriptor.ArtifactProfile -isnot [string] -or
+            $WorkloadDescriptor.ArtifactProfile -cne 'VmAcceptance' -or
+            $WorkloadDescriptor.Operation -isnot [string] -or
+            $WorkloadDescriptor.Operation -cne 'AcquireClaudeDesktopMsix' -or
+            $WorkloadDescriptor.Architecture -isnot [string] -or
+            $WorkloadDescriptor.Architecture -cne 'x64' -or
+            $WorkloadDescriptor.Channel -isnot [string] -or
+            $WorkloadDescriptor.Channel -cne 'Standard'
+        ) {
+            return $false
+        }
+
+        foreach ($name in @('CandidateCommitSha', 'CandidateTreeSha')) {
+            $value = $WorkloadDescriptor.$name
+            if (
+                $value -isnot [string] -or
+                $value -cnotmatch '^[a-f0-9]{40}$' -or
+                $value -cmatch '^0{40}$'
+            ) {
+                return $false
+            }
+        }
+        foreach ($name in @(
+            'CandidateZipSha256',
+            'CandidateContentManifestBindingToken',
+            'CandidateSbomSha256',
+            'SourceDescriptorBindingToken',
+            'SourceUriBindingToken',
+            'StagingRootPathBindingToken',
+            'DestinationPathBindingToken',
+            'WorkloadBindingToken'
+        )) {
+            $value = $WorkloadDescriptor.$name
+            if (
+                $value -isnot [string] -or
+                $value -cnotmatch '^[a-f0-9]{64}$' -or
+                $value -cmatch '^0{64}$'
+            ) {
+                return $false
+            }
+        }
+        if (
+            (($WorkloadDescriptor.CandidateZipLengthBytes -isnot [int]) -and
+                ($WorkloadDescriptor.CandidateZipLengthBytes -isnot [long])) -or
+            [long]$WorkloadDescriptor.CandidateZipLengthBytes -lt 1 -or
+            [long]$WorkloadDescriptor.CandidateZipLengthBytes -gt
+                $script:CddsiD027CandidateZipMaximumBytes -or
+            (($WorkloadDescriptor.CandidateSbomLengthBytes -isnot [int]) -and
+                ($WorkloadDescriptor.CandidateSbomLengthBytes -isnot [long])) -or
+            [long]$WorkloadDescriptor.CandidateSbomLengthBytes -lt 1 -or
+            [long]$WorkloadDescriptor.CandidateSbomLengthBytes -gt
+                $script:CddsiD027CandidateSbomMaximumBytes -or
+            $WorkloadDescriptor.StagingRootPathBindingToken -ceq
+                $WorkloadDescriptor.DestinationPathBindingToken
+        ) {
+            return $false
+        }
+
+        $sourceDescriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        if (
+            -not (Test-CddsiD027ClaudeDesktopSourceDescriptor `
+                -Descriptor $sourceDescriptor) -or
+            $WorkloadDescriptor.SourceDescriptorBindingToken -cne
+                $sourceDescriptor.MetadataBindingToken -or
+            $WorkloadDescriptor.SourceUriBindingToken -cne
+                $sourceDescriptor.SourceUriBindingToken -or
+            $WorkloadDescriptor.WorkloadBindingToken -cne
+                (Get-CddsiD027ClaudeAcquisitionWorkloadBindingToken `
+                    -WorkloadDescriptor $WorkloadDescriptor)
+        ) {
+            return $false
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
 }
 
 function Get-CddsiD027ClaudeSnapshotWorkloadBindingToken {
@@ -842,6 +1111,7 @@ $script:CddsiD027ExternalSnapshotReceiptCommonProof =
             $Receipt.Operation -isnot [string] -or
             $Receipt.Operation -cnotin @(
                 'InstallGitForWindows',
+                'AcquireClaudeDesktopMsix',
                 'ProvisionClaudeDesktopMachineWide'
             )
         ) {
@@ -1043,6 +1313,53 @@ function Test-CddsiD027ExternalSnapshotReceipt {
             $Receipt,
             $ExpectedRunId,
             $ExpectedExecutionArtifactSha256,
+            $PlatformObservation,
+            $ValidationTimeUtc,
+            $AuthorityPolicy
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt,
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)]$PlatformObservation,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
+        [Parameter(Mandatory = $true)]$AuthorityPolicy
+    )
+
+    try {
+        if (-not (Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor `
+            -WorkloadDescriptor $WorkloadDescriptor)) {
+            return $false
+        }
+        $parsedExpectedRunId = [guid]::Empty
+        if (
+            -not [guid]::TryParse($ExpectedRunId, [ref]$parsedExpectedRunId) -or
+            $parsedExpectedRunId -eq [guid]::Empty -or
+            $ExpectedRunId -cne $parsedExpectedRunId.ToString('D') -or
+            $WorkloadDescriptor.RunId -cne $ExpectedRunId -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Receipt `
+                -Expected $script:CddsiD027ExternalSnapshotReceiptFieldNames) -or
+            $Receipt.Operation -isnot [string] -or
+            $Receipt.Operation -cne 'AcquireClaudeDesktopMsix' -or
+            $Receipt.WorkloadBindingToken -isnot [string] -or
+            $Receipt.WorkloadBindingToken -cne
+                $WorkloadDescriptor.WorkloadBindingToken
+        ) {
+            return $false
+        }
+        return $script:CddsiD027ExternalSnapshotReceiptCommonProof.Invoke(
+            $Receipt,
+            $ExpectedRunId,
+            $WorkloadDescriptor.CandidateZipSha256,
             $PlatformObservation,
             $ValidationTimeUtc,
             $AuthorityPolicy
@@ -1344,6 +1661,143 @@ function Read-CddsiD027ExternalSnapshotReceipt {
     }
 }
 
+function Enable-CddsiD027ClaudeAcquisitionLiveSessionAuthorization {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][string]$ReceiptPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedReceiptSha256,
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor
+    )
+
+    $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization = $null
+    try {
+        Assert-CddsiD027VmAcceptanceLiveBootstrapContext `
+            -ExecutionContext $Context | Out-Null
+        $contextTempPath =
+            [System.IO.Path]::GetFullPath($Context.Paths.Temp).
+                TrimEnd('\')
+        if (
+            -not (Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor `
+                -WorkloadDescriptor $WorkloadDescriptor) -or
+            $Context.Stage -isnot [string] -or
+            $Context.Stage -cne 'VmAcceptance' -or
+            $Context.EnvironmentTier -isnot [string] -or
+            $Context.EnvironmentTier -cne 'VmAcceptance' -or
+            $Context.RunId -isnot [string] -or
+            $WorkloadDescriptor.RunId -cne $Context.RunId -or
+            $contextTempPath.Length -gt 240 -or
+            $WorkloadDescriptor.StagingRootPathBindingToken -cne
+                (Get-CddsiPathBindingToken -Path $contextTempPath)
+        ) {
+            throw 'The D-027 Claude acquisition bootstrap context was invalid.'
+        }
+        $readResult = Read-CddsiD027ExternalSnapshotReceipt `
+            -ExecutionContext $Context `
+            -ReceiptPath $ReceiptPath `
+            -ExpectedReceiptSha256 $ExpectedReceiptSha256
+        $platformObservation =
+            Get-CddsiD027SnapshotPlatformObservation -ExecutionContext $Context
+        $validationTimeUtc = [DateTimeOffset]::UtcNow.ToString(
+            'yyyy-MM-ddTHH:mm:ssZ',
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+        $authorityPolicy =
+            Get-CddsiD027SnapshotAuthorityPolicy -ExecutionContext $Context
+        if (-not (Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt `
+            -Receipt $readResult.Receipt `
+            -WorkloadDescriptor $WorkloadDescriptor `
+            -ExpectedRunId $Context.RunId `
+            -PlatformObservation $platformObservation `
+            -ValidationTimeUtc $validationTimeUtc `
+            -AuthorityPolicy $authorityPolicy)) {
+            throw 'The D-027 snapshot receipt did not authorize this exact Claude acquisition workload.'
+        }
+
+        $receipt = $readResult.Receipt
+        $workloadValues = [ordered]@{}
+        foreach ($name in $script:CddsiD027ClaudeAcquisitionWorkloadFieldNames) {
+            $workloadValues[$name] = $WorkloadDescriptor.$name
+        }
+        $workloadSnapshot = [pscustomobject]$workloadValues
+        $authorization = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion =
+                'cddsi-d027-claude-acquisition-live-signed-authorization-v1'
+            Receipt = $receipt
+            ReceiptSha256 = $readResult.ReceiptSha256
+            ReceiptLengthBytes = [long]$readResult.ReceiptLengthBytes
+            WorkloadDescriptor = $workloadSnapshot
+            AuthorizedAtUtc = $validationTimeUtc
+            InitialPlatformObservation = $platformObservation
+        }
+        $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization =
+            $authorization
+        $safeData = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            AuthorizationStatus = 'Active'
+            AuthorityId = $receipt.AuthorityId
+            AuthorityKeySha256 = $receipt.AuthorityKeySha256
+            SignatureAlgorithm = $receipt.SignatureAlgorithm
+            RunId = $receipt.RunId
+            Stage = $receipt.Stage
+            ArtifactProfile = $receipt.ArtifactProfile
+            Operation = $receipt.Operation
+            ReceiptSha256 = $authorization.ReceiptSha256
+            ReceiptBindingToken = $receipt.ReceiptBindingToken
+            WorkloadBindingToken = $receipt.WorkloadBindingToken
+            SourceDescriptorBindingToken =
+                $workloadSnapshot.SourceDescriptorBindingToken
+            StagingRootPathBindingToken =
+                $workloadSnapshot.StagingRootPathBindingToken
+            DestinationPathBindingToken =
+                $workloadSnapshot.DestinationPathBindingToken
+            ExpiresAtUtc = $receipt.ExpiresAtUtc
+        }
+        return New-CddsiOperationResult `
+            -Operation 'EnableD027ClaudeAcquisitionLiveSessionAuthorization' `
+            -Status 'SUCCEEDED' `
+            -Mode Live `
+            -MessageSafe 'An exact externally signed clean-snapshot receipt authorized only this candidate-bound Claude MSIX acquisition target.' `
+            -Data $safeData
+    }
+    catch {
+        $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization = $null
+        return New-CddsiOperationResult `
+            -Operation 'EnableD027ClaudeAcquisitionLiveSessionAuthorization' `
+            -Status 'ACTION_REQUIRED' `
+            -Mode Live `
+            -ErrorCode 'D027_CLAUDE_ACQUISITION_SNAPSHOT_AUTHORIZATION_INVALID' `
+            -MessageSafe 'A fresh exact VM-external clean-snapshot receipt signed by the configured pinned authority is required for this candidate-bound Claude MSIX acquisition target.'
+    }
+}
+
+function Clear-CddsiD027ClaudeAcquisitionLiveSessionAuthorization {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
+
+    $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization = $null
+    try {
+        Assert-CddsiD027VmAcceptanceLiveBootstrapContext `
+            -ExecutionContext $Context | Out-Null
+    }
+    catch {
+        return New-CddsiOperationResult `
+            -Operation 'ClearD027ClaudeAcquisitionLiveSessionAuthorization' `
+            -Status 'ACTION_REQUIRED' `
+            -Mode Live `
+            -ErrorCode 'D027_CLAUDE_ACQUISITION_CONTEXT_INVALID' `
+            -MessageSafe 'The process-scoped D-027 Claude acquisition authorization was cleared, but the current VmAcceptance context was invalid.'
+    }
+    return New-CddsiOperationResult `
+        -Operation 'ClearD027ClaudeAcquisitionLiveSessionAuthorization' `
+        -Status 'SUCCEEDED' `
+        -Mode Live `
+        -MessageSafe 'The process-scoped D-027 Claude acquisition authorization was cleared.'
+}
+
 function Enable-CddsiD027GitLiveSessionAuthorization {
     [CmdletBinding()]
     param(
@@ -1444,6 +1898,21 @@ function Clear-CddsiD027GitLiveSessionAuthorization {
         -Status 'SUCCEEDED' `
         -Mode Live `
         -MessageSafe 'The process-scoped D-027 Git Live authorization was cleared.'
+}
+
+function Assert-CddsiD027VmAcceptanceLiveBootstrapContext {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
+
+    try {
+        return Assert-CddsiD027GitLiveBootstrapContext `
+            -ExecutionContext $Context
+    }
+    catch {
+        throw 'D-027 VmAcceptance Live context requires Windows 11 x64, 64-bit Windows PowerShell 5.1, Live mode and an explicit local product temp path.'
+    }
 }
 
 function Assert-CddsiD027GitLiveBootstrapContext {
@@ -1594,6 +2063,124 @@ function Assert-CddsiD027GitLiveContext {
     catch {
         $script:CddsiD027GitLiveSessionAuthorization = $null
         throw 'D-027 Git Live requires a fresh process-scoped authorization from an exact VM-external clean-snapshot receipt signed by the pinned authority and bound to this VmAcceptance run and workload.'
+    }
+    return $true
+}
+
+function Assert-CddsiD027ClaudeAcquisitionLiveContext {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)]$WorkloadDescriptor,
+        [Parameter(Mandatory = $true)][string]$StagingRootPath,
+        [Parameter(Mandatory = $true)][string]$DestinationPath
+    )
+
+    try {
+        Assert-CddsiD027VmAcceptanceLiveBootstrapContext `
+            -ExecutionContext $Context | Out-Null
+        $authorization =
+            $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization
+        $contextTempPath = $null
+        if (
+            $null -ne $Context.Paths -and
+            $Context.Paths.Temp -is [string] -and
+            -not [string]::IsNullOrWhiteSpace($Context.Paths.Temp)
+        ) {
+            $contextTempPath =
+                [System.IO.Path]::GetFullPath($Context.Paths.Temp).
+                    TrimEnd('\')
+        }
+        if (
+            $null -eq $authorization -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $authorization `
+                -Expected `
+                    $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorizationFieldNames) -or
+            -not (Test-CddsiSchemaVersionOne `
+                -Value $authorization.SchemaVersion) -or
+            $authorization.ContractVersion -isnot [string] -or
+            $authorization.ContractVersion -cne
+                'cddsi-d027-claude-acquisition-live-signed-authorization-v1' -or
+            $null -eq $authorization.Receipt -or
+            -not (Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor `
+                -WorkloadDescriptor $authorization.WorkloadDescriptor) -or
+            -not (Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor `
+                -WorkloadDescriptor $WorkloadDescriptor) -or
+            -not (Test-CddsiD027ClaudeDownloadDestinationPath `
+                -StagingRootPath $StagingRootPath `
+                -DestinationPath $DestinationPath) -or
+            $StagingRootPath.Length -gt 240 -or
+            $DestinationPath.Length -gt 240 -or
+            $contextTempPath -isnot [string] -or
+            -not [string]::Equals(
+                $contextTempPath,
+                $StagingRootPath,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            $WorkloadDescriptor.StagingRootPathBindingToken -cne
+                (Get-CddsiPathBindingToken -Path $StagingRootPath) -or
+            $WorkloadDescriptor.DestinationPathBindingToken -cne
+                (Get-CddsiPathBindingToken -Path $DestinationPath) -or
+            $authorization.WorkloadDescriptor.WorkloadBindingToken -cne
+                $WorkloadDescriptor.WorkloadBindingToken -or
+            $Context.RunId -isnot [string] -or
+            $Context.RunId -cne $WorkloadDescriptor.RunId -or
+            $Context.Stage -isnot [string] -or
+            $Context.Stage -cne 'VmAcceptance' -or
+            $Context.EnvironmentTier -isnot [string] -or
+            $Context.EnvironmentTier -cne 'VmAcceptance' -or
+            $authorization.ReceiptSha256 -isnot [string] -or
+            $authorization.ReceiptSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $authorization.ReceiptSha256 -cmatch '^0{64}$' -or
+            (($authorization.ReceiptLengthBytes -isnot [int]) -and
+                ($authorization.ReceiptLengthBytes -isnot [long])) -or
+            [long]$authorization.ReceiptLengthBytes -le 0 -or
+            [long]$authorization.ReceiptLengthBytes -gt
+                $script:CddsiD027ExternalSnapshotReceiptMaximumBytes -or
+            $authorization.AuthorizedAtUtc -isnot [string] -or
+            $authorization.AuthorizedAtUtc -notmatch
+                '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+            -not (Test-CddsiUtcTimestampValue `
+                -Value $authorization.AuthorizedAtUtc) -or
+            $null -eq $authorization.InitialPlatformObservation
+        ) {
+            throw 'Claude acquisition authorization state was invalid.'
+        }
+        if (
+            $Context.Providers.Kind -ceq 'LiveReadOnly' -and
+            (
+                $Context.Providers.RunId -cne $Context.RunId -or
+                $Context.Providers.Stage -cne 'VmAcceptance' -or
+                $Context.Providers.EnvironmentTier -cne 'VmAcceptance' -or
+                $Context.Providers.ArtifactProfile -cne 'VmAcceptance'
+            )
+        ) {
+            throw 'Loaded provider profile was not bound to the authorization.'
+        }
+        $authorityPolicy =
+            Get-CddsiD027SnapshotAuthorityPolicy -ExecutionContext $Context
+        $platformObservation =
+            Get-CddsiD027SnapshotPlatformObservation -ExecutionContext $Context
+        $validationTimeUtc = [DateTimeOffset]::UtcNow.ToString(
+            'yyyy-MM-ddTHH:mm:ssZ',
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+        if (-not (
+            Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt `
+                -Receipt $authorization.Receipt `
+                -WorkloadDescriptor $authorization.WorkloadDescriptor `
+                -ExpectedRunId $Context.RunId `
+                -PlatformObservation $platformObservation `
+                -ValidationTimeUtc $validationTimeUtc `
+                -AuthorityPolicy $authorityPolicy
+        )) {
+            throw 'Signed authorization receipt was invalid, stale or no longer platform-bound.'
+        }
+    }
+    catch {
+        $script:CddsiD027ClaudeAcquisitionLiveSessionAuthorization = $null
+        throw 'D-027 Claude acquisition Live requires a fresh process-scoped authorization from an exact VM-external clean-snapshot receipt signed by the pinned authority and bound only to this candidate, official source and staging target.'
     }
     return $true
 }

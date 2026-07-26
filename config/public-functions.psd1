@@ -178,6 +178,9 @@
             'Test-CddsiD027Windows11X64Platform'
             'Get-CddsiD027SnapshotPlatformObservation'
             'Get-CddsiD027GitSnapshotWorkloadBindingToken'
+            'Get-CddsiD027ClaudeAcquisitionWorkloadBindingToken'
+            'New-CddsiD027ClaudeAcquisitionWorkloadDescriptor'
+            'Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor'
             'Get-CddsiD027ClaudeSnapshotWorkloadBindingToken'
             'Test-CddsiD027ClaudeSnapshotWorkloadDescriptor'
             'Test-CddsiD027CanonicalBase64'
@@ -185,13 +188,18 @@
             'Get-CddsiD027SnapshotAuthorityPolicy'
             'Get-CddsiD027ExternalSnapshotReceiptBindingToken'
             'Test-CddsiD027ExternalSnapshotReceipt'
+            'Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt'
             'Test-CddsiD027ClaudeExternalSnapshotReceipt'
             'Get-CddsiD027SnapshotReceiptHeldFileObservation'
             'Read-CddsiD027ExternalSnapshotReceipt'
+            'Enable-CddsiD027ClaudeAcquisitionLiveSessionAuthorization'
+            'Clear-CddsiD027ClaudeAcquisitionLiveSessionAuthorization'
             'Enable-CddsiD027GitLiveSessionAuthorization'
             'Clear-CddsiD027GitLiveSessionAuthorization'
+            'Assert-CddsiD027VmAcceptanceLiveBootstrapContext'
             'Assert-CddsiD027GitLiveBootstrapContext'
             'Assert-CddsiD027GitLiveContext'
+            'Assert-CddsiD027ClaudeAcquisitionLiveContext'
         )
         'lib/git-for-windows.ps1' = @(
             'Get-CddsiD027GitWinVerifyTrustResult'
@@ -575,6 +583,9 @@
         'Test-CddsiD027Windows11X64Platform' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
         'Get-CddsiD027SnapshotPlatformObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Get-CddsiD027GitSnapshotWorkloadBindingToken' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'ExecutionArtifactSha256'); Mode = $false }
+        'Get-CddsiD027ClaudeAcquisitionWorkloadBindingToken' = @{ Kind = 'Pure'; Mandatory = @('WorkloadDescriptor'); Mode = $false }
+        'New-CddsiD027ClaudeAcquisitionWorkloadDescriptor' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'CandidateCommitSha', 'CandidateTreeSha', 'CandidateZipSha256', 'CandidateZipLengthBytes', 'CandidateContentManifestBindingToken', 'CandidateSbomSha256', 'CandidateSbomLengthBytes', 'StagingRootPath', 'DestinationPath'); Mode = $false }
+        'Test-CddsiD027ClaudeAcquisitionWorkloadDescriptor' = @{ Kind = 'Pure'; Mandatory = @('WorkloadDescriptor'); Mode = $false }
         'Get-CddsiD027ClaudeSnapshotWorkloadBindingToken' = @{ Kind = 'Pure'; Mandatory = @('WorkloadDescriptor'); Mode = $false }
         'Test-CddsiD027ClaudeSnapshotWorkloadDescriptor' = @{ Kind = 'Pure'; Mandatory = @('WorkloadDescriptor'); Mode = $false }
         'Test-CddsiD027CanonicalBase64' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
@@ -582,14 +593,19 @@
         'Get-CddsiD027SnapshotAuthorityPolicy' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Get-CddsiD027ExternalSnapshotReceiptBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Receipt'); Mode = $false }
         'Test-CddsiD027ExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'ExpectedRunId', 'ExpectedExecutionArtifactSha256', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
+        'Test-CddsiD027ClaudeAcquisitionExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'WorkloadDescriptor', 'ExpectedRunId', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
         'Test-CddsiD027ClaudeExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'WorkloadDescriptor', 'ExpectedRunId', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
         'Get-CddsiD027SnapshotReceiptHeldFileObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Stream'); Mode = $false }
         'Read-CddsiD027ExternalSnapshotReceipt' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ReceiptPath', 'ExpectedReceiptSha256'); Mode = $false }
+        'Enable-CddsiD027ClaudeAcquisitionLiveSessionAuthorization' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ReceiptPath', 'ExpectedReceiptSha256', 'WorkloadDescriptor'); Mode = $false }
+        'Clear-CddsiD027ClaudeAcquisitionLiveSessionAuthorization' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Enable-CddsiD027GitLiveSessionAuthorization' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ReceiptPath', 'ExpectedReceiptSha256', 'ExpectedExecutionArtifactSha256'); Mode = $false }
         'Clear-CddsiD027GitLiveSessionAuthorization' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Get-CddsiD027GitWinVerifyTrustResult' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'FilePath'); Mode = $false }
+        'Assert-CddsiD027VmAcceptanceLiveBootstrapContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Assert-CddsiD027GitLiveBootstrapContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Assert-CddsiD027GitLiveContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
+        'Assert-CddsiD027ClaudeAcquisitionLiveContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'WorkloadDescriptor', 'StagingRootPath', 'DestinationPath'); Mode = $false }
         'ConvertFrom-CddsiGitVersionProbeResult' = @{ Kind = 'Pure'; Mandatory = @('ProbeResult'); Mode = $false }
         'ConvertTo-CddsiGitInstallerReceiptVersion' = @{ Kind = 'Pure'; Mandatory = @('GitVersion'); Mode = $false }
         'ConvertFrom-CddsiGitPeHeader' = @{ Kind = 'Pure'; Mandatory = @('HeaderBytes', 'ImageLength'); Mode = $false }

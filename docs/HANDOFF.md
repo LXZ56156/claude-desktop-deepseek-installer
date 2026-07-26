@@ -27,10 +27,11 @@ CLAUDE_PRIVATE_SAME_STATE_NATIVE_OBSERVATION_IMPLEMENTED_NEGATIVE_ONLY /
 CLAUDE_CALLER_HELD_CORRELATION_REMAINS_NEGATIVE_ONLY /
 CLAUDE_PRIVATE_BOUNDED_BODY_WRITER_IMPLEMENTED /
 CLAUDE_PRIVATE_FILESHARE_READ_CONSTRUCTION_SITE_IMPLEMENTED /
-CLAUDE_OUTER_DOWNLOAD_BUNDLE_AND_AUTHORITY_NOT_YET_IMPLEMENTED /
+CLAUDE_ACQUISITION_SNAPSHOT_WORKLOAD_AND_SESSION_IMPLEMENTED_CONFIGURED_FALSE /
+CLAUDE_OUTER_DOWNLOAD_BUNDLE_NOT_YET_IMPLEMENTED /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
-CLAUDE_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
+CLAUDE_PROVISION_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
 CLAUDE_DOWNLOAD_SIGNATURE_MACHINE_PROVISION_NOT_YET_IMPLEMENTED /
 REAL_READ_ONLY_GIT_2_54_OBSERVED /
 GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
@@ -38,6 +39,64 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 Claude MSIX acquisition snapshot authority 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`d6b99b1cdf1eab5c809e9c6c3ebf9ada0083783e`、tree
+`ed6c271a7870a649ed4ec2e5c386232c0ce04f2f`。本批开始时唯一 branch
+`codex/repair/p10a-0a-fast-lane` 的 local HEAD、upstream、remote-tracking branch
+和 PR #1 head 均等于该 parent，PR open/draft/unmerged，index/worktree clean。本批
+没有执行产品网络、真实 Claude body 下载、文件提交、AppX/DISM、进程、注册表、UAC
+或安装，没有读取任何真实 Claude 配置、凭据或 key。
+
+- 新增独立 domain-separated `AcquireClaudeDesktopMsix` workload，固定
+  `ClaudeDesktopMsixAcquisition`、`VmAcceptance`、x64、Standard，不接受
+  caller-selectable operation 或 workload token。精确 22 字段 descriptor 只绑定
+  run、candidate commit/tree/ZIP/内容清单/SBOM、当前官方 unresolved source
+  descriptor/URI 和 staging-root/final-destination path token。它刻意不含任何
+  下载后 MSIX hash/length、download receipt、held-file、manifest、package identity、
+  signer evidence 或 credential-helper 字段，因此只解开首次获取的授权循环，不会
+  反向伪造制品信任。
+- 外部 snapshot common proof 的 operation allow-list 只增加该固定 acquisition
+  operation；新的固定 receipt wrapper 要求 receipt execution artifact 精确为
+  candidate ZIP hash，并把 operation/workload token 与 acquisition descriptor
+  配对。Git、acquisition、完整
+  `ProvisionClaudeDesktopMachineWide` 三个 wrapper 继续彼此拒绝；重新签名但
+  operation/token 跨域组合也全部 fail closed。
+- 新增独立 8 字段 process-scoped acquisition session。Enable 先验证 Win11 x64/
+  PS5.1/VmAcceptance bootstrap、当前平台、固定 authority policy、签名 receipt、
+  candidate/source/workload，并要求 signed staging-root token 精确等于 canonical
+  `Context.Paths.Temp` token；存储时逐字段复制 workload，不能保留 caller object
+  引用。Assert 再要求实际 canonical staging root/final destination 处于同一
+  `Context.Paths.Temp` direct-child 边界、都不超过 240 字符，并重新计算 path token、
+  重新验证当前平台、receipt freshness/signature 和固定 workload。任何漂移都会清空
+  session；bootstrap/context 校验也在同一 fail-closed 清理边界内。Clear 会先无条件
+  撤销该 acquisition session，再校验当前 VmAcceptance context；context 无效时返回
+  path-free `ACTION_REQUIRED`，不能留下可复用 capability。
+- 该 session 当前没有被公开 `Save-CddsiOfficialClaudeDesktopMsix` 或 install
+  consumer 使用，production `config/d027-snapshot-authority.psd1` 继续
+  `Configured=false`。后续公开 Save 接线必须额外由 caller 显式传入并匹配 active
+  receipt binding token，在网络、创建 partial、提交和同句柄 correlation 边界反复
+  assert；acquisition authority 永远不能替代包含完整事后 evidence token 的独立
+  machine-wide provisioning authority。
+
+本批最终在彼此独立的 fresh Windows PowerShell 5.1 进程中通过 snapshot
+authorization 30/30、PublicFunctions 4/4、Config 18/18，共 52 passed、
+0 failed/skipped/inconclusive。测试覆盖 exact 22-field schema、source/candidate/
+target token、长度上限、三域交叉配对、重新签名错配、production-shape
+`Configured=false`、session activation/revalidation/tamper/target mismatch/
+Context temp mismatch、bootstrap failure 撤销、invalid-context clear，以及
+Save/install 尚未消费 acquisition session。Encoding 另为 4/4，因此本批 focused
+测试合计 56 passed、0 failed/skipped/inconclusive。183 个 tracked inventory 由
+release manifest 精确分成 41 个 package files 与 142 个 development-only files，
+无 duplicate/case-alias/overlap/missing/unknown；112 个 PowerShell sources 与
+112 个 execution-boundary entries 精确相等，PS5.1 parser 为 0 errors。183 个
+tracked files、41 个 package files 和 0 个 evidence paths 的独立 stream secret
+scan 均为 0 findings；tracked evidence path 与顶层 evidence/artifact/report/log
+root 都为 0，`git diff --check` 通过。两个独立只读审查在最新差异上无 blocking
+finding；公开 Save 接线前仍必须补 owner/DACL、目录 identity 和完整 TOCTOU 门。
+当前不是候选、clean-snapshot acceptance 或发布证据。
 
 ### D-027 当前 Claude MSIX bounded body 与 FileShare construction-site 批次
 

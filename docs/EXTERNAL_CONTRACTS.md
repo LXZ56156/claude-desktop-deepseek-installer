@@ -256,6 +256,13 @@ Anthropic 提供 credential helper 机制。helper 输出的 token 在内存中�
 形状，不是 frozen artifact metadata；实现仍须逐次手动验证 redirect、终点 header、
 实际接收长度和内容。
 
+该 `latest` endpoint 的 unresolved source descriptor binding 只标识官方请求策略和
+transport 入口，不是 immutable artifact/cache identity。D-027 的首次 acquisition
+snapshot workload 可以把精确候选、这个 source binding 和产品 temp 目标绑定到一次
+外部 clean-snapshot authorization，但不能预先声称最终 SHA-256、signer、Publisher、
+package identity 或安装权限；这些必须在实际 body 完成后由同句柄证据产生，并由独立的
+完整 provisioning workload 再授权。
+
 每个实际 MSIX 的 URL、架构、SHA-256、Authenticode signer、证书链、Publisher、
 package identity 和最低 Desktop 版本仍属于**实物待验**，不能只靠固定字符串。
 
