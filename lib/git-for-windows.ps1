@@ -10,6 +10,70 @@ $script:CddsiGitProtectedWriterSids = @(
 )
 $script:CddsiGitCreatorOwnerSid = 'S-1-3-0'
 $script:CddsiGitDangerousAccessMask = [uint32]0x500D0156
+$script:CddsiD027GitLatestReleaseApiUri = 'https://api.github.com/repos/git-for-windows/git/releases/latest'
+$script:CddsiD027GitMetadataMaximumBytes = [long](8MB)
+$script:CddsiD027GitMetadataTimeoutSeconds = 60
+$script:CddsiD027GitDownloadTimeoutSeconds = 1800
+$script:CddsiD027GitDownloadMaximumRedirects = 5
+$script:CddsiD027GitInstallerSignerSubjectToken = '<SIGNER_SUBJECT:GIT_FOR_WINDOWS_JOHANNES_SCHINDELIN>'
+$script:CddsiD027GitInstallerPublisherToken = '<PUBLISHER:GIT_DEVELOPMENT_COMMUNITY>'
+$script:CddsiD027GitInstallerIdentityToken = '<IDENTITY:GIT_FOR_WINDOWS_X64_INSTALLER>'
+$script:CddsiD027ExternalSnapshotReceiptMaximumBytes = [long](32KB)
+$script:CddsiD027SnapshotAuthorityPolicyFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'Configured',
+    'AuthorityId',
+    'SignatureAlgorithm',
+    'AuthorityKeySha256',
+    'RsaModulusBase64',
+    'RsaExponentBase64'
+)
+$script:CddsiD027ExternalSnapshotReceiptFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'AuthorityId',
+    'AuthorityKeySha256',
+    'SignatureAlgorithm',
+    'AuthoritySignatureBase64',
+    'ExternalSource',
+    'RestoreState',
+    'VmDisposition',
+    'RunId',
+    'Stage',
+    'EnvironmentTier',
+    'ArtifactProfile',
+    'Operation',
+    'ExecutionArtifactSha256',
+    'SnapshotIdentitySha256',
+    'VmIdentitySha256',
+    'RestorerIdentitySha256',
+    'WindowsMajorVersion',
+    'WindowsBuildNumber',
+    'WindowsProductType',
+    'WindowsProductInfoCode',
+    'NativeArchitecture',
+    'ProcessArchitecture',
+    'PowerShellVersion',
+    'RestoreCompletedAtUtc',
+    'IssuedAtUtc',
+    'ExpiresAtUtc',
+    'WorkloadBindingToken',
+    'ReceiptBindingToken'
+)
+$script:CddsiD027GitLiveSessionAuthorizationFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'Receipt',
+    'ReceiptSha256',
+    'ReceiptLengthBytes',
+    'ExpectedExecutionArtifactSha256',
+    'AuthorizedAtUtc',
+    'InitialPlatformObservation'
+)
+$script:CddsiD027GitLiveSessionAuthorization = $null
+$script:CddsiD027SnapshotReceiptSignatureDomain =
+    'cddsi-d027-external-clean-snapshot-receipt-signature-v1'
 
 function Test-CddsiD027Windows11X64Platform {
     [CmdletBinding()]
@@ -82,7 +146,1260 @@ namespace Cddsi.D027 {
     }
 }
 
-function Assert-CddsiD027GitLiveContext {
+function Get-CddsiD027SnapshotPlatformObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
+
+    Assert-CddsiD027GitLiveBootstrapContext -ExecutionContext $Context | Out-Null
+    try {
+        if ($null -eq ('Cddsi.D027.SnapshotPlatformBindingV1' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace Cddsi.D027 {
+    public sealed class SnapshotPlatformObservationV1 {
+        public uint WindowsMajorVersion;
+        public uint WindowsBuildNumber;
+        public byte WindowsProductType;
+        public uint WindowsProductInfoCode;
+        public ushort NativeMachine;
+        public bool Is64BitProcess;
+        public string VmUuid;
+    }
+
+    public static class SnapshotPlatformBindingV1 {
+        private const ushort IMAGE_FILE_MACHINE_AMD64 = 0x8664;
+        private const byte VER_NT_WORKSTATION = 1;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct RTL_OSVERSIONINFOEX {
+            internal uint dwOSVersionInfoSize;
+            internal uint dwMajorVersion;
+            internal uint dwMinorVersion;
+            internal uint dwBuildNumber;
+            internal uint dwPlatformId;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            internal string szCSDVersion;
+            internal ushort wServicePackMajor;
+            internal ushort wServicePackMinor;
+            internal ushort wSuiteMask;
+            internal byte wProductType;
+            internal byte wReserved;
+        }
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWow64Process2(
+            IntPtr process,
+            out ushort processMachine,
+            out ushort nativeMachine);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetProductInfo(
+            uint majorVersion,
+            uint minorVersion,
+            uint servicePackMajor,
+            uint servicePackMinor,
+            out uint productType);
+
+        [DllImport("ntdll.dll", CharSet = CharSet.Unicode)]
+        private static extern int RtlGetVersion(ref RTL_OSVERSIONINFOEX version);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint GetSystemFirmwareTable(
+            uint firmwareTableProviderSignature,
+            uint firmwareTableId,
+            IntPtr firmwareTableBuffer,
+            uint bufferSize);
+
+        private static string ObserveVmUuid() {
+            const uint RSMB = 0x52534D42;
+            uint required = GetSystemFirmwareTable(RSMB, 0, IntPtr.Zero, 0);
+            if (required < 32 || required > 16 * 1024 * 1024) {
+                throw new InvalidOperationException(
+                    "Raw SMBIOS table length was invalid.");
+            }
+            IntPtr buffer = Marshal.AllocHGlobal((int)required);
+            try {
+                uint written = GetSystemFirmwareTable(RSMB, 0, buffer, required);
+                if (written != required) {
+                    throw new InvalidOperationException(
+                        "Raw SMBIOS table observation was incomplete.");
+                }
+                byte[] raw = new byte[(int)required];
+                Marshal.Copy(buffer, raw, 0, (int)required);
+                if (raw.Length < 8) {
+                    throw new InvalidOperationException(
+                        "Raw SMBIOS header was incomplete.");
+                }
+                byte major = raw[1];
+                byte minor = raw[2];
+                if (major < 2 || (major == 2 && minor < 6)) {
+                    throw new InvalidOperationException(
+                        "SMBIOS UUID byte order was unsupported.");
+                }
+                uint tableLength = BitConverter.ToUInt32(raw, 4);
+                if (tableLength == 0 || tableLength > raw.Length - 8) {
+                    throw new InvalidOperationException(
+                        "Raw SMBIOS payload length was invalid.");
+                }
+                int offset = 8;
+                int end = checked(8 + (int)tableLength);
+                while (offset + 4 <= end) {
+                    byte type = raw[offset];
+                    int formattedLength = raw[offset + 1];
+                    if (formattedLength < 4 || offset + formattedLength > end) {
+                        throw new InvalidOperationException(
+                            "SMBIOS structure length was invalid.");
+                    }
+                    if (type == 1) {
+                        if (formattedLength < 24) {
+                            throw new InvalidOperationException(
+                                "SMBIOS system UUID field was absent.");
+                        }
+                        byte[] uuid = new byte[16];
+                        Buffer.BlockCopy(raw, offset + 8, uuid, 0, 16);
+                        bool allZero = true;
+                        bool allOnes = true;
+                        for (int index = 0; index < uuid.Length; index++) {
+                            if (uuid[index] != 0) allZero = false;
+                            if (uuid[index] != 0xFF) allOnes = false;
+                        }
+                        if (allZero || allOnes) {
+                            throw new InvalidOperationException(
+                                "SMBIOS system UUID was a placeholder.");
+                        }
+                        return new Guid(uuid).ToString("D").ToLowerInvariant();
+                    }
+                    int next = offset + formattedLength;
+                    while (next + 1 < end &&
+                        !(raw[next] == 0 && raw[next + 1] == 0)) {
+                        next++;
+                    }
+                    if (next + 1 >= end) {
+                        throw new InvalidOperationException(
+                            "SMBIOS string-set terminator was absent.");
+                    }
+                    offset = next + 2;
+                    if (type == 127) break;
+                }
+                throw new InvalidOperationException(
+                    "SMBIOS system-information structure was absent.");
+            }
+            finally {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        public static SnapshotPlatformObservationV1 Observe() {
+            ushort processMachine;
+            ushort nativeMachine;
+            if (!IsWow64Process2(GetCurrentProcess(), out processMachine, out nativeMachine)) {
+                throw new InvalidOperationException("Native architecture observation failed.");
+            }
+
+            RTL_OSVERSIONINFOEX version = new RTL_OSVERSIONINFOEX();
+            version.dwOSVersionInfoSize =
+                (uint)Marshal.SizeOf(typeof(RTL_OSVERSIONINFOEX));
+            if (RtlGetVersion(ref version) != 0) {
+                throw new InvalidOperationException("Native Windows version observation failed.");
+            }
+
+            uint productInfoCode;
+            if (!GetProductInfo(
+                version.dwMajorVersion,
+                version.dwMinorVersion,
+                version.wServicePackMajor,
+                version.wServicePackMinor,
+                out productInfoCode)) {
+                throw new InvalidOperationException("Windows edition observation failed.");
+            }
+
+            SnapshotPlatformObservationV1 result =
+                new SnapshotPlatformObservationV1();
+            result.WindowsMajorVersion = version.dwMajorVersion;
+            result.WindowsBuildNumber = version.dwBuildNumber;
+            result.WindowsProductType = version.wProductType;
+            result.WindowsProductInfoCode = productInfoCode;
+            result.NativeMachine = nativeMachine;
+            result.Is64BitProcess = IntPtr.Size == 8;
+            result.VmUuid = ObserveVmUuid();
+            return result;
+        }
+
+        public static bool IsSupported(SnapshotPlatformObservationV1 value) {
+            return
+                value != null &&
+                value.WindowsMajorVersion == 10 &&
+                value.WindowsBuildNumber >= 22000 &&
+                value.WindowsProductType == VER_NT_WORKSTATION &&
+                value.WindowsProductInfoCode > 0 &&
+                value.NativeMachine == IMAGE_FILE_MACHINE_AMD64 &&
+                value.Is64BitProcess &&
+                !String.IsNullOrEmpty(value.VmUuid);
+        }
+    }
+}
+'@ -ErrorAction Stop
+        }
+
+        $native = [Cddsi.D027.SnapshotPlatformBindingV1]::Observe()
+        if (
+            -not [Cddsi.D027.SnapshotPlatformBindingV1]::IsSupported($native) -or
+            $PSVersionTable.PSVersion.Major -ne 5 -or
+            $PSVersionTable.PSVersion.Minor -ne 1
+        ) {
+            throw 'The D-027 snapshot platform observation was outside the supported product matrix.'
+        }
+        $vmIdentitySha256 = Get-CddsiSupplyChainTextBindingToken -Text (
+            'cddsi-d027-vm-identity-smbios-uuid-v1' + "`n" +
+            'SmbiosUuid=' + [string]$native.VmUuid
+        )
+        return [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-snapshot-platform-observation-v2'
+            WindowsMajorVersion = [long]$native.WindowsMajorVersion
+            WindowsBuildNumber = [long]$native.WindowsBuildNumber
+            WindowsProductType = 'Workstation'
+            WindowsProductInfoCode = [long]$native.WindowsProductInfoCode
+            NativeArchitecture = 'x64'
+            ProcessArchitecture = 'x64'
+            PowerShellVersion = '5.1'
+            VmIdentitySha256 = $vmIdentitySha256
+        }
+    }
+    catch {
+        throw 'D-027 snapshot platform observation could not prove Windows 11 x64 Workstation and 64-bit Windows PowerShell 5.1.'
+    }
+}
+
+function Get-CddsiD027GitSnapshotWorkloadBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][string]$ExecutionArtifactSha256
+    )
+
+    $parsedRunId = [guid]::Empty
+    if (
+        -not [guid]::TryParse($RunId, [ref]$parsedRunId) -or
+        $parsedRunId -eq [guid]::Empty -or
+        $RunId -cne $parsedRunId.ToString('D') -or
+        $ExecutionArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $ExecutionArtifactSha256 -cmatch '^0{64}$'
+    ) {
+        throw 'D-027 Git snapshot workload binding inputs were invalid.'
+    }
+    $values = [ordered]@{
+        ContractVersion = 'cddsi-d027-git-snapshot-workload-v1'
+        RunId = $RunId
+        Stage = 'VmAcceptance'
+        EnvironmentTier = 'VmAcceptance'
+        ArtifactProfile = 'VmAcceptance'
+        Operation = 'InstallGitForWindows'
+        ExecutionArtifactSha256 = $ExecutionArtifactSha256
+    }
+    $canonical = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $values.Keys) {
+        $text = [string]$values[$name]
+        $canonical.Add(('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text))
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function Test-CddsiD027CanonicalBase64 {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$Value,
+        [int]$MinimumBytes = 1,
+        [int]$MaximumBytes = 8192
+    )
+
+    if (
+        $Value -isnot [string] -or
+        [string]::IsNullOrWhiteSpace($Value) -or
+        $Value.Length -gt 16384 -or
+        $Value -notmatch '^[A-Za-z0-9+/]+={0,2}$'
+    ) {
+        return $false
+    }
+    try {
+        $bytes = [Convert]::FromBase64String($Value)
+        return (
+            $bytes.Length -ge $MinimumBytes -and
+            $bytes.Length -le $MaximumBytes -and
+            [Convert]::ToBase64String($bytes) -ceq $Value
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-CddsiD027SnapshotAuthorityKeySha256 {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$RsaModulusBase64,
+        [Parameter(Mandatory = $true)][string]$RsaExponentBase64
+    )
+
+    if (
+        -not (Test-CddsiD027CanonicalBase64 -Value $RsaModulusBase64 -MinimumBytes 256 -MaximumBytes 512) -or
+        -not (Test-CddsiD027CanonicalBase64 -Value $RsaExponentBase64 -MinimumBytes 1 -MaximumBytes 8)
+    ) {
+        throw 'D-027 snapshot authority public key was not canonical RSA-2048-or-stronger material.'
+    }
+    $canonical = @(
+        'cddsi-d027-snapshot-authority-public-key-v1'
+        ('RsaModulusBase64={0}' -f $RsaModulusBase64)
+        ('RsaExponentBase64={0}' -f $RsaExponentBase64)
+    ) -join "`n"
+    return Get-CddsiSupplyChainTextBindingToken -Text $canonical
+}
+
+function Get-CddsiD027SnapshotAuthorityPolicy {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
+
+    try {
+        $policyPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot '..\config\d027-snapshot-authority.psd1')
+        )
+        $policyData = Import-PowerShellDataFile -LiteralPath $policyPath -ErrorAction Stop
+        if (
+            $policyData -isnot [System.Collections.IDictionary] -or
+            @($policyData.Keys).Count -ne
+                $script:CddsiD027SnapshotAuthorityPolicyFieldNames.Count -or
+            ((@($policyData.Keys | Sort-Object) -join "`n") -cne
+                (@($script:CddsiD027SnapshotAuthorityPolicyFieldNames | Sort-Object) -join "`n"))
+        ) {
+            throw 'Policy property set was invalid.'
+        }
+        $policy = [pscustomobject][ordered]@{
+            SchemaVersion = $policyData.SchemaVersion
+            ContractVersion = $policyData.ContractVersion
+            Configured = $policyData.Configured
+            AuthorityId = $policyData.AuthorityId
+            SignatureAlgorithm = $policyData.SignatureAlgorithm
+            AuthorityKeySha256 = $policyData.AuthorityKeySha256
+            RsaModulusBase64 = $policyData.RsaModulusBase64
+            RsaExponentBase64 = $policyData.RsaExponentBase64
+        }
+        if (
+            -not (Test-CddsiSchemaVersionOne -Value $policy.SchemaVersion) -or
+            $policy.ContractVersion -isnot [string] -or
+            $policy.ContractVersion -cne 'cddsi-d027-snapshot-authority-policy-v1' -or
+            $policy.Configured -isnot [bool] -or
+            $policy.AuthorityId -isnot [string] -or
+            $policy.SignatureAlgorithm -isnot [string] -or
+            $policy.SignatureAlgorithm -cne 'RSA-SHA256-PKCS1-v1_5' -or
+            $policy.AuthorityKeySha256 -isnot [string] -or
+            $policy.RsaModulusBase64 -isnot [string] -or
+            $policy.RsaExponentBase64 -isnot [string]
+        ) {
+            throw 'Policy schema was invalid.'
+        }
+        return [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = $policy.ContractVersion
+            Configured = [bool]$policy.Configured
+            AuthorityId = [string]$policy.AuthorityId
+            SignatureAlgorithm = [string]$policy.SignatureAlgorithm
+            AuthorityKeySha256 = [string]$policy.AuthorityKeySha256
+            RsaModulusBase64 = [string]$policy.RsaModulusBase64
+            RsaExponentBase64 = [string]$policy.RsaExponentBase64
+        }
+    }
+    catch {
+        throw 'The tracked D-027 external snapshot authority policy was unavailable or invalid.'
+    }
+}
+
+function Get-CddsiD027ExternalSnapshotReceiptBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt
+    )
+
+    if (
+        $null -eq $Receipt -or
+        -not (Test-CddsiExactPropertySet -InputObject $Receipt -Expected $script:CddsiD027ExternalSnapshotReceiptFieldNames)
+    ) {
+        throw 'D-027 external snapshot receipt did not match the exact schema.'
+    }
+    $canonical = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @($script:CddsiD027ExternalSnapshotReceiptFieldNames | Where-Object {
+        $_ -cne 'AuthoritySignatureBase64' -and $_ -cne 'ReceiptBindingToken'
+    })) {
+        $value = $Receipt.$name
+        $text = if ($value -is [string]) {
+            $value
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            [Convert]::ToString([long]$value, [Globalization.CultureInfo]::InvariantCulture)
+        }
+        else {
+            throw 'D-027 external snapshot receipt contained an unsupported field type.'
+        }
+        $canonical.Add(('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text))
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function Test-CddsiD027ExternalSnapshotReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][string]$ExpectedExecutionArtifactSha256,
+        [Parameter(Mandatory = $true)]$PlatformObservation,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
+        [Parameter(Mandatory = $true)]$AuthorityPolicy
+    )
+
+    $rsa = $null
+    $sha = $null
+    try {
+        $platformFields = @(
+            'SchemaVersion',
+            'ContractVersion',
+            'WindowsMajorVersion',
+            'WindowsBuildNumber',
+            'WindowsProductType',
+            'WindowsProductInfoCode',
+            'NativeArchitecture',
+            'ProcessArchitecture',
+            'PowerShellVersion',
+            'VmIdentitySha256'
+        )
+        if (
+            $null -eq $Receipt -or
+            $null -eq $AuthorityPolicy -or
+            $null -eq $PlatformObservation -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Receipt `
+                -Expected $script:CddsiD027ExternalSnapshotReceiptFieldNames) -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $AuthorityPolicy `
+                -Expected $script:CddsiD027SnapshotAuthorityPolicyFieldNames) -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $PlatformObservation `
+                -Expected $platformFields)
+        ) {
+            return $false
+        }
+
+        if (
+            -not (Test-CddsiSchemaVersionOne -Value $AuthorityPolicy.SchemaVersion) -or
+            $AuthorityPolicy.ContractVersion -isnot [string] -or
+            $AuthorityPolicy.ContractVersion -cne 'cddsi-d027-snapshot-authority-policy-v1' -or
+            $AuthorityPolicy.Configured -isnot [bool] -or
+            -not $AuthorityPolicy.Configured -or
+            $AuthorityPolicy.AuthorityId -isnot [string] -or
+            $AuthorityPolicy.AuthorityId -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$' -or
+            $AuthorityPolicy.SignatureAlgorithm -isnot [string] -or
+            $AuthorityPolicy.SignatureAlgorithm -cne 'RSA-SHA256-PKCS1-v1_5' -or
+            $AuthorityPolicy.AuthorityKeySha256 -isnot [string] -or
+            $AuthorityPolicy.AuthorityKeySha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $AuthorityPolicy.AuthorityKeySha256 -cmatch '^0{64}$' -or
+            -not (Test-CddsiD027CanonicalBase64 `
+                -Value $AuthorityPolicy.RsaModulusBase64 `
+                -MinimumBytes 256 `
+                -MaximumBytes 512) -or
+            -not (Test-CddsiD027CanonicalBase64 `
+                -Value $AuthorityPolicy.RsaExponentBase64 `
+                -MinimumBytes 1 `
+                -MaximumBytes 8)
+        ) {
+            return $false
+        }
+        $calculatedAuthorityKeySha256 = Get-CddsiD027SnapshotAuthorityKeySha256 `
+            -RsaModulusBase64 $AuthorityPolicy.RsaModulusBase64 `
+            -RsaExponentBase64 $AuthorityPolicy.RsaExponentBase64
+        if ($AuthorityPolicy.AuthorityKeySha256 -cne $calculatedAuthorityKeySha256) {
+            return $false
+        }
+
+        $runId = [guid]::Empty
+        if (
+            -not (Test-CddsiSchemaVersionOne -Value $Receipt.SchemaVersion) -or
+            $Receipt.ContractVersion -isnot [string] -or
+            $Receipt.ContractVersion -cne 'cddsi-d027-external-clean-snapshot-receipt-v2' -or
+            $Receipt.AuthorityId -isnot [string] -or
+            $Receipt.AuthorityId -cne $AuthorityPolicy.AuthorityId -or
+            $Receipt.AuthorityKeySha256 -isnot [string] -or
+            $Receipt.AuthorityKeySha256 -cne $AuthorityPolicy.AuthorityKeySha256 -or
+            $Receipt.SignatureAlgorithm -isnot [string] -or
+            $Receipt.SignatureAlgorithm -cne $AuthorityPolicy.SignatureAlgorithm -or
+            $Receipt.ExternalSource -isnot [string] -or
+            $Receipt.ExternalSource -cne 'VmExternalHypervisor' -or
+            $Receipt.RestoreState -isnot [string] -or
+            $Receipt.RestoreState -cne 'CleanSnapshotRestored' -or
+            $Receipt.VmDisposition -isnot [string] -or
+            $Receipt.VmDisposition -cne 'Disposable' -or
+            $Receipt.RunId -isnot [string] -or
+            -not [guid]::TryParse($Receipt.RunId, [ref]$runId) -or
+            $runId -eq [guid]::Empty -or
+            $Receipt.RunId -cne $runId.ToString('D') -or
+            $Receipt.RunId -cne $ExpectedRunId -or
+            $Receipt.Stage -isnot [string] -or
+            $Receipt.Stage -cne 'VmAcceptance' -or
+            $Receipt.EnvironmentTier -isnot [string] -or
+            $Receipt.EnvironmentTier -cne 'VmAcceptance' -or
+            $Receipt.ArtifactProfile -isnot [string] -or
+            $Receipt.ArtifactProfile -cne 'VmAcceptance' -or
+            $Receipt.Operation -isnot [string] -or
+            $Receipt.Operation -cne 'InstallGitForWindows'
+        ) {
+            return $false
+        }
+
+        if (
+            -not (Test-CddsiSchemaVersionOne -Value $PlatformObservation.SchemaVersion) -or
+            $PlatformObservation.ContractVersion -isnot [string] -or
+            $PlatformObservation.ContractVersion -cne 'cddsi-d027-snapshot-platform-observation-v2' -or
+            $ExpectedExecutionArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $ExpectedExecutionArtifactSha256 -cmatch '^0{64}$' -or
+            $Receipt.ExecutionArtifactSha256 -isnot [string] -or
+            $Receipt.ExecutionArtifactSha256 -cne $ExpectedExecutionArtifactSha256 -or
+            $Receipt.SnapshotIdentitySha256 -isnot [string] -or
+            $Receipt.SnapshotIdentitySha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $Receipt.SnapshotIdentitySha256 -cmatch '^0{64}$' -or
+            $Receipt.VmIdentitySha256 -isnot [string] -or
+            $Receipt.VmIdentitySha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $Receipt.VmIdentitySha256 -cmatch '^0{64}$' -or
+            $Receipt.RestorerIdentitySha256 -isnot [string] -or
+            $Receipt.RestorerIdentitySha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $Receipt.RestorerIdentitySha256 -cmatch '^0{64}$' -or
+            (($Receipt.WindowsMajorVersion -isnot [int]) -and
+                ($Receipt.WindowsMajorVersion -isnot [long])) -or
+            [long]$Receipt.WindowsMajorVersion -ne 10 -or
+            (($Receipt.WindowsBuildNumber -isnot [int]) -and
+                ($Receipt.WindowsBuildNumber -isnot [long])) -or
+            [long]$Receipt.WindowsBuildNumber -lt 22000 -or
+            $Receipt.WindowsProductType -isnot [string] -or
+            $Receipt.WindowsProductType -cne 'Workstation' -or
+            (($Receipt.WindowsProductInfoCode -isnot [int]) -and
+                ($Receipt.WindowsProductInfoCode -isnot [long])) -or
+            [long]$Receipt.WindowsProductInfoCode -le 0 -or
+            $Receipt.NativeArchitecture -isnot [string] -or
+            $Receipt.NativeArchitecture -cne 'x64' -or
+            $Receipt.ProcessArchitecture -isnot [string] -or
+            $Receipt.ProcessArchitecture -cne 'x64' -or
+            $Receipt.PowerShellVersion -isnot [string] -or
+            $Receipt.PowerShellVersion -cne '5.1' -or
+            $PlatformObservation.VmIdentitySha256 -isnot [string] -or
+            $PlatformObservation.VmIdentitySha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $PlatformObservation.VmIdentitySha256 -cmatch '^0{64}$' -or
+            $Receipt.VmIdentitySha256 -cne $PlatformObservation.VmIdentitySha256 -or
+            (($PlatformObservation.WindowsMajorVersion -isnot [int]) -and
+                ($PlatformObservation.WindowsMajorVersion -isnot [long])) -or
+            [long]$Receipt.WindowsMajorVersion -ne [long]$PlatformObservation.WindowsMajorVersion -or
+            (($PlatformObservation.WindowsBuildNumber -isnot [int]) -and
+                ($PlatformObservation.WindowsBuildNumber -isnot [long])) -or
+            [long]$Receipt.WindowsBuildNumber -ne [long]$PlatformObservation.WindowsBuildNumber -or
+            $PlatformObservation.WindowsProductType -isnot [string] -or
+            $Receipt.WindowsProductType -cne $PlatformObservation.WindowsProductType -or
+            (($PlatformObservation.WindowsProductInfoCode -isnot [int]) -and
+                ($PlatformObservation.WindowsProductInfoCode -isnot [long])) -or
+            [long]$Receipt.WindowsProductInfoCode -ne [long]$PlatformObservation.WindowsProductInfoCode -or
+            $PlatformObservation.NativeArchitecture -isnot [string] -or
+            $Receipt.NativeArchitecture -cne $PlatformObservation.NativeArchitecture -or
+            $PlatformObservation.ProcessArchitecture -isnot [string] -or
+            $Receipt.ProcessArchitecture -cne $PlatformObservation.ProcessArchitecture -or
+            $PlatformObservation.PowerShellVersion -isnot [string] -or
+            $Receipt.PowerShellVersion -cne $PlatformObservation.PowerShellVersion -or
+            $Receipt.WorkloadBindingToken -isnot [string] -or
+            $Receipt.WorkloadBindingToken -cnotmatch '^[a-f0-9]{64}$' -or
+            $Receipt.WorkloadBindingToken -cmatch '^0{64}$' -or
+            $Receipt.ReceiptBindingToken -isnot [string] -or
+            $Receipt.ReceiptBindingToken -cnotmatch '^[a-f0-9]{64}$' -or
+            $Receipt.ReceiptBindingToken -cmatch '^0{64}$' -or
+            -not (Test-CddsiD027CanonicalBase64 `
+                -Value $Receipt.AuthoritySignatureBase64 `
+                -MinimumBytes 256 `
+                -MaximumBytes 512)
+        ) {
+            return $false
+        }
+
+        foreach ($timestamp in @(
+            $Receipt.RestoreCompletedAtUtc,
+            $Receipt.IssuedAtUtc,
+            $Receipt.ExpiresAtUtc,
+            $ValidationTimeUtc
+        )) {
+            if (
+                $timestamp -isnot [string] -or
+                $timestamp -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+                -not (Test-CddsiUtcTimestampValue -Value $timestamp)
+            ) {
+                return $false
+            }
+        }
+        $style = [Globalization.DateTimeStyles]::AssumeUniversal -bor
+            [Globalization.DateTimeStyles]::AdjustToUniversal
+        $format = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        $restoreTime = [DateTimeOffset]::ParseExact(
+            $Receipt.RestoreCompletedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $issuedTime = [DateTimeOffset]::ParseExact(
+            $Receipt.IssuedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $expiresTime = [DateTimeOffset]::ParseExact(
+            $Receipt.ExpiresAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $validationTime = [DateTimeOffset]::ParseExact(
+            $ValidationTimeUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        if (
+            $restoreTime -gt $issuedTime.AddSeconds(30) -or
+            $issuedTime -gt $validationTime.AddSeconds(30) -or
+            $expiresTime -le $issuedTime -or
+            ($issuedTime - $restoreTime).TotalMinutes -gt 10 -or
+            ($expiresTime - $issuedTime).TotalMinutes -gt 90 -or
+            $validationTime -gt $expiresTime -or
+            ($validationTime - $restoreTime).TotalMinutes -gt 90
+        ) {
+            return $false
+        }
+
+        $expectedWorkloadBindingToken = Get-CddsiD027GitSnapshotWorkloadBindingToken `
+            -RunId $ExpectedRunId `
+            -ExecutionArtifactSha256 $ExpectedExecutionArtifactSha256
+        if ($Receipt.WorkloadBindingToken -cne $expectedWorkloadBindingToken) {
+            return $false
+        }
+        $calculatedReceiptBindingToken =
+            Get-CddsiD027ExternalSnapshotReceiptBindingToken -Receipt $Receipt
+        if ($Receipt.ReceiptBindingToken -cne $calculatedReceiptBindingToken) {
+            return $false
+        }
+
+        $modulus = [Convert]::FromBase64String($AuthorityPolicy.RsaModulusBase64)
+        $exponent = [Convert]::FromBase64String($AuthorityPolicy.RsaExponentBase64)
+        $signature = [Convert]::FromBase64String($Receipt.AuthoritySignatureBase64)
+        if ($signature.Length -ne $modulus.Length) {
+            return $false
+        }
+        $parameters = New-Object System.Security.Cryptography.RSAParameters
+        $parameters.Modulus = $modulus
+        $parameters.Exponent = $exponent
+        $rsa = [System.Security.Cryptography.RSA]::Create()
+        $rsa.ImportParameters($parameters)
+        $signatureText = '{0}{1}{2}' -f
+            $script:CddsiD027SnapshotReceiptSignatureDomain,
+            "`n",
+            $Receipt.ReceiptBindingToken
+        $signatureBytes = [System.Text.UTF8Encoding]::new($false, $true).GetBytes(
+            $signatureText
+        )
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $signatureHash = $sha.ComputeHash($signatureBytes)
+        return $rsa.VerifyHash(
+            $signatureHash,
+            $signature,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+        )
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+        if ($null -ne $rsa) { $rsa.Dispose() }
+    }
+}
+
+function Get-CddsiD027SnapshotReceiptHeldFileObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][System.IO.FileStream]$Stream
+    )
+
+    if ($null -eq ('Cddsi.D027.SnapshotReceiptFileV1' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace Cddsi.D027 {
+    public sealed class SnapshotReceiptFileObservationV1 {
+        public string FinalPath;
+        public uint NumberOfLinks;
+        public string FileSystemName;
+    }
+
+    public static class SnapshotReceiptFileV1 {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME {
+            internal uint Low;
+            internal uint High;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION {
+            internal uint FileAttributes;
+            internal FILETIME CreationTime;
+            internal FILETIME LastAccessTime;
+            internal FILETIME LastWriteTime;
+            internal uint VolumeSerialNumber;
+            internal uint FileSizeHigh;
+            internal uint FileSizeLow;
+            internal uint NumberOfLinks;
+            internal uint FileIndexHigh;
+            internal uint FileIndexLow;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(
+            SafeFileHandle handle,
+            StringBuilder path,
+            uint capacity,
+            uint flags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandle(
+            SafeFileHandle handle,
+            out BY_HANDLE_FILE_INFORMATION information);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumeInformationByHandleW(
+            SafeFileHandle handle,
+            StringBuilder volumeName,
+            uint volumeNameCapacity,
+            out uint volumeSerialNumber,
+            out uint maximumComponentLength,
+            out uint fileSystemFlags,
+            StringBuilder fileSystemName,
+            uint fileSystemNameCapacity);
+
+        public static SnapshotReceiptFileObservationV1 Observe(
+            SafeFileHandle handle) {
+            if (handle == null || handle.IsInvalid || handle.IsClosed) {
+                throw new InvalidOperationException("Receipt handle was invalid.");
+            }
+            uint capacity = 32768;
+            StringBuilder path = new StringBuilder((int)capacity);
+            uint length = GetFinalPathNameByHandleW(handle, path, capacity, 0);
+            if (length == 0 || length >= capacity) {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            BY_HANDLE_FILE_INFORMATION information;
+            if (!GetFileInformationByHandle(handle, out information)) {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            StringBuilder volumeName = new StringBuilder(261);
+            StringBuilder fileSystemName = new StringBuilder(261);
+            uint volumeSerialNumber;
+            uint maximumComponentLength;
+            uint fileSystemFlags;
+            if (!GetVolumeInformationByHandleW(
+                handle,
+                volumeName,
+                (uint)volumeName.Capacity,
+                out volumeSerialNumber,
+                out maximumComponentLength,
+                out fileSystemFlags,
+                fileSystemName,
+                (uint)fileSystemName.Capacity)) {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            SnapshotReceiptFileObservationV1 result =
+                new SnapshotReceiptFileObservationV1();
+            result.FinalPath = path.ToString();
+            result.NumberOfLinks = information.NumberOfLinks;
+            result.FileSystemName = fileSystemName.ToString();
+            return result;
+        }
+    }
+}
+'@ -ErrorAction Stop
+    }
+    $native = [Cddsi.D027.SnapshotReceiptFileV1]::Observe($Stream.SafeFileHandle)
+    $finalPath = [string]$native.FinalPath
+    if ($finalPath.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) {
+        $finalPath = '\\' + $finalPath.Substring(8)
+    }
+    elseif ($finalPath.StartsWith('\\?\', [StringComparison]::OrdinalIgnoreCase)) {
+        $finalPath = $finalPath.Substring(4)
+    }
+    return [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        FinalPath = [System.IO.Path]::GetFullPath($finalPath)
+        NumberOfLinks = [long]$native.NumberOfLinks
+        FileSystemName = [string]$native.FileSystemName
+    }
+}
+
+function Read-CddsiD027ExternalSnapshotReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][string]$ReceiptPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedReceiptSha256
+    )
+
+    Assert-CddsiD027GitLiveBootstrapContext -ExecutionContext $Context | Out-Null
+    $stream = $null
+    $hasher = $null
+    try {
+        if (
+            $ExpectedReceiptSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $ExpectedReceiptSha256 -cmatch '^0{64}$' -or
+            [string]::IsNullOrWhiteSpace($ReceiptPath) -or
+            $ReceiptPath.IndexOfAny([char[]]@('*', '?', [char]0)) -ge 0 -or
+            -not [System.IO.Path]::IsPathRooted($ReceiptPath) -or
+            ($ReceiptPath.Length -gt 2 -and $ReceiptPath.Substring(2).Contains(':'))
+        ) {
+            throw 'Receipt input was invalid.'
+        }
+        $fullPath = [System.IO.Path]::GetFullPath($ReceiptPath)
+        $tempPath = [System.IO.Path]::GetFullPath([string]$Context.Paths.Temp).TrimEnd('\')
+        if (
+            -not [string]::Equals(
+                [System.IO.Path]::GetDirectoryName($fullPath),
+                $tempPath,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            -not [string]::Equals(
+                [System.IO.Path]::GetExtension($fullPath),
+                '.json',
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            [System.IO.Path]::GetFileName($fullPath) -cnotmatch
+                '^d027-external-snapshot-receipt(?:-[a-f0-9]{64})?\.json$'
+        ) {
+            throw 'Receipt target was outside the product temp root.'
+        }
+        $stream = New-Object System.IO.FileStream(
+            $fullPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::None,
+            4096,
+            [System.IO.FileOptions]::SequentialScan
+        )
+        $heldFile = Get-CddsiD027SnapshotReceiptHeldFileObservation `
+            -ExecutionContext $Context `
+            -Stream $stream
+        $attributes = [System.IO.File]::GetAttributes($fullPath)
+        if (
+            -not [string]::Equals(
+                $heldFile.FinalPath,
+                $fullPath,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            $heldFile.NumberOfLinks -ne 1 -or
+            $heldFile.FileSystemName -cne 'NTFS' -or
+            ($attributes -band [System.IO.FileAttributes]::Directory) -ne 0 -or
+            ($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+        ) {
+            throw 'Receipt target identity was unsupported.'
+        }
+        if (
+            $stream.Length -le 0 -or
+            $stream.Length -gt $script:CddsiD027ExternalSnapshotReceiptMaximumBytes
+        ) {
+            throw 'Receipt length was invalid.'
+        }
+        $bytes = New-Object byte[] ([int]$stream.Length)
+        $offset = 0
+        while ($offset -lt $bytes.Length) {
+            $read = $stream.Read($bytes, $offset, $bytes.Length - $offset)
+            if ($read -le 0) {
+                throw 'Receipt read was truncated.'
+            }
+            $offset += $read
+        }
+        if (
+            $bytes.Length -ge 3 -and
+            $bytes[0] -eq 0xEF -and
+            $bytes[1] -eq 0xBB -and
+            $bytes[2] -eq 0xBF
+        ) {
+            throw 'Receipt encoding was not canonical.'
+        }
+        $hasher = [System.Security.Cryptography.SHA256]::Create()
+        $actualSha256 = [BitConverter]::ToString(
+            $hasher.ComputeHash($bytes)
+        ).Replace('-', '').ToLowerInvariant()
+        if ($actualSha256 -cne $ExpectedReceiptSha256) {
+            throw 'Receipt bytes did not match the independently supplied hash.'
+        }
+        $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+        $content = $utf8.GetString($bytes)
+        $receipt = $content | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $receipt -or $receipt -is [System.Array]) {
+            throw 'Receipt JSON root was invalid.'
+        }
+        return [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-external-snapshot-receipt-read-v1'
+            Receipt = $receipt
+            ReceiptSha256 = $actualSha256
+            ReceiptLengthBytes = [long]$bytes.Length
+        }
+    }
+    catch {
+        throw 'D-027 external snapshot receipt could not be read and validated from the exact product-temp file.'
+    }
+    finally {
+        if ($null -ne $hasher) { $hasher.Dispose() }
+        if ($null -ne $stream) { $stream.Dispose() }
+    }
+}
+
+function Enable-CddsiD027GitLiveSessionAuthorization {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][string]$ReceiptPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedReceiptSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedExecutionArtifactSha256
+    )
+
+    $script:CddsiD027GitLiveSessionAuthorization = $null
+    try {
+        Assert-CddsiD027GitLiveBootstrapContext -ExecutionContext $Context | Out-Null
+        if (
+            $Context.Stage -isnot [string] -or $Context.Stage -cne 'VmAcceptance' -or
+            $Context.EnvironmentTier -isnot [string] -or
+            $Context.EnvironmentTier -cne 'VmAcceptance' -or
+            $ExpectedExecutionArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $ExpectedExecutionArtifactSha256 -cmatch '^0{64}$'
+        ) {
+            throw 'The D-027 snapshot authorization bootstrap context was invalid.'
+        }
+        $readResult = Read-CddsiD027ExternalSnapshotReceipt `
+            -ExecutionContext $Context `
+            -ReceiptPath $ReceiptPath `
+            -ExpectedReceiptSha256 $ExpectedReceiptSha256
+        $platformObservation = Get-CddsiD027SnapshotPlatformObservation -ExecutionContext $Context
+        $validationTimeUtc = [DateTimeOffset]::UtcNow.ToString(
+            'yyyy-MM-ddTHH:mm:ssZ',
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+        $authorityPolicy =
+            Get-CddsiD027SnapshotAuthorityPolicy -ExecutionContext $Context
+        if (-not (Test-CddsiD027ExternalSnapshotReceipt `
+            -Receipt $readResult.Receipt `
+            -ExpectedRunId $Context.RunId `
+            -ExpectedExecutionArtifactSha256 $ExpectedExecutionArtifactSha256 `
+            -PlatformObservation $platformObservation `
+            -ValidationTimeUtc $validationTimeUtc `
+            -AuthorityPolicy $authorityPolicy)) {
+            throw 'The D-027 snapshot receipt did not authorize this exact workload.'
+        }
+
+        $receipt = $readResult.Receipt
+        $authorization = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-git-live-signed-authorization-v2'
+            Receipt = $receipt
+            ReceiptSha256 = $readResult.ReceiptSha256
+            ReceiptLengthBytes = [long]$readResult.ReceiptLengthBytes
+            ExpectedExecutionArtifactSha256 = $ExpectedExecutionArtifactSha256
+            AuthorizedAtUtc = $validationTimeUtc
+            InitialPlatformObservation = $platformObservation
+        }
+        $script:CddsiD027GitLiveSessionAuthorization = $authorization
+        $safeData = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            AuthorizationStatus = 'Active'
+            AuthorityId = $receipt.AuthorityId
+            AuthorityKeySha256 = $receipt.AuthorityKeySha256
+            SignatureAlgorithm = $receipt.SignatureAlgorithm
+            RunId = $receipt.RunId
+            Stage = $receipt.Stage
+            ArtifactProfile = $receipt.ArtifactProfile
+            Operation = $receipt.Operation
+            ReceiptSha256 = $authorization.ReceiptSha256
+            ReceiptBindingToken = $receipt.ReceiptBindingToken
+            WorkloadBindingToken = $receipt.WorkloadBindingToken
+            ExpiresAtUtc = $receipt.ExpiresAtUtc
+        }
+        return New-CddsiOperationResult `
+            -Operation 'EnableD027GitLiveSessionAuthorization' `
+            -Status 'SUCCEEDED' `
+            -Mode Live `
+            -MessageSafe 'An exact externally signed clean-snapshot receipt was verified against the pinned D-027 VM-operator public key for this Git VmAcceptance workload.' `
+            -Data $safeData
+    }
+    catch {
+        $script:CddsiD027GitLiveSessionAuthorization = $null
+        return New-CddsiOperationResult `
+            -Operation 'EnableD027GitLiveSessionAuthorization' `
+            -Status 'ACTION_REQUIRED' `
+            -Mode Live `
+            -ErrorCode 'D027_EXTERNAL_SNAPSHOT_AUTHORIZATION_INVALID' `
+            -MessageSafe 'A fresh exact VM-external clean-snapshot receipt signed by the configured pinned authority is required before any D-027 Git Live operation.'
+    }
+}
+
+function Clear-CddsiD027GitLiveSessionAuthorization {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
+
+    Assert-CddsiD027GitLiveBootstrapContext -ExecutionContext $Context | Out-Null
+    $script:CddsiD027GitLiveSessionAuthorization = $null
+    return New-CddsiOperationResult `
+        -Operation 'ClearD027GitLiveSessionAuthorization' `
+        -Status 'SUCCEEDED' `
+        -Mode Live `
+        -MessageSafe 'The process-scoped D-027 Git Live authorization was cleared.'
+}
+
+function Get-CddsiD027GitWinVerifyTrustResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][string]$FilePath
+    )
+
+    Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+
+    $newResult = {
+        param(
+            [Parameter(Mandatory = $true)][bool]$Trusted,
+            [Parameter(Mandatory = $true)][string]$Status,
+            [AllowNull()][string]$NativeStatusHex
+        )
+        return [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            Trusted = $Trusted
+            Status = $Status
+            NativeStatusHex = $NativeStatusHex
+            RevocationMode = 'NotChecked'
+        }
+    }
+
+    try {
+        if (
+            [string]::IsNullOrWhiteSpace($FilePath) -or
+            $FilePath.IndexOfAny([char[]]@('*', '?', [char]0)) -ge 0 -or
+            -not [System.IO.Path]::IsPathRooted($FilePath)
+        ) {
+            return & $newResult $false 'InvalidInput' $null
+        }
+        $path = [System.IO.Path]::GetFullPath($FilePath)
+        if (
+            -not [string]::Equals(
+                [System.IO.Path]::GetExtension($path),
+                '.exe',
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            -not [System.IO.File]::Exists($path)
+        ) {
+            return & $newResult $false 'FileUnavailable' $null
+        }
+
+        if ($null -eq ('Cddsi.D027.WinVerifyTrustPolicy' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+
+namespace Cddsi.D027 {
+    public sealed class WinVerifyTrustPolicyResult {
+        public bool Trusted;
+        public string Status;
+        public string NativeStatusHex;
+        public string RevocationMode;
+    }
+
+    public static class WinVerifyTrustPolicy {
+        private const uint WTD_UI_NONE = 2;
+        private const uint WTD_REVOKE_NONE = 0;
+        private const uint WTD_CHOICE_FILE = 1;
+        private const uint WTD_STATEACTION_VERIFY = 1;
+        private const uint WTD_STATEACTION_CLOSE = 2;
+        private const uint WTD_CACHE_ONLY_URL_RETRIEVAL = 0x00001000;
+
+        private static readonly Guid WinTrustActionGenericVerifyV2 =
+            new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
+        private static readonly IntPtr InvalidWindowHandle = new IntPtr(-1);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WINTRUST_FILE_INFO {
+            internal uint cbStruct;
+            [MarshalAs(UnmanagedType.LPWStr)]
+            internal string pcwszFilePath;
+            internal IntPtr hFile;
+            internal IntPtr pgKnownSubject;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WINTRUST_DATA {
+            internal uint cbStruct;
+            internal IntPtr pPolicyCallbackData;
+            internal IntPtr pSIPClientData;
+            internal uint dwUIChoice;
+            internal uint fdwRevocationChecks;
+            internal uint dwUnionChoice;
+            internal IntPtr pFile;
+            internal uint dwStateAction;
+            internal IntPtr hWVTStateData;
+            internal IntPtr pwszURLReference;
+            internal uint dwProvFlags;
+            internal uint dwUIContext;
+        }
+
+        [DllImport("wintrust.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+        private static extern int WinVerifyTrust(
+            IntPtr hwnd,
+            [In] ref Guid actionId,
+            ref WINTRUST_DATA trustData);
+
+        private static string GetStatus(int nativeStatus) {
+            uint value = unchecked((uint)nativeStatus);
+            switch (value) {
+                case 0x00000000U: return "Trusted";
+                case 0x800B0100U: return "NoSignature";
+                case 0x800B0003U: return "UnsupportedSubject";
+                case 0x800B0001U: return "ProviderUnavailable";
+                case 0x800B0111U: return "ExplicitDistrust";
+                case 0x800B0004U: return "Untrusted";
+                case 0x80096010U: return "BadDigest";
+                case 0x800B010CU: return "Revoked";
+                case 0x800B0109U: return "UntrustedRoot";
+                case 0x800B010AU: return "ChainInvalid";
+                case 0x800B0101U: return "Expired";
+                case 0x80092013U: return "RevocationOffline";
+                case 0x80092012U: return "RevocationUnavailable";
+                case 0x80096005U: return "TimestampInvalid";
+                default: return "PolicyRejected";
+            }
+        }
+
+        public static WinVerifyTrustPolicyResult VerifyFile(string filePath) {
+            IntPtr fileInfoPointer = IntPtr.Zero;
+            bool fileInfoMarshaled = false;
+            bool verifyAttempted = false;
+            int nativeStatus = unchecked((int)0x800B0004U);
+            Guid actionId = WinTrustActionGenericVerifyV2;
+            WINTRUST_DATA trustData = new WINTRUST_DATA();
+
+            using (FileStream file = new FileStream(
+                filePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read)) {
+                WINTRUST_FILE_INFO fileInfo = new WINTRUST_FILE_INFO();
+                fileInfo.cbStruct = (uint)Marshal.SizeOf(typeof(WINTRUST_FILE_INFO));
+                fileInfo.pcwszFilePath = filePath;
+                fileInfo.hFile = file.SafeFileHandle.DangerousGetHandle();
+                fileInfo.pgKnownSubject = IntPtr.Zero;
+
+                try {
+                    fileInfoPointer = Marshal.AllocHGlobal(
+                        Marshal.SizeOf(typeof(WINTRUST_FILE_INFO)));
+                    Marshal.StructureToPtr(fileInfo, fileInfoPointer, false);
+                    fileInfoMarshaled = true;
+
+                    trustData.cbStruct = (uint)Marshal.SizeOf(typeof(WINTRUST_DATA));
+                    trustData.pPolicyCallbackData = IntPtr.Zero;
+                    trustData.pSIPClientData = IntPtr.Zero;
+                    trustData.dwUIChoice = WTD_UI_NONE;
+                    trustData.fdwRevocationChecks = WTD_REVOKE_NONE;
+                    trustData.dwUnionChoice = WTD_CHOICE_FILE;
+                    trustData.pFile = fileInfoPointer;
+                    trustData.dwStateAction = WTD_STATEACTION_VERIFY;
+                    trustData.hWVTStateData = IntPtr.Zero;
+                    trustData.pwszURLReference = IntPtr.Zero;
+                    trustData.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+                    trustData.dwUIContext = 0;
+
+                    verifyAttempted = true;
+                    nativeStatus = WinVerifyTrust(
+                        InvalidWindowHandle,
+                        ref actionId,
+                        ref trustData);
+                }
+                finally {
+                    if (verifyAttempted) {
+                        try {
+                            trustData.dwStateAction = WTD_STATEACTION_CLOSE;
+                            WinVerifyTrust(
+                                InvalidWindowHandle,
+                                ref actionId,
+                                ref trustData);
+                        }
+                        catch {
+                        }
+                    }
+                    if (fileInfoMarshaled) {
+                        Marshal.DestroyStructure(
+                            fileInfoPointer,
+                            typeof(WINTRUST_FILE_INFO));
+                    }
+                    if (fileInfoPointer != IntPtr.Zero) {
+                        Marshal.FreeHGlobal(fileInfoPointer);
+                    }
+                }
+            }
+
+            WinVerifyTrustPolicyResult result = new WinVerifyTrustPolicyResult();
+            result.Trusted = nativeStatus == 0;
+            result.Status = GetStatus(nativeStatus);
+            result.NativeStatusHex = "0x" +
+                unchecked((uint)nativeStatus).ToString("X8", CultureInfo.InvariantCulture);
+            result.RevocationMode = "NotChecked";
+            return result;
+        }
+    }
+}
+'@ -ErrorAction Stop
+        }
+
+        $nativeResult = [Cddsi.D027.WinVerifyTrustPolicy]::VerifyFile($path)
+        if (
+            $null -eq $nativeResult -or
+            $nativeResult.Trusted -isnot [bool] -or
+            [string]::IsNullOrWhiteSpace([string]$nativeResult.Status) -or
+            [string]$nativeResult.NativeStatusHex -notmatch '^0x[0-9A-F]{8}$' -or
+            [string]$nativeResult.RevocationMode -cne 'NotChecked'
+        ) {
+            return & $newResult $false 'VerificationUnavailable' $null
+        }
+        return & $newResult ([bool]$nativeResult.Trusted) ([string]$nativeResult.Status) ([string]$nativeResult.NativeStatusHex)
+    }
+    catch {
+        return & $newResult $false 'VerificationUnavailable' $null
+    }
+}
+
+function Assert-CddsiD027GitLiveBootstrapContext {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
@@ -104,9 +1421,10 @@ function Assert-CddsiD027GitLiveContext {
             $tempDrive = New-Object System.IO.DriveInfo($tempRoot)
             if (
                 $tempDrive.DriveType -ne [System.IO.DriveType]::Fixed -or
+                $tempDrive.DriveFormat -cne 'NTFS' -or
                 -not [System.IO.Directory]::Exists($tempPath)
             ) {
-                throw 'Product temp was not an existing fixed-volume directory.'
+                throw 'Product temp was not an existing fixed NTFS directory.'
             }
             $tempAncestors = New-Object System.Collections.Generic.List[string]
             $tempAncestors.Add($tempRoot)
@@ -151,6 +1469,84 @@ function Assert-CddsiD027GitLiveContext {
         -not (Test-CddsiD027Windows11X64Platform)
     ) {
         throw 'D-027 Git Live context requires Windows 11 x64, 64-bit Windows PowerShell 5.1, Live mode and an explicit local product temp path.'
+    }
+    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode Live | Out-Null
+    return $true
+}
+
+function Assert-CddsiD027GitLiveContext {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context
+    )
+
+    Assert-CddsiD027GitLiveBootstrapContext -ExecutionContext $Context | Out-Null
+    $authorization = $script:CddsiD027GitLiveSessionAuthorization
+    try {
+        if (
+            $null -eq $authorization -or
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $authorization `
+                -Expected $script:CddsiD027GitLiveSessionAuthorizationFieldNames) -or
+            -not (Test-CddsiSchemaVersionOne -Value $authorization.SchemaVersion) -or
+            $authorization.ContractVersion -isnot [string] -or
+            $authorization.ContractVersion -cne 'cddsi-d027-git-live-signed-authorization-v2' -or
+            $null -eq $authorization.Receipt -or
+            $Context.RunId -isnot [string] -or
+            $Context.Stage -isnot [string] -or
+            $Context.Stage -cne 'VmAcceptance' -or
+            $Context.EnvironmentTier -isnot [string] -or
+            $Context.EnvironmentTier -cne 'VmAcceptance' -or
+            $authorization.ReceiptSha256 -isnot [string] -or
+            $authorization.ReceiptSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $authorization.ReceiptSha256 -cmatch '^0{64}$' -or
+            (($authorization.ReceiptLengthBytes -isnot [int]) -and
+                ($authorization.ReceiptLengthBytes -isnot [long])) -or
+            [long]$authorization.ReceiptLengthBytes -le 0 -or
+            [long]$authorization.ReceiptLengthBytes -gt
+                $script:CddsiD027ExternalSnapshotReceiptMaximumBytes -or
+            $authorization.ExpectedExecutionArtifactSha256 -isnot [string] -or
+            $authorization.ExpectedExecutionArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $authorization.ExpectedExecutionArtifactSha256 -cmatch '^0{64}$' -or
+            $authorization.AuthorizedAtUtc -isnot [string] -or
+            $authorization.AuthorizedAtUtc -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+            -not (Test-CddsiUtcTimestampValue -Value $authorization.AuthorizedAtUtc) -or
+            $null -eq $authorization.InitialPlatformObservation
+        ) {
+            throw 'Authorization state was invalid.'
+        }
+        if (
+            $Context.Providers.Kind -ceq 'LiveReadOnly' -and
+            (
+                $Context.Providers.RunId -cne $Context.RunId -or
+                $Context.Providers.Stage -cne 'VmAcceptance' -or
+                $Context.Providers.EnvironmentTier -cne 'VmAcceptance' -or
+                $Context.Providers.ArtifactProfile -cne 'VmAcceptance'
+            )
+        ) {
+            throw 'Loaded provider profile was not bound to the authorization.'
+        }
+        $authorityPolicy =
+            Get-CddsiD027SnapshotAuthorityPolicy -ExecutionContext $Context
+        $platformObservation =
+            Get-CddsiD027SnapshotPlatformObservation -ExecutionContext $Context
+        $validationTimeUtc = [DateTimeOffset]::UtcNow.ToString(
+            'yyyy-MM-ddTHH:mm:ssZ',
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+        if (-not (Test-CddsiD027ExternalSnapshotReceipt `
+            -Receipt $authorization.Receipt `
+            -ExpectedRunId $Context.RunId `
+            -ExpectedExecutionArtifactSha256 $authorization.ExpectedExecutionArtifactSha256 `
+            -PlatformObservation $platformObservation `
+            -ValidationTimeUtc $validationTimeUtc `
+            -AuthorityPolicy $authorityPolicy)) {
+            throw 'Signed authorization receipt was invalid, stale or no longer platform-bound.'
+        }
+    }
+    catch {
+        $script:CddsiD027GitLiveSessionAuthorization = $null
+        throw 'D-027 Git Live requires a fresh process-scoped authorization from an exact VM-external clean-snapshot receipt signed by the pinned authority and bound to this VmAcceptance run and workload.'
     }
     return $true
 }
@@ -803,6 +2199,9 @@ function Get-CddsiGitForWindowsSignedComponentObservation {
         $peMachine = ConvertFrom-CddsiGitPeHeader -HeaderBytes $header -ImageLength ([long]$item.Length)
         $artifactSha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
         $signature = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
+        $winTrustResult = Get-CddsiD027GitWinVerifyTrustResult `
+            -ExecutionContext $Context `
+            -FilePath $path
         $versionInfo = $item.VersionInfo
     }
     catch {
@@ -826,12 +2225,27 @@ function Get-CddsiGitForWindowsSignedComponentObservation {
         StdErr = ''
     })
     $authenticodeStatus = [string]$signature.Status
+    $signatureType = [string]$signature.SignatureType
     $signerSubject = if ($null -eq $signature.SignerCertificate) { '' } else { [string]$signature.SignerCertificate.Subject }
     $signerThumbprint = if ($null -eq $signature.SignerCertificate) { '' } else { ([string]$signature.SignerCertificate.Thumbprint).ToLowerInvariant() }
     $reasonCodes = New-Object System.Collections.Generic.List[string]
     if ($peMachine -cne 'x64') { $reasonCodes.Add('GIT_COMPONENT_ARCHITECTURE_UNSUPPORTED') }
-    if ($authenticodeStatus -cne 'Valid' -or $null -eq $signature.TimeStamperCertificate) { $reasonCodes.Add('GIT_COMPONENT_AUTHENTICODE_INVALID') }
-    if ($signerSubject -notmatch $script:CddsiGitExecutableSignerSubjectPattern -or $signerThumbprint -notmatch '^[a-f0-9]{40}$') {
+    if (
+        $authenticodeStatus -cne 'Valid' -or
+        $signatureType -cne 'Authenticode' -or
+        $null -eq $signature.TimeStamperCertificate
+    ) {
+        $reasonCodes.Add('GIT_COMPONENT_AUTHENTICODE_INVALID')
+    }
+    if (-not $winTrustResult.Trusted) { $reasonCodes.Add('GIT_COMPONENT_CHAIN_UNTRUSTED') }
+    if (
+        -not [regex]::IsMatch(
+            $signerSubject,
+            $script:CddsiGitExecutableSignerSubjectPattern,
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+        ) -or
+        $signerThumbprint -notmatch '^[a-f0-9]{40}$'
+    ) {
         $reasonCodes.Add('GIT_COMPONENT_SIGNER_UNTRUSTED')
     }
     if (
@@ -867,6 +2281,9 @@ function Get-CddsiGitForWindowsSignedComponentObservation {
         FileVersion = if ($versionObservation.Valid) { $versionObservation.Version } else { $null }
         PeMachine = $peMachine
         AuthenticodeStatus = $authenticodeStatus
+        SignatureType = $signatureType
+        ChainTrusted = [bool]$winTrustResult.Trusted
+        ChainRevocationMode = $winTrustResult.RevocationMode
         SignerThumbprint = if ($signerThumbprint -match '^[a-f0-9]{40}$') { $signerThumbprint } else { $null }
         IdentityStatus = if ($trusted) { 'Trusted' } else { 'Untrusted' }
         ReasonCodes = @($reasonCodes.ToArray())
@@ -2398,6 +3815,515 @@ function Get-CddsiGitForWindowsStatus {
     return New-CddsiOperationResult -Operation 'DetectGitForWindows' -Status 'SUCCEEDED' -Mode $Context.Mode -MessageSafe 'Synthetic Git for Windows inventory completed.' -Data $data
 }
 
+function ConvertTo-CddsiD027NormalizedGitHubReleaseDocument {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$ReleaseDocument
+    )
+
+    if ($null -eq $ReleaseDocument) {
+        throw 'GitHub release response was empty.'
+    }
+    foreach ($name in @('tag_name', 'draft', 'prerelease', 'immutable', 'html_url', 'assets')) {
+        if ($null -eq $ReleaseDocument.PSObject.Properties[$name]) {
+            throw 'GitHub release response omitted a required field.'
+        }
+    }
+    if (
+        $ReleaseDocument.tag_name -isnot [string] -or
+        $ReleaseDocument.draft -isnot [bool] -or
+        $ReleaseDocument.prerelease -isnot [bool] -or
+        $ReleaseDocument.immutable -isnot [bool] -or -not $ReleaseDocument.immutable -or
+        $ReleaseDocument.html_url -isnot [string] -or
+        $null -eq $ReleaseDocument.assets
+    ) {
+        throw 'GitHub release response field types were invalid.'
+    }
+
+    $assets = @($ReleaseDocument.assets)
+    if ($assets.Count -lt 1 -or $assets.Count -gt 256) {
+        throw 'GitHub release response asset count was outside the allowed range.'
+    }
+    $normalizedAssets = New-Object System.Collections.Generic.List[object]
+    foreach ($asset in $assets) {
+        foreach ($name in @('name', 'browser_download_url', 'size', 'state', 'content_type', 'digest')) {
+            if ($null -eq $asset -or $null -eq $asset.PSObject.Properties[$name]) {
+                throw 'GitHub release asset omitted a required field.'
+            }
+        }
+        if (
+            $asset.name -isnot [string] -or
+            $asset.browser_download_url -isnot [string] -or
+            (($asset.size -isnot [int]) -and ($asset.size -isnot [long])) -or
+            $asset.state -isnot [string] -or
+            $asset.content_type -isnot [string] -or
+            ($null -ne $asset.digest -and $asset.digest -isnot [string])
+        ) {
+            throw 'GitHub release asset field types were invalid.'
+        }
+        $normalizedAssets.Add([pscustomobject][ordered]@{
+            name                 = [string]$asset.name
+            browser_download_url = [string]$asset.browser_download_url
+            size                 = [long]$asset.size
+            state                = [string]$asset.state
+            content_type         = [string]$asset.content_type
+            digest               = if ($null -eq $asset.digest) { $null } else { [string]$asset.digest }
+        })
+    }
+
+    return [pscustomobject][ordered]@{
+        tag_name  = [string]$ReleaseDocument.tag_name
+        draft      = [bool]$ReleaseDocument.draft
+        prerelease = [bool]$ReleaseDocument.prerelease
+        immutable  = [bool]$ReleaseDocument.immutable
+        html_url   = [string]$ReleaseDocument.html_url
+        assets     = $normalizedAssets.ToArray()
+    }
+}
+
+function Get-CddsiD027GitDownloadReceiptBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt
+    )
+
+    $fields = @(
+        'SchemaVersion', 'ContractVersion', 'RunId', 'ArtifactProfile', 'ArtifactType',
+        'DescriptorId', 'MetadataBindingToken', 'DestinationPathBindingToken',
+        'FileIdentityToken', 'ArtifactSha256', 'ArtifactSizeBytes', 'SourceObservation'
+    )
+    $validNames = (
+        (Test-CddsiExactPropertySet -InputObject $Receipt -Expected $fields) -or
+        (Test-CddsiExactPropertySet -InputObject $Receipt -Expected @($fields + 'ReceiptBindingToken'))
+    )
+    if (-not $validNames) {
+        throw 'Git download receipt does not match the binding schema.'
+    }
+    if ($null -eq $Receipt.SourceObservation) {
+        throw 'Git download receipt source observation was missing.'
+    }
+    $sourceBinding = [string]$Receipt.SourceObservation.SourceObservationBindingToken
+    $parts = @(
+        'SchemaVersion={0}' -f [Convert]::ToString($Receipt.SchemaVersion, [Globalization.CultureInfo]::InvariantCulture)
+        'ContractVersion={0}' -f [string]$Receipt.ContractVersion
+        'RunId={0}' -f [string]$Receipt.RunId
+        'ArtifactProfile={0}' -f [string]$Receipt.ArtifactProfile
+        'ArtifactType={0}' -f [string]$Receipt.ArtifactType
+        'DescriptorId={0}' -f [string]$Receipt.DescriptorId
+        'MetadataBindingToken={0}' -f [string]$Receipt.MetadataBindingToken
+        'DestinationPathBindingToken={0}' -f [string]$Receipt.DestinationPathBindingToken
+        'FileIdentityToken={0}' -f [string]$Receipt.FileIdentityToken
+        'ArtifactSha256={0}' -f [string]$Receipt.ArtifactSha256
+        'ArtifactSizeBytes={0}' -f [Convert]::ToString($Receipt.ArtifactSizeBytes, [Globalization.CultureInfo]::InvariantCulture)
+        'SourceObservationBindingToken={0}' -f $sourceBinding
+    )
+    return Get-CddsiSupplyChainTextBindingToken -Text ($parts -join "`n")
+}
+
+function New-CddsiD027GitDownloadReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$ArtifactDescriptor,
+        [Parameter(Mandatory = $true)][string]$DestinationPath,
+        [Parameter(Mandatory = $true)][string]$FileIdentityToken,
+        [Parameter(Mandatory = $true)]$SourceObservation,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][ValidateSet('VmCalibration', 'VmAcceptance', 'UserLive')][string]$ArtifactProfile,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc
+    )
+
+    if (-not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller)) {
+        throw 'Git download receipt requires an exact artifact descriptor.'
+    }
+    if ($FileIdentityToken -notmatch '^[a-f0-9]{64}$') {
+        throw 'Git download receipt file identity token was invalid.'
+    }
+    if (-not (Test-CddsiSourceObservation -Observation $SourceObservation -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller -ExpectedRunId $ExpectedRunId -ExpectedProfile $ArtifactProfile -ValidationTimeUtc $ValidationTimeUtc)) {
+        throw 'Git download receipt source observation was invalid.'
+    }
+    $withoutBinding = [pscustomobject][ordered]@{
+        SchemaVersion                = 1
+        ContractVersion              = 'cddsi-d027-git-download-receipt-v1'
+        RunId                       = $ExpectedRunId
+        ArtifactProfile             = $ArtifactProfile
+        ArtifactType                = 'GitForWindowsInstaller'
+        DescriptorId                = $ArtifactDescriptor.DescriptorId
+        MetadataBindingToken        = $ArtifactDescriptor.MetadataBindingToken
+        DestinationPathBindingToken = Get-CddsiPathBindingToken -Path $DestinationPath
+        FileIdentityToken            = $FileIdentityToken
+        ArtifactSha256               = $ArtifactDescriptor.ExpectedArtifactSha256.ToLowerInvariant()
+        ArtifactSizeBytes            = [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes
+        SourceObservation            = $SourceObservation
+    }
+    $result = [ordered]@{}
+    foreach ($property in $withoutBinding.PSObject.Properties) {
+        $result[$property.Name] = $property.Value
+    }
+    $result['ReceiptBindingToken'] = Get-CddsiD027GitDownloadReceiptBindingToken -Receipt $withoutBinding
+    return [pscustomobject]$result
+}
+
+function Test-CddsiD027GitDownloadReceipt {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$Receipt,
+        [Parameter(Mandatory = $true)]$ArtifactDescriptor,
+        [Parameter(Mandatory = $true)][string]$ExpectedDestinationPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedFileIdentityToken,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][ValidateSet('VmCalibration', 'VmAcceptance', 'UserLive')][string]$ExpectedProfile,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc
+    )
+
+    $required = @(
+        'SchemaVersion', 'ContractVersion', 'RunId', 'ArtifactProfile', 'ArtifactType',
+        'DescriptorId', 'MetadataBindingToken', 'DestinationPathBindingToken',
+        'FileIdentityToken', 'ArtifactSha256', 'ArtifactSizeBytes', 'SourceObservation',
+        'ReceiptBindingToken'
+    )
+    if (-not (Test-CddsiExactPropertySet -InputObject $Receipt -Expected $required)) { return $false }
+    if (
+        -not (Test-CddsiSchemaVersionOne -Value $Receipt.SchemaVersion) -or
+        $Receipt.ContractVersion -isnot [string] -or
+        $Receipt.ContractVersion -cne 'cddsi-d027-git-download-receipt-v1' -or
+        -not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller) -or
+        $Receipt.RunId -isnot [string] -or $Receipt.RunId -cne $ExpectedRunId -or
+        $Receipt.ArtifactProfile -isnot [string] -or $Receipt.ArtifactProfile -cne $ExpectedProfile -or
+        $Receipt.ArtifactType -isnot [string] -or $Receipt.ArtifactType -cne 'GitForWindowsInstaller' -or
+        $Receipt.DescriptorId -isnot [string] -or $Receipt.DescriptorId -cne $ArtifactDescriptor.DescriptorId -or
+        $Receipt.MetadataBindingToken -isnot [string] -or $Receipt.MetadataBindingToken -cne $ArtifactDescriptor.MetadataBindingToken -or
+        $Receipt.FileIdentityToken -isnot [string] -or $Receipt.FileIdentityToken -cne $ExpectedFileIdentityToken -or
+        $Receipt.ArtifactSha256 -isnot [string] -or
+        -not (Test-CddsiArtifactHashBinding -ActualSha256 $Receipt.ArtifactSha256 -ExpectedSha256 $ArtifactDescriptor.ExpectedArtifactSha256) -or
+        (($Receipt.ArtifactSizeBytes -isnot [int]) -and
+            ($Receipt.ArtifactSizeBytes -isnot [long])) -or
+        [long]$Receipt.ArtifactSizeBytes -ne [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes
+    ) { return $false }
+    try {
+        if ($Receipt.DestinationPathBindingToken -cne (Get-CddsiPathBindingToken -Path $ExpectedDestinationPath)) { return $false }
+        if (-not (Test-CddsiSourceObservation -Observation $Receipt.SourceObservation -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller -ExpectedRunId $ExpectedRunId -ExpectedProfile $ExpectedProfile -ValidationTimeUtc $ValidationTimeUtc)) { return $false }
+        if ($Receipt.ReceiptBindingToken -isnot [string] -or $Receipt.ReceiptBindingToken -notmatch '^[a-f0-9]{64}$') { return $false }
+        return ($Receipt.ReceiptBindingToken -ceq (Get-CddsiD027GitDownloadReceiptBindingToken -Receipt $Receipt))
+    }
+    catch {
+        return $false
+    }
+}
+
+function Resolve-CddsiD027GitInstallerDescriptor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$ArtifactDescriptor,
+        [Parameter(Mandatory = $true)]$InstallerObservation
+    )
+
+    if (
+        -not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller) -or
+        $ArtifactDescriptor.MetadataStatus -cne 'UNRESOLVED' -or
+        $ArtifactDescriptor.Architecture -cne 'x64'
+    ) {
+        throw 'Git installer descriptor resolution requires an unresolved x64 descriptor.'
+    }
+    $requiredObservation = @(
+        'SchemaVersion', 'ContractVersion', 'DescriptorId', 'MetadataBindingToken',
+        'FileIdentityToken', 'ArtifactSha256', 'ArtifactSizeBytes', 'AuthenticodeStatus', 'SignatureType',
+        'ChainTrusted', 'ChainRevocationMode', 'TimestampStatus', 'TimestampChainStatus',
+        'SignerThumbprint', 'SignerSubjectToken', 'PublisherToken', 'IdentityToken', 'BootstrapPeMachine',
+        'DeclaredPayloadArchitecture', 'ArchitectureBindingSource', 'ArtifactVersion',
+        'ObservationId', 'ObservedAtUtc'
+    )
+    if (-not (Test-CddsiExactPropertySet -InputObject $InstallerObservation -Expected $requiredObservation)) {
+        throw 'Git installer observation does not match the exact schema.'
+    }
+    if (
+        -not (Test-CddsiSchemaVersionOne -Value $InstallerObservation.SchemaVersion) -or
+        $InstallerObservation.ContractVersion -isnot [string] -or
+        $InstallerObservation.ContractVersion -cne 'cddsi-d027-git-installer-observation-v1' -or
+        $InstallerObservation.DescriptorId -isnot [string] -or
+        $InstallerObservation.DescriptorId -cne $ArtifactDescriptor.DescriptorId -or
+        $InstallerObservation.MetadataBindingToken -isnot [string] -or
+        $InstallerObservation.MetadataBindingToken -cne $ArtifactDescriptor.MetadataBindingToken -or
+        $InstallerObservation.FileIdentityToken -isnot [string] -or $InstallerObservation.FileIdentityToken -notmatch '^[a-f0-9]{64}$' -or
+        $InstallerObservation.ArtifactSha256 -isnot [string] -or
+        -not (Test-CddsiArtifactHashBinding -ActualSha256 $InstallerObservation.ArtifactSha256 -ExpectedSha256 $ArtifactDescriptor.ExpectedArtifactSha256) -or
+        (($InstallerObservation.ArtifactSizeBytes -isnot [int]) -and
+            ($InstallerObservation.ArtifactSizeBytes -isnot [long])) -or
+        [long]$InstallerObservation.ArtifactSizeBytes -ne [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -or
+        $InstallerObservation.AuthenticodeStatus -isnot [string] -or $InstallerObservation.AuthenticodeStatus -cne 'Valid' -or
+        $InstallerObservation.SignatureType -isnot [string] -or $InstallerObservation.SignatureType -cne 'Authenticode' -or
+        $InstallerObservation.ChainTrusted -isnot [bool] -or -not $InstallerObservation.ChainTrusted -or
+        $InstallerObservation.ChainRevocationMode -isnot [string] -or
+        $InstallerObservation.ChainRevocationMode -cne 'NotChecked' -or
+        $InstallerObservation.TimestampStatus -isnot [string] -or $InstallerObservation.TimestampStatus -cne 'Present' -or
+        $InstallerObservation.TimestampChainStatus -isnot [string] -or
+        $InstallerObservation.TimestampChainStatus -cne 'NotIndependentlyEvaluated' -or
+        $InstallerObservation.SignerThumbprint -isnot [string] -or $InstallerObservation.SignerThumbprint -notmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' -or
+        $InstallerObservation.SignerSubjectToken -isnot [string] -or $InstallerObservation.SignerSubjectToken -cne $script:CddsiD027GitInstallerSignerSubjectToken -or
+        $InstallerObservation.PublisherToken -isnot [string] -or $InstallerObservation.PublisherToken -cne $script:CddsiD027GitInstallerPublisherToken -or
+        $InstallerObservation.IdentityToken -isnot [string] -or $InstallerObservation.IdentityToken -cne $script:CddsiD027GitInstallerIdentityToken -or
+        $InstallerObservation.BootstrapPeMachine -isnot [string] -or $InstallerObservation.BootstrapPeMachine -cne 'x86' -or
+        $InstallerObservation.DeclaredPayloadArchitecture -isnot [string] -or
+        $InstallerObservation.DeclaredPayloadArchitecture -cne 'x64' -or
+        $InstallerObservation.ArchitectureBindingSource -isnot [string] -or
+        $InstallerObservation.ArchitectureBindingSource -cne 'OfficialMetadataDigestAndFileName' -or
+        $InstallerObservation.ArtifactVersion -isnot [string] -or $InstallerObservation.ArtifactVersion -cne $ArtifactDescriptor.ReleaseVersion -or
+        -not (Test-CddsiSafeIdentifierValue -Value $InstallerObservation.ObservationId -MaxLength 128) -or
+        -not (Test-CddsiUtcTimestampValue -Value $InstallerObservation.ObservedAtUtc)
+    ) {
+        throw 'Git installer signer, publisher, identity, bootstrap or payload observation was rejected.'
+    }
+
+    $resolvedValues = [ordered]@{}
+    foreach ($property in $ArtifactDescriptor.PSObject.Properties) {
+        if ($property.Name -cne 'MetadataBindingToken') {
+            $resolvedValues[$property.Name] = $property.Value
+        }
+    }
+    $resolvedValues['ExpectedSignerThumbprint'] = $InstallerObservation.SignerThumbprint.ToLowerInvariant()
+    $resolvedValues['ExpectedSignerSubjectToken'] = $script:CddsiD027GitInstallerSignerSubjectToken
+    $resolvedValues['ExpectedPublisherToken'] = $script:CddsiD027GitInstallerPublisherToken
+    $resolvedValues['ExpectedIdentityToken'] = $script:CddsiD027GitInstallerIdentityToken
+    $resolvedValues['MetadataStatus'] = 'READY'
+    $withoutBinding = [pscustomobject]$resolvedValues
+    $resolvedValues['MetadataBindingToken'] = Get-CddsiArtifactDescriptorBindingToken -Descriptor $withoutBinding
+    $resolved = [pscustomobject]$resolvedValues
+    if (-not (Test-CddsiArtifactDescriptor -Descriptor $resolved -ExpectedArtifactType GitForWindowsInstaller -RequireResolved)) {
+        throw 'Resolved Git installer descriptor failed its immutable contract.'
+    }
+    return $resolved
+}
+
+function Get-CddsiD027GitInstallerProcessPolicy {
+    [CmdletBinding()]
+    param()
+
+    $arguments = [string[]]@(
+        '/VERYSILENT'
+        '/NORESTART'
+        '/NOCANCEL'
+        '/SP-'
+        '/SUPPRESSMSGBOXES'
+        '/NOCLOSEAPPLICATIONS'
+        '/NORESTARTAPPLICATIONS'
+        '/RESTARTEXITCODE=8'
+        '/o:PathOption=Cmd'
+        '/o:EditorOption=VIM'
+        '/COMPONENTS=gitlfs'
+    )
+    $withoutBinding = [pscustomobject][ordered]@{
+        SchemaVersion   = 1
+        UseShellExecute = $true
+        Verb            = 'runas'
+        CreateNoWindow  = $false
+        WindowStyle     = 'Normal'
+        WorkingDirectoryPolicy = 'WindowsSystemDirectory64'
+        ArgumentList    = $arguments
+        TimeoutSeconds  = 1800
+    }
+    $bindingText = @(
+        'SchemaVersion=1'
+        'UseShellExecute=true'
+        'Verb=runas'
+        'CreateNoWindow=false'
+        'WindowStyle=Normal'
+        'WorkingDirectoryPolicy=WindowsSystemDirectory64'
+        'TimeoutSeconds=1800'
+        'Arguments={0}' -f ($arguments -join "`n")
+    ) -join "`n"
+    $result = [ordered]@{}
+    foreach ($property in $withoutBinding.PSObject.Properties) {
+        $result[$property.Name] = $property.Value
+    }
+    $result['PolicyBindingToken'] = Get-CddsiSupplyChainTextBindingToken -Text $bindingText
+    return [pscustomobject]$result
+}
+
+function Assert-CddsiD027GitDirectorySecurity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ProductTemp', 'ProtectedSystem')]
+        [string]$Purpose
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not [System.IO.Path]::IsPathRooted($Path)) {
+        throw 'Git directory security validation requires an absolute path.'
+    }
+    $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+    if ([string]::IsNullOrWhiteSpace($fullPath) -or $fullPath.Length -gt 240) {
+        throw 'Git directory security validation rejected the canonical path.'
+    }
+    $item = Get-Item -LiteralPath $fullPath -Force -ErrorAction Stop
+    if (
+        -not $item.PSIsContainer -or
+        ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    ) {
+        throw 'Git directory security validation rejected the directory identity.'
+    }
+    $cursor = $fullPath
+    while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+        $cursorItem = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
+        if (($cursorItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Git directory security validation rejected a reparse-point ancestor.'
+        }
+        $parent = [System.IO.Directory]::GetParent($cursor)
+        if ($null -eq $parent) { break }
+        $cursor = $parent.FullName
+    }
+    $drive = New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($fullPath))
+    if (
+        $drive.DriveType -ne [System.IO.DriveType]::Fixed -or
+        $drive.DriveFormat -cne 'NTFS'
+    ) {
+        throw 'Git directory security validation requires fixed NTFS.'
+    }
+
+    $allowedWriterSids = @($script:CddsiGitProtectedWriterSids)
+    if ($Purpose -ceq 'ProductTemp') {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        try {
+            $allowedWriterSids += [string]$identity.User.Value
+        }
+        finally {
+            $identity.Dispose()
+        }
+    }
+    $acl = Get-Acl -LiteralPath $fullPath -ErrorAction Stop
+    $ownerSid = ([Security.Principal.NTAccount]$acl.Owner).Translate(
+        [Security.Principal.SecurityIdentifier]
+    ).Value
+    if ($allowedWriterSids -cnotcontains $ownerSid) {
+        throw 'Git directory security validation rejected the owner.'
+    }
+    $sddl = $acl.GetSecurityDescriptorSddlForm(
+        [Security.AccessControl.AccessControlSections]::Access
+    )
+    if ($sddl -notmatch '^D:' -or $sddl -match 'NO_ACCESS_CONTROL') {
+        throw 'Git directory security validation rejected a null or invalid DACL.'
+    }
+    foreach ($rule in @($acl.GetAccessRules(
+        $true,
+        $true,
+        [Security.Principal.SecurityIdentifier]
+    ))) {
+        if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
+            continue
+        }
+        $rightsBytes = [BitConverter]::GetBytes([int]$rule.FileSystemRights)
+        $rights = [BitConverter]::ToUInt32($rightsBytes, 0)
+        if (($rights -band $script:CddsiGitDangerousAccessMask) -eq 0) {
+            continue
+        }
+        $sid = ([Security.Principal.SecurityIdentifier]$rule.IdentityReference).Value
+        $creatorOwnerInheritOnly = (
+            $sid -ceq $script:CddsiGitCreatorOwnerSid -and
+            ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0
+        )
+        if ($allowedWriterSids -cnotcontains $sid -and -not $creatorOwnerInheritOnly) {
+            throw 'Git directory security validation found an untrusted writer.'
+        }
+    }
+    return $fullPath
+}
+
+function Test-CddsiD027GitPostInstallReadbackEligible {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][bool]$Started,
+        [Parameter(Mandatory = $true)][bool]$InstallerStillRunning,
+        [Parameter(Mandatory = $true)][bool]$CompletionObservationFailed,
+        [AllowNull()][Nullable[int]]$ExitCode
+    )
+
+    return (
+        $Started -and
+        -not $InstallerStillRunning -and
+        -not $CompletionObservationFailed -and
+        $null -ne $ExitCode -and
+        [int]$ExitCode -eq 0
+    )
+}
+
+function ConvertTo-CddsiD027GitInstallerExitResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][bool]$Started,
+        [Parameter(Mandatory = $true)][bool]$UacCancelled,
+        [AllowNull()][Nullable[int]]$ExitCode,
+        [Parameter(Mandatory = $true)][bool]$ReadbackTrusted,
+        [Parameter(Mandatory = $true)][bool]$ChangedObserved,
+        [Parameter(Mandatory = $true)][bool]$RestartObserved,
+        [bool]$CompletionObservationFailed = $false,
+        [bool]$InstallerStillRunning = $false,
+        [bool]$PostInstallAuthorizationInvalid = $false,
+        [bool]$ReadbackObservationFailed = $false
+    )
+
+    if ($UacCancelled -and $Started) {
+        throw 'A started installer cannot also be classified as a UAC cancellation.'
+    }
+    $status = 'FAILED'
+    $errorCode = 'GIT_INSTALL_START_FAILED'
+    $restartRequired = $false
+    if ($UacCancelled) {
+        $status = 'CANCELLED'
+        $errorCode = 'GIT_INSTALL_UAC_CANCELLED'
+    }
+    elseif (-not $Started) {
+        $status = 'FAILED'
+        $errorCode = 'GIT_INSTALL_START_FAILED'
+    }
+    elseif ($InstallerStillRunning) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALLER_STILL_RUNNING'
+    }
+    elseif ($PostInstallAuthorizationInvalid) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALL_POST_AUTHORIZATION_INVALID'
+    }
+    elseif ($RestartObserved -or ($null -ne $ExitCode -and [int]$ExitCode -eq 8)) {
+        $status = 'RESTART_REQUIRED'
+        $errorCode = 'GIT_INSTALL_RESTART_REQUIRED'
+        $restartRequired = $true
+    }
+    elseif ($CompletionObservationFailed) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALL_COMPLETION_UNKNOWN'
+    }
+    elseif ($ReadbackObservationFailed) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALL_READBACK_FAILED'
+    }
+    elseif ($null -eq $ExitCode) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALL_TIMEOUT'
+    }
+    elseif ([int]$ExitCode -eq 0 -and $ReadbackTrusted) {
+        $status = 'SUCCEEDED'
+        $errorCode = ''
+    }
+    elseif ([int]$ExitCode -eq 0) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALL_READBACK_FAILED'
+    }
+    elseif ($ChangedObserved) {
+        $status = 'PARTIAL'
+        $errorCode = 'GIT_INSTALL_NONZERO_PARTIAL'
+    }
+    else {
+        $status = 'FAILED'
+        $errorCode = 'GIT_INSTALL_NONZERO'
+    }
+    return [pscustomobject][ordered]@{
+        SchemaVersion   = 1
+        Status          = $status
+        ErrorCode       = $errorCode
+        Changed         = [bool]$ChangedObserved
+        RestartRequired = $restartRequired
+    }
+}
+
 function ConvertFrom-CddsiGitHubReleaseMetadata {
     [CmdletBinding()]
     param(
@@ -2405,13 +4331,14 @@ function ConvertFrom-CddsiGitHubReleaseMetadata {
         [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string]$Architecture
     )
 
-    if (-not (Test-CddsiExactPropertySet -InputObject $ReleaseDocument -Expected @('tag_name', 'draft', 'prerelease', 'html_url', 'assets'))) {
+    if (-not (Test-CddsiExactPropertySet -InputObject $ReleaseDocument -Expected @('tag_name', 'draft', 'prerelease', 'immutable', 'html_url', 'assets'))) {
         throw 'GitHub release document does not match the normalized exact schema.'
     }
     if (
         $ReleaseDocument.tag_name -isnot [string] -or
         $ReleaseDocument.draft -isnot [bool] -or $ReleaseDocument.draft -or
         $ReleaseDocument.prerelease -isnot [bool] -or $ReleaseDocument.prerelease -or
+        $ReleaseDocument.immutable -isnot [bool] -or -not $ReleaseDocument.immutable -or
         $ReleaseDocument.html_url -isnot [string] -or -not (Test-CddsiOfficialArtifactUri -SourceUri $ReleaseDocument.html_url -ExpectedOwner GitForWindows) -or
         $null -eq $ReleaseDocument.assets
     ) {
@@ -2445,14 +4372,19 @@ function ConvertFrom-CddsiGitHubReleaseMetadata {
         if (
             $asset.name -isnot [string] -or
             $asset.browser_download_url -isnot [string] -or -not (Test-CddsiOfficialArtifactUri -SourceUri $asset.browser_download_url -ExpectedOwner GitForWindows) -or
-            ($asset.size -isnot [int] -and $asset.size -isnot [long]) -or [long]$asset.size -lt 1 -or
+            (($asset.size -isnot [int]) -and ($asset.size -isnot [long])) -or
+            [long]$asset.size -lt 1 -or
             $asset.state -isnot [string] -or $asset.state -cne 'uploaded' -or
             $asset.content_type -isnot [string] -or [string]::IsNullOrWhiteSpace($asset.content_type) -or
             ($null -ne $asset.digest -and $asset.digest -isnot [string])
         ) {
             throw 'GitHub release asset values are invalid.'
         }
-        if ($asset.name -match $assetNamePattern) {
+        if ([regex]::IsMatch(
+            $asset.name,
+            $assetNamePattern,
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+        )) {
             if ($installerContentTypes -cnotcontains $asset.content_type) {
                 throw 'GitHub installer asset content type is invalid.'
             }
@@ -2508,6 +4440,115 @@ function Get-CddsiOfficialGitInstallerMetadata {
         [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string]$Architecture
     )
 
+    if ($Context.Mode -ceq 'Live') {
+        Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+        if ($Architecture -cne 'x64') {
+            return New-CddsiOperationResult -Operation 'ResolveGitInstallerMetadata' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_ARCHITECTURE_UNSUPPORTED' -MessageSafe 'D-027 supports only the x64 Git for Windows installer.'
+        }
+
+        $handler = $null
+        $client = $null
+        $request = $null
+        $response = $null
+        $responseStream = $null
+        $memory = $null
+        $metadataCancellation = $null
+        try {
+            Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+            $handler = New-Object System.Net.Http.HttpClientHandler
+            $handler.AllowAutoRedirect = $false
+            $handler.UseCookies = $false
+            $handler.UseDefaultCredentials = $false
+            $handler.PreAuthenticate = $false
+            $handler.AutomaticDecompression = [System.Net.DecompressionMethods]::None
+            $handler.CheckCertificateRevocationList = $true
+            $handler.SslProtocols = [System.Security.Authentication.SslProtocols]::Tls12
+            $client = New-Object System.Net.Http.HttpClient($handler, $false)
+            $client.Timeout = [TimeSpan]::FromSeconds($script:CddsiD027GitMetadataTimeoutSeconds)
+            $metadataCancellation = New-Object System.Threading.CancellationTokenSource
+            $metadataCancellation.CancelAfter(
+                [TimeSpan]::FromSeconds($script:CddsiD027GitMetadataTimeoutSeconds)
+            )
+            $request = New-Object System.Net.Http.HttpRequestMessage(
+                [System.Net.Http.HttpMethod]::Get,
+                $script:CddsiD027GitLatestReleaseApiUri
+            )
+            [void]$request.Headers.UserAgent.ParseAdd('CDDsi-D027/1.0')
+            [void]$request.Headers.Accept.ParseAdd('application/vnd.github+json')
+            [void]$request.Headers.TryAddWithoutValidation('X-GitHub-Api-Version', '2022-11-28')
+            $response = $client.SendAsync(
+                $request,
+                [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+                $metadataCancellation.Token
+            ).GetAwaiter().GetResult()
+            if ([int]$response.StatusCode -ne 200) {
+                throw 'GitHub metadata response status was not 200.'
+            }
+            if ($null -ne $response.Headers.Location) {
+                throw 'GitHub metadata endpoint redirected unexpectedly.'
+            }
+            $mediaType = if ($null -eq $response.Content.Headers.ContentType) {
+                ''
+            }
+            else {
+                [string]$response.Content.Headers.ContentType.MediaType
+            }
+            if ($mediaType -notin @('application/json', 'application/vnd.github+json')) {
+                throw 'GitHub metadata response content type was invalid.'
+            }
+            if (@($response.Content.Headers.ContentEncoding).Count -ne 0) {
+                throw 'GitHub metadata response content encoding was not allowed.'
+            }
+            $declaredLength = $response.Content.Headers.ContentLength
+            if (
+                $null -ne $declaredLength -and
+                ([long]$declaredLength -lt 1 -or [long]$declaredLength -gt $script:CddsiD027GitMetadataMaximumBytes)
+            ) {
+                throw 'GitHub metadata response length was invalid.'
+            }
+
+            $responseStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $memory = New-Object System.IO.MemoryStream
+            $buffer = New-Object byte[] 65536
+            [long]$total = 0
+            while ($true) {
+                $read = $responseStream.ReadAsync(
+                    $buffer,
+                    0,
+                    $buffer.Length,
+                    $metadataCancellation.Token
+                ).GetAwaiter().GetResult()
+                if ($read -le 0) { break }
+                $total += [long]$read
+                if ($total -gt $script:CddsiD027GitMetadataMaximumBytes) {
+                    throw 'GitHub metadata response exceeded the byte limit.'
+                }
+                $memory.Write($buffer, 0, $read)
+            }
+            if ($total -lt 1 -or ($null -ne $declaredLength -and $total -ne [long]$declaredLength)) {
+                throw 'GitHub metadata response was empty or truncated.'
+            }
+            $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+            $json = $utf8.GetString($memory.ToArray())
+            $rawDocument = $json | ConvertFrom-Json -ErrorAction Stop
+            $normalized = ConvertTo-CddsiD027NormalizedGitHubReleaseDocument -ReleaseDocument $rawDocument
+            $descriptor = ConvertFrom-CddsiGitHubReleaseMetadata -ReleaseDocument $normalized -Architecture x64
+        }
+        catch {
+            return New-CddsiOperationResult -Operation 'ResolveGitInstallerMetadata' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_METADATA_REQUEST_FAILED' -MessageSafe 'The official Git for Windows release metadata could not be resolved safely.'
+        }
+        finally {
+            if ($null -ne $memory) { $memory.Dispose() }
+            if ($null -ne $responseStream) { $responseStream.Dispose() }
+            if ($null -ne $response) { $response.Dispose() }
+            if ($null -ne $request) { $request.Dispose() }
+            if ($null -ne $metadataCancellation) { $metadataCancellation.Dispose() }
+            if ($null -ne $client) { $client.Dispose() }
+            if ($null -ne $handler) { $handler.Dispose() }
+        }
+        return New-CddsiOperationResult -Operation 'ResolveGitInstallerMetadata' -Status 'SUCCEEDED' -Mode Live -MessageSafe 'Official Git for Windows x64 version, artifact identity, length and SHA-256 metadata were resolved.' -Data $descriptor
+    }
+
     Assert-CddsiExecutionContext -ExecutionContext $Context | Out-Null
     try {
         $document = Invoke-CddsiProviderOperation -ExecutionContext $Context -Provider Network -Operation Inspect -ResourceToken '<NETWORK:GIT_FOR_WINDOWS_RELEASES_API>' -Arguments ([ordered]@{ Architecture = $Architecture })
@@ -2526,17 +4567,349 @@ function Save-CddsiOfficialGitInstaller {
         [Parameter(Mandatory = $true)][string]$DestinationPath,
         [Parameter(Mandatory = $true)]$ArtifactDescriptor,
         [ValidateSet('TestSafe', 'DryRun', 'Live')][string]$Mode = 'TestSafe',
-        [switch]$AcknowledgeRealChanges
+        [switch]$AcknowledgeRealChanges,
+        [AllowNull()][string]$ArtifactProfile = $null
     )
 
-    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
     if (-not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller)) {
         throw 'Git download plan requires an exact official artifact descriptor.'
     }
-    $pathBindingToken = Get-CddsiPathBindingToken -Path $DestinationPath
     if ($Mode -eq 'Live') {
-        Assert-CddsiMutationAllowed -ExecutionContext $Context -Operation 'DownloadGitForWindows' -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges
+        Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+        if (-not $AcknowledgeRealChanges) {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'ACTION_REQUIRED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_CONFIRMATION_REQUIRED' -MessageSafe 'Explicit confirmation is required before downloading the Git installer.'
+        }
+        if (
+            $ArtifactDescriptor.Architecture -cne 'x64' -or
+            $ArtifactDescriptor.MetadataStatus -cne 'UNRESOLVED' -or
+            $ArtifactDescriptor.ExpectedArtifactSha256 -isnot [string] -or
+            $ArtifactDescriptor.ExpectedArtifactSha256 -notmatch '^[a-f0-9]{64}$' -or
+            (($ArtifactDescriptor.ExpectedArtifactSizeBytes -isnot [int]) -and
+                ($ArtifactDescriptor.ExpectedArtifactSizeBytes -isnot [long])) -or
+            [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -lt 1 -or
+            [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -gt [long]$ArtifactDescriptor.MaximumBytes
+        ) {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_DESCRIPTOR_INVALID' -MessageSafe 'The Git installer download descriptor was not an unresolved official x64 artifact.'
+        }
+        if ([string]::IsNullOrWhiteSpace($ArtifactProfile)) {
+            $ArtifactProfile = if ($Context.Stage -in @('VmCalibration', 'VmAcceptance', 'UserLive')) {
+                [string]$Context.Stage
+            }
+            else {
+                $null
+            }
+        }
+        if ($ArtifactProfile -notin @('VmCalibration', 'VmAcceptance', 'UserLive')) {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'ACTION_REQUIRED' -Mode Live -ErrorCode 'GIT_ARTIFACT_PROFILE_REQUIRED' -MessageSafe 'A supported artifact profile is required for the Git download receipt.'
+        }
+        if (-not (Test-CddsiCanonicalUuidValue -Value $Context.RunId)) {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_RUN_ID_INVALID' -MessageSafe 'The Git download requires a canonical nonzero run identifier.'
+        }
+
+        $tempRoot = $null
+        $destination = $null
+        $expectedFileName = $null
+        try {
+            $tempRoot = [System.IO.Path]::GetFullPath([string]$Context.Paths.Temp).TrimEnd('\')
+            $destination = [System.IO.Path]::GetFullPath($DestinationPath)
+            $sourceUri = New-Object Uri($ArtifactDescriptor.SourceUri, [UriKind]::Absolute)
+            $expectedFileName = [Uri]::UnescapeDataString(
+                [System.IO.Path]::GetFileName($sourceUri.AbsolutePath)
+            )
+            if (
+                $destination.Length -gt 240 -or
+                -not [string]::Equals(
+                    [System.IO.Path]::GetDirectoryName($destination).TrimEnd('\'),
+                    $tempRoot,
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -or
+                -not [string]::Equals(
+                    [System.IO.Path]::GetFileName($destination),
+                    $expectedFileName,
+                    [StringComparison]::Ordinal
+                ) -or
+                $expectedFileName -notmatch '^Git-[0-9]+\.[0-9]+\.[0-9]+(?:\.[1-9][0-9]*)?-64-bit\.exe$' -or
+                [System.IO.File]::Exists($destination) -or
+                [System.IO.Directory]::Exists($destination)
+            ) {
+                throw 'Git download destination was outside the exact product temp file contract.'
+            }
+            Assert-CddsiD027GitDirectorySecurity -Path $tempRoot -Purpose ProductTemp |
+                Out-Null
+        }
+        catch {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_DESTINATION_UNSAFE' -MessageSafe 'The Git installer destination was not a new owner-protected file in the exact product temp directory.'
+        }
+
+        $partialPath = Join-Path $tempRoot (
+            'g-{0}-{1}.tmp' -f
+            $Context.RunId.Replace('-', '').Substring(0, 8),
+            $ArtifactDescriptor.MetadataBindingToken.Substring(0, 8)
+        )
+        if ($partialPath.Length -gt 240) {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_DESTINATION_UNSAFE' -MessageSafe 'The Git installer partial path exceeded the supported Windows path bound.'
+        }
+        if ([System.IO.File]::Exists($partialPath) -or [System.IO.Directory]::Exists($partialPath)) {
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'ACTION_REQUIRED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_PARTIAL_EXISTS' -MessageSafe 'A prior product-owned Git download partial requires explicit recovery before retrying.'
+        }
+
+        $handler = $null
+        $client = $null
+        $downloadCancellation = $null
+        $partialStream = $null
+        $sha = $null
+        $currentUri = $ArtifactDescriptor.SourceUri
+        $safeRedirectUris = New-Object System.Collections.Generic.List[string]
+        $transportUris = New-Object System.Collections.Generic.List[string]
+        $seenTransportUris = @{}
+        $transportUris.Add($currentUri)
+        $seenTransportUris[$currentUri] = $true
+        $finalSafeUri = $currentUri
+        $committed = $false
+        $partialCreated = $false
+        try {
+            Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+            $handler = New-Object System.Net.Http.HttpClientHandler
+            $handler.AllowAutoRedirect = $false
+            $handler.UseCookies = $false
+            $handler.UseDefaultCredentials = $false
+            $handler.PreAuthenticate = $false
+            $handler.AutomaticDecompression = [System.Net.DecompressionMethods]::None
+            $handler.CheckCertificateRevocationList = $true
+            $handler.SslProtocols = [System.Security.Authentication.SslProtocols]::Tls12
+            $client = New-Object System.Net.Http.HttpClient($handler, $false)
+            $client.Timeout = [TimeSpan]::FromSeconds($script:CddsiD027GitDownloadTimeoutSeconds)
+            $downloadCancellation = New-Object System.Threading.CancellationTokenSource
+            $downloadCancellation.CancelAfter(
+                [TimeSpan]::FromSeconds($script:CddsiD027GitDownloadTimeoutSeconds)
+            )
+
+            $finalResponse = $null
+            for ($redirectCount = 0; $redirectCount -le $script:CddsiD027GitDownloadMaximumRedirects; $redirectCount++) {
+                $request = $null
+                $response = $null
+                try {
+                    $request = New-Object System.Net.Http.HttpRequestMessage(
+                        [System.Net.Http.HttpMethod]::Get,
+                        $currentUri
+                    )
+                    [void]$request.Headers.UserAgent.ParseAdd('CDDsi-D027/1.0')
+                    [void]$request.Headers.Accept.ParseAdd('application/octet-stream')
+                    $response = $client.SendAsync(
+                        $request,
+                        [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+                        $downloadCancellation.Token
+                    ).GetAwaiter().GetResult()
+                    $statusCode = [int]$response.StatusCode
+                    if ($statusCode -in @(301, 302, 303, 307, 308)) {
+                        if ($redirectCount -ge $script:CddsiD027GitDownloadMaximumRedirects) {
+                            throw 'Git installer redirect limit was exceeded.'
+                        }
+                        $location = $response.Headers.Location
+                        if ($null -eq $location) {
+                            throw 'Git installer redirect omitted Location.'
+                        }
+                        $baseUri = New-Object Uri($currentUri, [UriKind]::Absolute)
+                        $nextUriObject = if ($location.IsAbsoluteUri) {
+                            $location
+                        }
+                        else {
+                            New-Object Uri($baseUri, $location)
+                        }
+                        $nextUri = $nextUriObject.AbsoluteUri
+                        if (
+                            $nextUri.Length -gt 12288 -or
+                            $nextUriObject.Scheme -cne 'https' -or
+                            -not $nextUriObject.IsDefaultPort -or
+                            -not [string]::IsNullOrEmpty($nextUriObject.UserInfo) -or
+                            -not [string]::IsNullOrEmpty($nextUriObject.Fragment) -or
+                            $nextUriObject.DnsSafeHost.ToLowerInvariant() -cne 'release-assets.githubusercontent.com' -or
+                            -not [regex]::IsMatch(
+                                $nextUriObject.AbsolutePath,
+                                '^/github-production-release-asset/[1-9][0-9]*/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                                [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+                            ) -or
+                            $seenTransportUris.ContainsKey($nextUri)
+                        ) {
+                            throw 'Git installer redirect target was not an allowed GitHub release asset URI.'
+                        }
+                        $safeUri = $nextUriObject.GetLeftPart([UriPartial]::Path)
+                        if (-not (Test-CddsiOfficialArtifactRedirectUri -SourceUri $safeUri -ExpectedOwner GitForWindows)) {
+                            throw 'Git installer redirect receipt URI was invalid.'
+                        }
+                        $seenTransportUris[$nextUri] = $true
+                        $transportUris.Add($nextUri)
+                        $safeRedirectUris.Add($safeUri)
+                        $currentUri = $nextUri
+                        $finalSafeUri = $safeUri
+                        continue
+                    }
+                    if ($statusCode -ne 200) {
+                        throw 'Git installer response status was not 200.'
+                    }
+                    $finalResponse = $response
+                    $response = $null
+                    break
+                }
+                finally {
+                    if ($null -ne $response) { $response.Dispose() }
+                    if ($null -ne $request) { $request.Dispose() }
+                }
+            }
+            if ($null -eq $finalResponse) {
+                throw 'Git installer response did not reach a final artifact.'
+            }
+            try {
+                $contentLength = $finalResponse.Content.Headers.ContentLength
+                $contentType = if ($null -eq $finalResponse.Content.Headers.ContentType) {
+                    ''
+                }
+                else {
+                    [string]$finalResponse.Content.Headers.ContentType.MediaType
+                }
+                if (
+                    $null -eq $contentLength -or
+                    [long]$contentLength -ne [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -or
+                    [long]$contentLength -gt [long]$ArtifactDescriptor.MaximumBytes -or
+                    $contentType -notin @('application/octet-stream', 'application/executable', 'application/x-msdownload') -or
+                    @($finalResponse.Content.Headers.ContentEncoding).Count -ne 0
+                ) {
+                    throw 'Git installer response length, MIME type or encoding was invalid.'
+                }
+                $networkStream = $null
+                try {
+                    $networkStream = $finalResponse.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+                    $partialStream = New-Object System.IO.FileStream(
+                        $partialPath,
+                        [System.IO.FileMode]::CreateNew,
+                        [System.IO.FileAccess]::Write,
+                        [System.IO.FileShare]::None,
+                        65536,
+                        [System.IO.FileOptions]::WriteThrough
+                    )
+                    $partialCreated = $true
+                    $sha = [System.Security.Cryptography.SHA256]::Create()
+                    $buffer = New-Object byte[] 65536
+                    [long]$total = 0
+                    while ($true) {
+                        $read = $networkStream.ReadAsync(
+                            $buffer,
+                            0,
+                            $buffer.Length,
+                            $downloadCancellation.Token
+                        ).GetAwaiter().GetResult()
+                        if ($read -le 0) { break }
+                        if (($total + [long]$read) -gt [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes) {
+                            throw 'Git installer response exceeded the expected length.'
+                        }
+                        $partialStream.Write($buffer, 0, $read)
+                        [void]$sha.TransformBlock($buffer, 0, $read, $buffer, 0)
+                        $total += [long]$read
+                    }
+                    [void]$sha.TransformFinalBlock((New-Object byte[] 0), 0, 0)
+                    $downloadHash = ([BitConverter]::ToString($sha.Hash)).Replace('-', '').ToLowerInvariant()
+                    if (
+                        $total -ne [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -or
+                        -not (Test-CddsiArtifactHashBinding -ActualSha256 $downloadHash -ExpectedSha256 $ArtifactDescriptor.ExpectedArtifactSha256)
+                    ) {
+                        throw 'Git installer response was truncated or its SHA-256 did not match.'
+                    }
+                    $partialStream.Flush($true)
+                }
+                finally {
+                    if ($null -ne $sha) {
+                        $sha.Dispose()
+                        $sha = $null
+                    }
+                    if ($null -ne $partialStream) {
+                        $partialStream.Dispose()
+                        $partialStream = $null
+                    }
+                    if ($null -ne $networkStream) { $networkStream.Dispose() }
+                }
+            }
+            finally {
+                $finalResponse.Dispose()
+            }
+
+            $readbackHash = (Get-FileHash -LiteralPath $partialPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+            $readbackItem = Get-Item -LiteralPath $partialPath -Force -ErrorAction Stop
+            if (
+                $readbackItem.PSIsContainer -or
+                ($readbackItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                [long]$readbackItem.Length -ne [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -or
+                -not (Test-CddsiArtifactHashBinding -ActualSha256 $readbackHash -ExpectedSha256 $ArtifactDescriptor.ExpectedArtifactSha256)
+            ) {
+                throw 'Git installer committed-file readback failed.'
+            }
+            [System.IO.File]::Move($partialPath, $destination)
+            $committed = $true
+
+            $pathBindingToken = Get-CddsiPathBindingToken -Path $destination
+            $fileIdentityToken = Get-CddsiSupplyChainTextBindingToken -Text (
+                '{0}|{1}|{2}' -f
+                $pathBindingToken,
+                $readbackHash,
+                [long]$readbackItem.Length
+            )
+            $observedAt = [DateTimeOffset]::UtcNow.ToString(
+                'yyyy-MM-ddTHH:mm:ssZ',
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+            $redirectArray = $safeRedirectUris.ToArray()
+            $sourceWithoutBinding = [pscustomobject][ordered]@{
+                SchemaVersion = 1
+                ContractVersion = 'cddsi-source-observation-v1'
+                RunId = $Context.RunId
+                ArtifactProfile = $ArtifactProfile
+                DescriptorId = $ArtifactDescriptor.DescriptorId
+                MetadataBindingToken = $ArtifactDescriptor.MetadataBindingToken
+                RequestUri = $ArtifactDescriptor.SourceUri
+                FinalUri = $finalSafeUri
+                RedirectUris = $redirectArray
+                RedirectChainBindingToken = Get-CddsiSupplyChainTextBindingToken -Text (
+                    (@($ArtifactDescriptor.SourceUri) + @($redirectArray)) -join "`n"
+                )
+                RedirectCount = $redirectArray.Count
+                ArtifactSha256 = $readbackHash
+                ArtifactSizeBytes = [long]$readbackItem.Length
+                ObservationId = 'git-download-' + $Context.RunId
+                ObservedAtUtc = $observedAt
+            }
+            $sourceValues = [ordered]@{}
+            foreach ($property in $sourceWithoutBinding.PSObject.Properties) {
+                $sourceValues[$property.Name] = $property.Value
+            }
+            $sourceValues['SourceObservationBindingToken'] = Get-CddsiSourceObservationBindingToken -Observation $sourceWithoutBinding
+            $sourceObservation = [pscustomobject]$sourceValues
+            $receipt = New-CddsiD027GitDownloadReceipt -ArtifactDescriptor $ArtifactDescriptor -DestinationPath $destination -FileIdentityToken $fileIdentityToken -SourceObservation $sourceObservation -ExpectedRunId $Context.RunId -ArtifactProfile $ArtifactProfile -ValidationTimeUtc $observedAt
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'SUCCEEDED' -Changed $true -Mode Live -MessageSafe 'The official Git for Windows installer was downloaded, length-checked, hashed, read back and committed to product temp.' -Data $receipt
+        }
+        catch {
+            if ($partialCreated -or $committed) {
+                $recoveryPath = if ($committed) { $destination } else { $partialPath }
+                $recovery = [pscustomobject][ordered]@{
+                    SchemaVersion = 1
+                    ArtifactType = 'GitForWindowsInstaller'
+                    RecoveryPathBindingToken = Get-CddsiPathBindingToken -Path $recoveryPath
+                    PartialCreated = $partialCreated
+                    DestinationCommitted = $committed
+                }
+                return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'PARTIAL' -Changed $true -Mode Live -ErrorCode 'GIT_DOWNLOAD_RECOVERY_REQUIRED' -MessageSafe 'The Git download was not accepted; a run-owned temp path may remain and requires identity-checked recovery.' -Data $recovery
+            }
+            return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_FAILED' -MessageSafe 'The official Git for Windows installer download failed closed and no artifact was accepted.'
+        }
+        finally {
+            if ($null -ne $sha) { $sha.Dispose() }
+            if ($null -ne $partialStream) { $partialStream.Dispose() }
+            if ($null -ne $downloadCancellation) { $downloadCancellation.Dispose() }
+            if ($null -ne $client) { $client.Dispose() }
+            if ($null -ne $handler) { $handler.Dispose() }
+        }
     }
+
+    Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
+    $pathBindingToken = Get-CddsiPathBindingToken -Path $DestinationPath
     $data = [pscustomobject][ordered]@{
         SchemaVersion         = 1
         ArtifactType         = 'GitForWindowsInstaller'
@@ -2550,6 +4923,177 @@ function Save-CddsiOfficialGitInstaller {
     return New-CddsiOperationResult -Operation 'DownloadGitForWindows' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode $errorCode -MessageSafe 'No network or file write occurred; only an immutable download/cache plan was returned.' -Data $data -PlannedChanges @('<DOWNLOAD:GIT_FOR_WINDOWS_INSTALLER>')
 }
 
+function Get-CddsiD027GitInstallerObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][string]$InstallerPath,
+        [Parameter(Mandatory = $true)]$ArtifactDescriptor
+    )
+
+    Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+    if (
+        -not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller) -or
+        $ArtifactDescriptor.Architecture -cne 'x64'
+    ) {
+        return New-CddsiOperationResult -Operation 'ObserveGitInstaller' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALLER_DESCRIPTOR_INVALID' -MessageSafe 'The Git installer observation requires an exact official x64 descriptor.'
+    }
+
+    $stream = $null
+    $sha = $null
+    try {
+        $path = [System.IO.Path]::GetFullPath($InstallerPath)
+        $tempRoot = [System.IO.Path]::GetFullPath([string]$Context.Paths.Temp).TrimEnd('\')
+        $sourceUri = New-Object Uri($ArtifactDescriptor.SourceUri, [UriKind]::Absolute)
+        $expectedFileName = [Uri]::UnescapeDataString(
+            [System.IO.Path]::GetFileName($sourceUri.AbsolutePath)
+        )
+        if (
+            -not [string]::Equals(
+                [System.IO.Path]::GetDirectoryName($path).TrimEnd('\'),
+                $tempRoot,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            -not [string]::Equals(
+                [System.IO.Path]::GetFileName($path),
+                $expectedFileName,
+                [StringComparison]::Ordinal
+            )
+        ) {
+            throw 'Git installer path escaped the exact product temp artifact.'
+        }
+        $stream = [System.IO.File]::Open(
+            $path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+        )
+        $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        if (
+            $item.PSIsContainer -or
+            ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            [long]$item.Length -ne [long]$ArtifactDescriptor.ExpectedArtifactSizeBytes -or
+            [long]$stream.Length -ne [long]$item.Length
+        ) {
+            throw 'Git installer type or length was invalid.'
+        }
+
+        $headerLength = [int][Math]::Min([long]4096, [long]$stream.Length)
+        $header = New-Object byte[] $headerLength
+        $headerOffset = 0
+        while ($headerOffset -lt $headerLength) {
+            $read = $stream.Read($header, $headerOffset, $headerLength - $headerOffset)
+            if ($read -le 0) { break }
+            $headerOffset += $read
+        }
+        if ($headerOffset -ne $headerLength) {
+            throw 'Git installer PE header was truncated.'
+        }
+        $bootstrapPeMachine = ConvertFrom-CddsiGitPeHeader -HeaderBytes $header -ImageLength ([long]$stream.Length)
+        $stream.Position = 0
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $hashBytes = $sha.ComputeHash($stream)
+        $artifactSha256 = ([BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant()
+        if (-not (Test-CddsiArtifactHashBinding -ActualSha256 $artifactSha256 -ExpectedSha256 $ArtifactDescriptor.ExpectedArtifactSha256)) {
+            throw 'Git installer SHA-256 did not match official metadata.'
+        }
+
+        $signature = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
+        $winTrustResult = Get-CddsiD027GitWinVerifyTrustResult `
+            -ExecutionContext $Context `
+            -FilePath $path
+        $versionInfo = $item.VersionInfo
+        $authenticodeStatus = [string]$signature.Status
+        $signatureType = [string]$signature.SignatureType
+        $signerSubject = if ($null -eq $signature.SignerCertificate) {
+            ''
+        }
+        else {
+            [string]$signature.SignerCertificate.Subject
+        }
+        $signerThumbprint = if ($null -eq $signature.SignerCertificate) {
+            ''
+        }
+        else {
+            ([string]$signature.SignerCertificate.Thumbprint).ToLowerInvariant()
+        }
+        $timestampPresent = ($null -ne $signature.TimeStamperCertificate)
+        $fileDescription = if ($null -eq $versionInfo.FileDescription) { '' } else { $versionInfo.FileDescription.Trim() }
+        $productName = if ($null -eq $versionInfo.ProductName) { '' } else { $versionInfo.ProductName.Trim() }
+        $companyName = if ($null -eq $versionInfo.CompanyName) { '' } else { $versionInfo.CompanyName.Trim() }
+        $fileVersion = if ($null -eq $versionInfo.FileVersion) { '' } else { $versionInfo.FileVersion.Trim() }
+        $productVersion = if ($null -eq $versionInfo.ProductVersion) { '' } else { $versionInfo.ProductVersion.Trim() }
+        if (
+            $authenticodeStatus -cne 'Valid' -or
+            $signatureType -cne 'Authenticode' -or
+            -not $winTrustResult.Trusted -or
+            -not $timestampPresent -or
+            -not [regex]::IsMatch(
+                $signerSubject,
+                $script:CddsiGitExecutableSignerSubjectPattern,
+                [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+            ) -or
+            $signerThumbprint -notmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$'
+        ) {
+            return New-CddsiOperationResult -Operation 'ObserveGitInstaller' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALLER_SIGNATURE_INVALID' -MessageSafe 'The Git installer Authenticode signature, trusted signer or timestamp was invalid.'
+        }
+        if (
+            $bootstrapPeMachine -cne 'x86' -or
+            $fileDescription -cne 'Git Setup' -or
+            $productName -cne 'Git' -or
+            $companyName -cne 'The Git Development Community' -or
+            $fileVersion -cne $ArtifactDescriptor.ReleaseVersion -or
+            $productVersion -cne $ArtifactDescriptor.ReleaseVersion
+        ) {
+            return New-CddsiOperationResult -Operation 'ObserveGitInstaller' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALLER_IDENTITY_INVALID' -MessageSafe 'The Git installer bootstrap, publisher, product or version identity was invalid.'
+        }
+        $pathBindingToken = Get-CddsiPathBindingToken -Path $path
+        $fileIdentityToken = Get-CddsiSupplyChainTextBindingToken -Text (
+            '{0}|{1}|{2}' -f
+            $pathBindingToken,
+            $artifactSha256,
+            [long]$item.Length
+        )
+        $observedAt = [DateTimeOffset]::UtcNow.ToString(
+            'yyyy-MM-ddTHH:mm:ssZ',
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+        $observation = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-git-installer-observation-v1'
+            DescriptorId = $ArtifactDescriptor.DescriptorId
+            MetadataBindingToken = $ArtifactDescriptor.MetadataBindingToken
+            FileIdentityToken = $fileIdentityToken
+            ArtifactSha256 = $artifactSha256
+            ArtifactSizeBytes = [long]$item.Length
+            AuthenticodeStatus = 'Valid'
+            SignatureType = 'Authenticode'
+            ChainTrusted = [bool]$winTrustResult.Trusted
+            ChainRevocationMode = $winTrustResult.RevocationMode
+            TimestampStatus = 'Present'
+            TimestampChainStatus = 'NotIndependentlyEvaluated'
+            SignerThumbprint = $signerThumbprint
+            SignerSubjectToken = $script:CddsiD027GitInstallerSignerSubjectToken
+            PublisherToken = $script:CddsiD027GitInstallerPublisherToken
+            IdentityToken = $script:CddsiD027GitInstallerIdentityToken
+            BootstrapPeMachine = 'x86'
+            DeclaredPayloadArchitecture = 'x64'
+            ArchitectureBindingSource = 'OfficialMetadataDigestAndFileName'
+            ArtifactVersion = $ArtifactDescriptor.ReleaseVersion
+            ObservationId = 'git-installer-' + $Context.RunId
+            ObservedAtUtc = $observedAt
+        }
+        return New-CddsiOperationResult -Operation 'ObserveGitInstaller' -Status 'SUCCEEDED' -Mode Live -MessageSafe 'The Git installer hash, embedded Authenticode signer, publisher, x86 bootstrap and metadata-bound x64 target were verified.' -Data $observation
+    }
+    catch {
+        return New-CddsiOperationResult -Operation 'ObserveGitInstaller' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALLER_OBSERVATION_FAILED' -MessageSafe 'The Git installer could not be observed safely.'
+    }
+    finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+        if ($null -ne $stream) { $stream.Dispose() }
+    }
+}
+
 function Test-CddsiGitInstallerSignature {
     [CmdletBinding()]
     param(
@@ -2560,6 +5104,115 @@ function Test-CddsiGitInstallerSignature {
         [Parameter(Mandatory = $true)][ValidateSet('VmCalibration', 'VmAcceptance', 'UserLive')][string]$ArtifactProfile,
         [Parameter(Mandatory = $true)][string]$ValidationTimeUtc
     )
+
+    if ($Context.Mode -ceq 'Live') {
+        Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+        if (
+            -not (Test-CddsiCanonicalUuidValue -Value $Context.RunId) -or
+            -not (Test-CddsiUtcTimestampValue -Value $ValidationTimeUtc)
+        ) {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_SIGNATURE_CONTEXT_INVALID' -MessageSafe 'The Git signature verification context or validation time was invalid.'
+        }
+        $callerValidation = [DateTimeOffset]::Parse($ValidationTimeUtc)
+        $clockNow = [DateTimeOffset]::UtcNow
+        if ([Math]::Abs(($clockNow - $callerValidation).TotalSeconds) -gt 300) {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_SIGNATURE_CLOCK_INVALID' -MessageSafe 'The Git signature validation time was not close to the current trusted clock.'
+        }
+        if (
+            -not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller) -or
+            $ArtifactDescriptor.MetadataStatus -cne 'UNRESOLVED' -or
+            $ArtifactDescriptor.Architecture -cne 'x64'
+        ) {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_ARTIFACT_CONTRACT_INVALID' -MessageSafe 'Live Git verification requires the unresolved official x64 metadata descriptor.'
+        }
+
+        $receipt = $SourceObservation
+        if (
+            $null -ne $receipt -and
+            $null -ne $receipt.PSObject.Properties['Data'] -and
+            $receipt.Status -ceq 'SUCCEEDED'
+        ) {
+            $receipt = $receipt.Data
+        }
+        $installerObservationResult = Get-CddsiD027GitInstallerObservation -ExecutionContext $Context -InstallerPath $InstallerPath -ArtifactDescriptor $ArtifactDescriptor
+        if ($installerObservationResult.Status -cne 'SUCCEEDED') {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode $installerObservationResult.ErrorCode -MessageSafe 'The Git installer signature or identity observation failed closed.'
+        }
+        $installerObservation = $installerObservationResult.Data
+        $validationNow = [DateTimeOffset]::UtcNow.ToString(
+            'yyyy-MM-ddTHH:mm:ssZ',
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+        if (-not (Test-CddsiD027GitDownloadReceipt -Receipt $receipt -ArtifactDescriptor $ArtifactDescriptor -ExpectedDestinationPath $InstallerPath -ExpectedFileIdentityToken $installerObservation.FileIdentityToken -ExpectedRunId $Context.RunId -ExpectedProfile $ArtifactProfile -ValidationTimeUtc $validationNow)) {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_DOWNLOAD_RECEIPT_INVALID' -MessageSafe 'The Git download receipt was stale, tampered or not bound to the installer bytes.'
+        }
+        try {
+            $resolvedDescriptor = Resolve-CddsiD027GitInstallerDescriptor -ArtifactDescriptor $ArtifactDescriptor -InstallerObservation $installerObservation
+            $originalSource = $receipt.SourceObservation
+            $resolvedSourceWithoutBinding = [pscustomobject][ordered]@{
+                SchemaVersion = $originalSource.SchemaVersion
+                ContractVersion = $originalSource.ContractVersion
+                RunId = $originalSource.RunId
+                ArtifactProfile = $originalSource.ArtifactProfile
+                DescriptorId = $originalSource.DescriptorId
+                MetadataBindingToken = $resolvedDescriptor.MetadataBindingToken
+                RequestUri = $originalSource.RequestUri
+                FinalUri = $originalSource.FinalUri
+                RedirectUris = @($originalSource.RedirectUris)
+                RedirectChainBindingToken = $originalSource.RedirectChainBindingToken
+                RedirectCount = $originalSource.RedirectCount
+                ArtifactSha256 = $originalSource.ArtifactSha256
+                ArtifactSizeBytes = $originalSource.ArtifactSizeBytes
+                ObservationId = $originalSource.ObservationId
+                ObservedAtUtc = $originalSource.ObservedAtUtc
+            }
+            $resolvedSourceValues = [ordered]@{}
+            foreach ($property in $resolvedSourceWithoutBinding.PSObject.Properties) {
+                $resolvedSourceValues[$property.Name] = $property.Value
+            }
+            $resolvedSourceValues['SourceObservationBindingToken'] = Get-CddsiSourceObservationBindingToken -Observation $resolvedSourceWithoutBinding
+            $resolvedSource = [pscustomobject]$resolvedSourceValues
+            $fileObservation = [pscustomobject][ordered]@{
+                SchemaVersion = 1
+                FileIdentityToken = $installerObservation.FileIdentityToken
+                ArtifactSha256 = $installerObservation.ArtifactSha256
+                ArtifactSizeBytes = [long]$installerObservation.ArtifactSizeBytes
+            }
+            $signatureObservation = [pscustomobject][ordered]@{
+                SchemaVersion = 1
+                ArtifactSha256 = $installerObservation.ArtifactSha256
+                AuthenticodeStatus = $installerObservation.AuthenticodeStatus
+                ChainTrusted = [bool]$installerObservation.ChainTrusted
+                SignerThumbprint = $installerObservation.SignerThumbprint
+                SignerSubjectToken = $installerObservation.SignerSubjectToken
+                PublisherToken = $installerObservation.PublisherToken
+                IdentityToken = $installerObservation.IdentityToken
+                Architecture = $installerObservation.DeclaredPayloadArchitecture
+                ArtifactVersion = $installerObservation.ArtifactVersion
+                ObservationId = $installerObservation.ObservationId
+                ObservedAtUtc = $installerObservation.ObservedAtUtc
+            }
+            $evidence = New-CddsiSignatureEvidenceVerdict -Descriptor $resolvedDescriptor -ExpectedArtifactType GitForWindowsInstaller -PathBindingToken (Get-CddsiPathBindingToken -Path $InstallerPath) -SourceObservation $resolvedSource -FileObservation $fileObservation -SignatureObservation $signatureObservation -ExpectedRunId $Context.RunId -ExpectedProfile $ArtifactProfile -ValidationTimeUtc $validationNow
+        }
+        catch {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_SIGNATURE_REJECTED' -MessageSafe 'The Git installer signer, publisher, identity or immutable binding was rejected.'
+        }
+        if (-not $evidence.Valid) {
+            return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_SIGNATURE_REJECTED' -MessageSafe 'The Git installer signature evidence did not match the official artifact contract.'
+        }
+        $bundle = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-git-verification-bundle-v1'
+            ResolvedDescriptor = $resolvedDescriptor
+            ResolvedSourceObservation = $resolvedSource
+            SignatureEvidence = $evidence
+            SignatureType = $installerObservation.SignatureType
+            ChainRevocationMode = $installerObservation.ChainRevocationMode
+            ValidationTimeUtc = $validationNow
+            DownloadReceiptBindingToken = $receipt.ReceiptBindingToken
+        }
+        return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'SUCCEEDED' -Mode Live -MessageSafe 'The Git installer embedded signature, publisher, identity, x86 bootstrap and metadata-bound x64 target contract were verified.' -Data $bundle
+    }
 
     Assert-CddsiExecutionContext -ExecutionContext $Context | Out-Null
     if (-not (Test-CddsiArtifactDescriptor -Descriptor $ArtifactDescriptor -ExpectedArtifactType GitForWindowsInstaller -RequireResolved)) {
@@ -2580,6 +5233,175 @@ function Test-CddsiGitInstallerSignature {
     return New-CddsiOperationResult -Operation 'VerifyGitInstallerSignature' -Status 'SUCCEEDED' -Mode $Context.Mode -MessageSafe 'Synthetic Git signature evidence v2 is fully bound.' -Data $evidence
 }
 
+function Get-CddsiD027GitPersistentPathObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][Alias('ExecutionContext')]$Context,
+        [Parameter(Mandatory = $true)][string]$ExpectedArtifactVersion
+    )
+
+    Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+    $parsedVersion = $null
+    if (
+        -not (Test-CddsiCanonicalUuidValue -Value $Context.RunId) -or
+        -not [version]::TryParse($ExpectedArtifactVersion, [ref]$parsedVersion) -or
+        $parsedVersion.Revision -lt 1
+    ) {
+        throw 'Persistent Git PATH readback requires an exact four-component artifact version.'
+    }
+    $expectedGitVersion = '{0}.{1}.{2}.windows.{3}' -f (
+        $parsedVersion.Major,
+        $parsedVersion.Minor,
+        $parsedVersion.Build,
+        $parsedVersion.Revision
+    )
+
+    $machineBase = $null
+    $machineKey = $null
+    $userKey = $null
+    $priorProcessPath = [Environment]::GetEnvironmentVariable('Path', 'Process')
+    try {
+        $machineBase = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine,
+            [Microsoft.Win32.RegistryView]::Registry64
+        )
+        $machineKey = $machineBase.OpenSubKey(
+            'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
+            $false
+        )
+        $userKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+        if ($null -eq $machineKey) {
+            throw 'Machine environment registry key was missing.'
+        }
+        $readPathValue = {
+            param(
+                [AllowNull()]$RegistryKey,
+                [bool]$Required
+            )
+
+            if ($null -eq $RegistryKey) {
+                if ($Required) { throw 'Required PATH registry key was missing.' }
+                return [pscustomobject][ordered]@{ Kind = 'Missing'; Value = '' }
+            }
+            $pathNames = @(
+                $RegistryKey.GetValueNames() |
+                    Where-Object { [string]::Equals($_, 'Path', [StringComparison]::OrdinalIgnoreCase) }
+            )
+            if ($pathNames.Count -eq 0) {
+                if ($Required) { throw 'Required PATH registry value was missing.' }
+                return [pscustomobject][ordered]@{ Kind = 'Missing'; Value = '' }
+            }
+            if ($pathNames.Count -ne 1) {
+                throw 'PATH registry value identity was ambiguous.'
+            }
+            $valueName = [string]$pathNames[0]
+            $kind = $RegistryKey.GetValueKind($valueName)
+            if ($kind -notin @(
+                [Microsoft.Win32.RegistryValueKind]::String,
+                [Microsoft.Win32.RegistryValueKind]::ExpandString
+            )) {
+                throw 'PATH registry kind was invalid.'
+            }
+            $value = $RegistryKey.GetValue(
+                $valueName,
+                $null,
+                [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+            )
+            if ($value -isnot [string] -or $value.Length -gt 32767 -or $value.Contains([char]0)) {
+                throw 'PATH registry value was invalid.'
+            }
+            return [pscustomobject][ordered]@{
+                Kind = [string]$kind
+                Value = $value
+            }
+        }
+
+        $machineBefore = & $readPathValue $machineKey $true
+        $userBefore = & $readPathValue $userKey $false
+        $machinePath = $machineBefore.Value
+        $userPath = $userBefore.Value
+        $effectivePath = if ([string]::IsNullOrEmpty($userPath)) {
+            $machinePath
+        }
+        elseif ([string]::IsNullOrEmpty($machinePath)) {
+            $userPath
+        }
+        else {
+            $machinePath.TrimEnd(';') + ';' + $userPath.TrimStart(';')
+        }
+        [Environment]::SetEnvironmentVariable('Path', $effectivePath, 'Process')
+        $gitObservation = Get-CddsiLiveGitForWindowsObservation -ExecutionContext $Context -MinimumVersion $ExpectedArtifactVersion
+        $machineAfter = & $readPathValue $machineKey $true
+        $userAfter = & $readPathValue $userKey $false
+        $pathStable = (
+            $machineAfter.Kind -ceq $machineBefore.Kind -and
+            [string]::Equals($machineAfter.Value, $machineBefore.Value, [StringComparison]::Ordinal) -and
+            $userAfter.Kind -ceq $userBefore.Kind -and
+            [string]::Equals($userAfter.Value, $userBefore.Value, [StringComparison]::Ordinal)
+        )
+        $trusted = (
+            $pathStable -and
+            $gitObservation.Status -ceq 'SUCCEEDED' -and
+            $gitObservation.Data.CapabilityStatus -ceq 'READY' -and
+            $gitObservation.Data.ReuseEligible -eq $true -and
+            $gitObservation.Data.Version -ceq $expectedGitVersion -and
+            $gitObservation.Data.Source -ceq 'GitForWindows' -and
+            $gitObservation.Data.IdentityStatus -ceq 'Trusted' -and
+            $gitObservation.Data.CapabilityState -ceq 'Operational'
+        )
+        $pathReceiptToken = Get-CddsiSupplyChainTextBindingToken -Text (
+            @(
+                'RunId={0}' -f $Context.RunId
+                'MachineKind={0}' -f $machineBefore.Kind
+                'MachinePathSha256={0}' -f (Get-CddsiSupplyChainTextBindingToken -Text $machineBefore.Value)
+                'UserKind={0}' -f $userBefore.Kind
+                'UserPathSha256={0}' -f (Get-CddsiSupplyChainTextBindingToken -Text $userBefore.Value)
+                'ExpectedGitVersion={0}' -f $expectedGitVersion
+                'ObservedExecutableToken={0}' -f (
+                    if ($null -eq $gitObservation.Data) { '' } else { $gitObservation.Data.ExecutableToken }
+                )
+                'ObservedGitVersion={0}' -f (
+                    if ($null -eq $gitObservation.Data) { '' } else { $gitObservation.Data.Version }
+                )
+                'CapabilityStatus={0}' -f (
+                    if ($null -eq $gitObservation.Data) { 'UNKNOWN' } else { $gitObservation.Data.CapabilityStatus }
+                )
+                'PathStable={0}' -f $pathStable.ToString().ToLowerInvariant()
+            ) -join "`n"
+        )
+        return New-CddsiOperationResult -Operation 'ObserveGitPersistentPath' -Status 'SUCCEEDED' -Mode Live -MessageSafe 'Machine and user PATH were read back and evaluated through the protected Git observer.' -Data ([pscustomobject][ordered]@{
+            SchemaVersion = 1
+            PathReadbackStatus = if ($trusted) { 'Trusted' } else { 'Untrusted' }
+            PathReceiptBindingToken = $pathReceiptToken
+            ExpectedGitVersion = $expectedGitVersion
+            ObservedGitVersion = if ($null -eq $gitObservation.Data) { $null } else { $gitObservation.Data.Version }
+            ObservedExecutableToken = if ($null -eq $gitObservation.Data) { $null } else { $gitObservation.Data.ExecutableToken }
+            CapabilityStatus = if ($null -eq $gitObservation.Data) { 'UNKNOWN' } else { $gitObservation.Data.CapabilityStatus }
+            ReasonCodes = if ($trusted) {
+                @()
+            }
+            elseif (-not $pathStable) {
+                @('GIT_PERSISTENT_PATH_CHANGED_DURING_READBACK')
+            }
+            elseif ($null -eq $gitObservation.Data) {
+                @('GIT_PATH_READBACK_FAILED')
+            }
+            else {
+                @($gitObservation.Data.ReasonCodes)
+            }
+        })
+    }
+    catch {
+        return New-CddsiOperationResult -Operation 'ObserveGitPersistentPath' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_PATH_READBACK_FAILED' -MessageSafe 'The persistent machine and user PATH could not be read back safely.'
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('Path', $priorProcessPath, 'Process')
+        if ($null -ne $userKey) { $userKey.Dispose() }
+        if ($null -ne $machineKey) { $machineKey.Dispose() }
+        if ($null -ne $machineBase) { $machineBase.Dispose() }
+    }
+}
+
 function Install-CddsiGitForWindows {
     [CmdletBinding()]
     param(
@@ -2591,8 +5413,372 @@ function Install-CddsiGitForWindows {
         [Parameter(Mandatory = $true)][ValidateSet('VmCalibration', 'VmAcceptance', 'UserLive')][string]$ArtifactProfile,
         [Parameter(Mandatory = $true)][string]$ValidationTimeUtc,
         [ValidateSet('TestSafe', 'DryRun', 'Live')][string]$Mode = 'TestSafe',
-        [switch]$AcknowledgeRealChanges
+        [switch]$AcknowledgeRealChanges,
+        [AllowNull()][string]$ExternalSnapshotAuthorizationBindingToken = $null
     )
+
+    if ($Mode -eq 'Live') {
+        Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+        $snapshotAuthorization = $script:CddsiD027GitLiveSessionAuthorization
+        $snapshotReceipt = $snapshotAuthorization.Receipt
+        if (-not $AcknowledgeRealChanges) {
+            return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'ACTION_REQUIRED' -Mode Live -ErrorCode 'GIT_INSTALL_CONFIRMATION_REQUIRED' -MessageSafe 'Explicit Git install, UAC and machine PATH confirmation is required.'
+        }
+        if (
+            $ExternalSnapshotAuthorizationBindingToken -isnot [string] -or
+            $ExternalSnapshotAuthorizationBindingToken -cne $snapshotReceipt.ReceiptBindingToken -or
+            $ArtifactProfile -cne 'VmAcceptance'
+        ) {
+            return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'ACTION_REQUIRED' -Mode Live -ErrorCode 'GIT_INSTALL_SNAPSHOT_AUTHORIZATION_REQUIRED' -MessageSafe 'The active exact VM-external snapshot authorization must be explicitly bound to this Git VmAcceptance installation.'
+        }
+        if (Test-CddsiCurrentProcessElevated) {
+            return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'ACTION_REQUIRED' -Mode Live -ErrorCode 'GIT_INSTALL_PARENT_ELEVATED_UNSUPPORTED' -MessageSafe 'Run the product from a non-elevated PowerShell session and approve only the installer UAC prompt.'
+        }
+
+        $unresolvedDescriptor = $ArtifactDescriptor
+        $providedReceipt = $SourceObservation
+        $verificationBundle = $null
+        if (
+            $null -ne $SignatureEvidence -and
+            $null -ne $SignatureEvidence.PSObject.Properties['Data'] -and
+            $SignatureEvidence.Status -ceq 'SUCCEEDED' -and
+            $null -ne $SignatureEvidence.Data -and
+            $SignatureEvidence.Data.ContractVersion -ceq 'cddsi-d027-git-verification-bundle-v1'
+        ) {
+            $verificationBundle = $SignatureEvidence.Data
+        }
+        elseif (
+            $null -ne $SignatureEvidence -and
+            $SignatureEvidence.ContractVersion -ceq 'cddsi-d027-git-verification-bundle-v1'
+        ) {
+            $verificationBundle = $SignatureEvidence
+        }
+        if (
+            $null -ne $providedReceipt -and
+            $null -ne $providedReceipt.PSObject.Properties['Data'] -and
+            $providedReceipt.Status -ceq 'SUCCEEDED'
+        ) {
+            $providedReceipt = $providedReceipt.Data
+        }
+
+        $bundleValid = $false
+        $downloadReceiptBindingToken = $null
+        try {
+            $bundleFields = @(
+                'SchemaVersion', 'ContractVersion', 'ResolvedDescriptor',
+                'ResolvedSourceObservation', 'SignatureEvidence', 'SignatureType', 'ChainRevocationMode',
+                'ValidationTimeUtc', 'DownloadReceiptBindingToken'
+            )
+            if (
+                -not (Test-CddsiExactPropertySet -InputObject $verificationBundle -Expected $bundleFields) -or
+                -not (Test-CddsiSchemaVersionOne -Value $verificationBundle.SchemaVersion) -or
+                $verificationBundle.ContractVersion -isnot [string] -or
+                $verificationBundle.ContractVersion -cne 'cddsi-d027-git-verification-bundle-v1' -or
+                $verificationBundle.SignatureType -isnot [string] -or
+                $verificationBundle.SignatureType -cne 'Authenticode' -or
+                $verificationBundle.ChainRevocationMode -isnot [string] -or
+                $verificationBundle.ChainRevocationMode -cne 'NotChecked' -or
+                $verificationBundle.DownloadReceiptBindingToken -isnot [string] -or
+                $verificationBundle.DownloadReceiptBindingToken -notmatch '^[a-f0-9]{64}$' -or
+                -not (Test-CddsiUtcTimestampValue -Value $verificationBundle.ValidationTimeUtc) -or
+                -not (Test-CddsiArtifactDescriptor -Descriptor $unresolvedDescriptor -ExpectedArtifactType GitForWindowsInstaller) -or
+                $unresolvedDescriptor.MetadataStatus -cne 'UNRESOLVED' -or
+                $unresolvedDescriptor.Architecture -cne 'x64' -or
+                -not (Test-CddsiArtifactDescriptor -Descriptor $verificationBundle.ResolvedDescriptor -ExpectedArtifactType GitForWindowsInstaller -RequireResolved) -or
+                $verificationBundle.ResolvedDescriptor.Architecture -cne 'x64'
+            ) {
+                throw 'Git verification bundle schema or descriptor state was invalid.'
+            }
+            foreach ($name in @(
+                'DescriptorId', 'ArtifactType', 'SourcePolicy', 'SourceUri',
+                'SourceUriBindingToken', 'ReleaseVersion', 'Architecture', 'Channel',
+                'FileNameToken', 'ExpectedArtifactSha256', 'ExpectedArtifactSizeBytes',
+                'RedirectPolicy', 'MaximumBytes'
+            )) {
+                if ($unresolvedDescriptor.$name -cne $verificationBundle.ResolvedDescriptor.$name) {
+                    throw 'Git verification bundle changed immutable release metadata.'
+                }
+            }
+            $bundlePayload = Get-CddsiSignatureEvidencePayload -Evidence $verificationBundle.SignatureEvidence
+            $receiptValidationTime = [DateTimeOffset]::UtcNow.ToString(
+                'yyyy-MM-ddTHH:mm:ssZ',
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+            if (
+                -not (Test-CddsiD027GitDownloadReceipt -Receipt $providedReceipt -ArtifactDescriptor $unresolvedDescriptor -ExpectedDestinationPath $InstallerPath -ExpectedFileIdentityToken $bundlePayload.FileIdentityToken -ExpectedRunId $Context.RunId -ExpectedProfile $ArtifactProfile -ValidationTimeUtc $receiptValidationTime) -or
+                $providedReceipt.ReceiptBindingToken -cne $verificationBundle.DownloadReceiptBindingToken
+            ) {
+                throw 'Git download receipt did not match the verification bundle.'
+            }
+
+            $ArtifactDescriptor = $verificationBundle.ResolvedDescriptor
+            $SourceObservation = $verificationBundle.ResolvedSourceObservation
+            $SignatureEvidence = $verificationBundle.SignatureEvidence
+            $ValidationTimeUtc = $verificationBundle.ValidationTimeUtc
+            $downloadReceiptBindingToken = $providedReceipt.ReceiptBindingToken
+            $bundleValid = (
+                Test-CddsiSignatureEvidence -Evidence $SignatureEvidence -ExpectedPath $InstallerPath -ExpectedArtifactType GitForWindowsInstaller -Descriptor $ArtifactDescriptor -SourceObservation $SourceObservation -ExpectedRunId $Context.RunId -ExpectedProfile $ArtifactProfile -ValidationTimeUtc $ValidationTimeUtc
+            )
+        }
+        catch {
+            $bundleValid = $false
+        }
+        if (-not $bundleValid) {
+            return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALL_EVIDENCE_INVALID' -MessageSafe 'Fresh Git download, source and signature evidence is required before installation.'
+        }
+        $validationTimestamp = [DateTimeOffset]::Parse($ValidationTimeUtc)
+        $currentTimestamp = [DateTimeOffset]::UtcNow
+        if (
+            $validationTimestamp -gt $currentTimestamp.AddSeconds(30) -or
+            ($currentTimestamp - $validationTimestamp).TotalSeconds -gt 900
+        ) {
+            return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALL_EVIDENCE_STALE' -MessageSafe 'Git installer evidence was stale or from the future.'
+        }
+
+        $payload = Get-CddsiSignatureEvidencePayload -Evidence $SignatureEvidence
+        $pathBindingToken = Get-CddsiPathBindingToken -Path $InstallerPath
+        $policy = Get-CddsiD027GitInstallerProcessPolicy
+        $lockStream = $null
+        $process = $null
+        $started = $false
+        $uacCancelled = $false
+        $exitCode = $null
+        $timedOut = $false
+        $installerStillRunning = $false
+        $completionObservationFailed = $false
+        $postInstallAuthorizationValid = $false
+        $readbackObservationFailed = $false
+        $preExecutionObservation = $null
+        $startSnapshotEvidence = $null
+        $workingDirectory = $null
+        try {
+            $lockStream = [System.IO.File]::Open(
+                [System.IO.Path]::GetFullPath($InstallerPath),
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::Read,
+                [System.IO.FileShare]::Read
+            )
+            $preExecutionResult = Get-CddsiD027GitInstallerObservation -ExecutionContext $Context -InstallerPath $InstallerPath -ArtifactDescriptor $ArtifactDescriptor
+            if ($preExecutionResult.Status -cne 'SUCCEEDED') {
+                throw 'Git installer execution-time observation failed.'
+            }
+            $preExecutionObservation = $preExecutionResult.Data
+            if (
+                $preExecutionObservation.FileIdentityToken -cne $payload.FileIdentityToken -or
+                -not (Test-CddsiArtifactHashBinding -ActualSha256 $preExecutionObservation.ArtifactSha256 -ExpectedSha256 $payload.ArtifactSha256) -or
+                [long]$preExecutionObservation.ArtifactSizeBytes -ne [long]$payload.ArtifactSizeBytes -or
+                $preExecutionObservation.SignerThumbprint -cne $payload.SignerThumbprint -or
+                $preExecutionObservation.SignerSubjectToken -cne $payload.SignerSubjectToken -or
+                $preExecutionObservation.PublisherToken -cne $payload.PublisherToken -or
+                $preExecutionObservation.IdentityToken -cne $payload.IdentityToken -or
+                $preExecutionObservation.SignatureType -cne $verificationBundle.SignatureType -or
+                -not $preExecutionObservation.ChainTrusted -or
+                $preExecutionObservation.ChainRevocationMode -cne $verificationBundle.ChainRevocationMode -or
+                $preExecutionObservation.BootstrapPeMachine -cne 'x86' -or
+                $preExecutionObservation.DeclaredPayloadArchitecture -cne 'x64' -or
+                $preExecutionObservation.ArchitectureBindingSource -cne 'OfficialMetadataDigestAndFileName' -or
+                $preExecutionObservation.ArtifactVersion -cne $ArtifactDescriptor.ReleaseVersion
+            ) {
+                throw 'Git installer changed after signature verification.'
+            }
+            Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+            $snapshotAuthorization = $script:CddsiD027GitLiveSessionAuthorization
+            if (
+                $ExternalSnapshotAuthorizationBindingToken -cne
+                    $snapshotAuthorization.Receipt.ReceiptBindingToken
+            ) {
+                throw 'Git snapshot authorization changed before process start.'
+            }
+            Assert-CddsiD027GitDirectorySecurity `
+                -Path ([string]$Context.Paths.Temp) `
+                -Purpose ProductTemp |
+                Out-Null
+            $workingDirectory = Assert-CddsiD027GitDirectorySecurity `
+                -Path ([Environment]::SystemDirectory) `
+                -Purpose ProtectedSystem
+            $startSnapshotEvidence = [pscustomobject][ordered]@{
+                ReceiptSha256 = $snapshotAuthorization.ReceiptSha256
+                ReceiptBindingToken = $snapshotAuthorization.Receipt.ReceiptBindingToken
+                AuthorityId = $snapshotAuthorization.Receipt.AuthorityId
+                AuthorityKeySha256 = $snapshotAuthorization.Receipt.AuthorityKeySha256
+                ExecutionArtifactSha256 =
+                    $snapshotAuthorization.Receipt.ExecutionArtifactSha256
+                SnapshotIdentitySha256 =
+                    $snapshotAuthorization.Receipt.SnapshotIdentitySha256
+                WorkloadBindingToken =
+                    $snapshotAuthorization.Receipt.WorkloadBindingToken
+            }
+            try {
+                $process = Start-Process -FilePath ([System.IO.Path]::GetFullPath($InstallerPath)) -ArgumentList $policy.ArgumentList -Verb $policy.Verb -WorkingDirectory $workingDirectory -WindowStyle $policy.WindowStyle -PassThru -ErrorAction Stop
+                $started = $true
+            }
+            catch {
+                $exception = $_.Exception
+                while ($null -ne $exception -and $exception -isnot [ComponentModel.Win32Exception]) {
+                    $exception = $exception.InnerException
+                }
+                if ($null -ne $exception -and $exception.NativeErrorCode -eq 1223) {
+                    $uacCancelled = $true
+                }
+                else {
+                    throw 'Git installer process could not be started.'
+                }
+            }
+            if ($started) {
+                if ($process.WaitForExit([int]($policy.TimeoutSeconds * 1000))) {
+                    $exitCode = [int]$process.ExitCode
+                }
+                else {
+                    $timedOut = $true
+                    $installerStillRunning = $true
+                }
+            }
+        }
+        catch {
+            if (-not $started -and -not $uacCancelled) {
+                return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'FAILED' -Mode Live -ErrorCode 'GIT_INSTALL_PREEXECUTION_FAILED' -MessageSafe 'The Git installer changed, failed final verification or could not be started.'
+            }
+            if ($started) {
+                $completionObservationFailed = $true
+            }
+        }
+        finally {
+            if ($null -ne $process) { $process.Dispose() }
+            if ($null -ne $lockStream) { $lockStream.Dispose() }
+        }
+
+        $pathReadback = $null
+        if (Test-CddsiD027GitPostInstallReadbackEligible `
+                -Started $started `
+                -InstallerStillRunning $installerStillRunning `
+                -CompletionObservationFailed $completionObservationFailed `
+                -ExitCode $exitCode) {
+            try {
+                Assert-CddsiD027GitLiveContext -ExecutionContext $Context | Out-Null
+                $postInstallAuthorization = $script:CddsiD027GitLiveSessionAuthorization
+                if (
+                    $ExternalSnapshotAuthorizationBindingToken -cne
+                        $postInstallAuthorization.Receipt.ReceiptBindingToken -or
+                    $startSnapshotEvidence.ReceiptBindingToken -cne
+                        $postInstallAuthorization.Receipt.ReceiptBindingToken -or
+                    $startSnapshotEvidence.AuthorityKeySha256 -cne
+                        $postInstallAuthorization.Receipt.AuthorityKeySha256
+                ) {
+                    throw 'Git snapshot authorization changed after installer completion.'
+                }
+                $postInstallAuthorizationValid = $true
+            }
+            catch {
+                $postInstallAuthorizationValid = $false
+            }
+            if ($postInstallAuthorizationValid) {
+                try {
+                    $pathReadback = Get-CddsiD027GitPersistentPathObservation `
+                        -ExecutionContext $Context `
+                        -ExpectedArtifactVersion $ArtifactDescriptor.ReleaseVersion
+                    if (
+                        $null -eq $pathReadback -or
+                        $pathReadback.Status -cne 'SUCCEEDED'
+                    ) {
+                        $readbackObservationFailed = $true
+                    }
+                }
+                catch {
+                    $pathReadback = $null
+                    $readbackObservationFailed = $true
+                }
+            }
+        }
+        $readbackTrusted = (
+            $null -ne $pathReadback -and
+            $pathReadback.Status -ceq 'SUCCEEDED' -and
+            $pathReadback.Data.PathReadbackStatus -ceq 'Trusted'
+        )
+        $disposition = ConvertTo-CddsiD027GitInstallerExitResult `
+            -Started $started `
+            -UacCancelled $uacCancelled `
+            -ExitCode $exitCode `
+            -ReadbackTrusted $readbackTrusted `
+            -ChangedObserved $started `
+            -RestartObserved ($null -ne $exitCode -and [int]$exitCode -eq 8) `
+            -CompletionObservationFailed $completionObservationFailed `
+            -InstallerStillRunning $installerStillRunning `
+            -PostInstallAuthorizationInvalid (
+                $started -and
+                -not $installerStillRunning -and
+                -not $completionObservationFailed -and
+                $null -ne $exitCode -and
+                [int]$exitCode -eq 0 -and
+                -not $postInstallAuthorizationValid
+            ) `
+            -ReadbackObservationFailed $readbackObservationFailed
+        $data = [pscustomobject][ordered]@{
+            SchemaVersion = 1
+            ContractVersion = 'cddsi-d027-git-install-receipt-v1'
+            ArtifactType = 'GitForWindowsInstaller'
+            DescriptorId = $ArtifactDescriptor.DescriptorId
+            MetadataBindingToken = $ArtifactDescriptor.MetadataBindingToken
+            DownloadReceiptBindingToken = $downloadReceiptBindingToken
+            SourceObservationBindingToken = $SourceObservation.SourceObservationBindingToken
+            SignatureEvidenceBindingToken = $payload.EvidenceBindingToken
+            InstallerPathBindingToken = $pathBindingToken
+            FileIdentityToken = if ($null -eq $preExecutionObservation) { $payload.FileIdentityToken } else { $preExecutionObservation.FileIdentityToken }
+            ArtifactSha256 = $payload.ArtifactSha256
+            ArtifactSizeBytes = [long]$payload.ArtifactSizeBytes
+            BootstrapPeMachine = 'x86'
+            DeclaredPayloadArchitecture = 'x64'
+            ArchitectureBindingSource = 'OfficialMetadataDigestAndFileName'
+            SignatureType = $verificationBundle.SignatureType
+            ChainRevocationMode = $verificationBundle.ChainRevocationMode
+            ProcessPolicyBindingToken = $policy.PolicyBindingToken
+            ExternalSnapshotReceiptSha256 = $startSnapshotEvidence.ReceiptSha256
+            ExternalSnapshotAuthorizationBindingToken =
+                $startSnapshotEvidence.ReceiptBindingToken
+            SnapshotAuthorityId = $startSnapshotEvidence.AuthorityId
+            SnapshotAuthorityKeySha256 = $startSnapshotEvidence.AuthorityKeySha256
+            ExecutionArtifactSha256 = $startSnapshotEvidence.ExecutionArtifactSha256
+            SnapshotIdentitySha256 = $startSnapshotEvidence.SnapshotIdentitySha256
+            SnapshotWorkloadBindingToken = $startSnapshotEvidence.WorkloadBindingToken
+            ProcessStarted = $started
+            UacCancelled = $uacCancelled
+            InstallerExitCode = $exitCode
+            TimedOut = $timedOut
+            InstallerStillRunning = $installerStillRunning
+            CompletionObservationFailed = $completionObservationFailed
+            PostInstallAuthorizationValid = $postInstallAuthorizationValid
+            ReadbackObservationFailed = $readbackObservationFailed
+            PersistentPathReadbackStatus = if (
+                $null -eq $pathReadback -or
+                $null -eq $pathReadback.Data -or
+                $pathReadback.Data.PathReadbackStatus -isnot [string]
+            ) {
+                'NotObserved'
+            }
+            else {
+                $pathReadback.Data.PathReadbackStatus
+            }
+            PersistentPathReceiptBindingToken = if ($null -eq $pathReadback -or $null -eq $pathReadback.Data) { $null } else { $pathReadback.Data.PathReceiptBindingToken }
+            ExecutionHashReverified = ($null -ne $preExecutionObservation)
+            AuthenticodeReverified = ($null -ne $preExecutionObservation)
+            LiveInstallImplemented = $true
+        }
+        $message = switch ($disposition.Status) {
+            'SUCCEEDED' { 'Git for Windows was installed and the persistent PATH, protected x64 bundle, version and registry receipt were read back.'; break }
+            'CANCELLED' { 'The Git installer UAC prompt was cancelled; installation did not start.'; break }
+            'RESTART_REQUIRED' { 'The Git installer requires a manual Windows restart; no automatic restart was attempted.'; break }
+            'PARTIAL' {
+                if ($installerStillRunning) {
+                    'The elevated Git installer was still running at the bounded timeout; no completion or persistent PATH readback was claimed.'
+                }
+                else {
+                    'The Git installer started but did not reach a signed-authorized trusted terminal readback; restore the external snapshot or complete the indicated recovery.'
+                }
+                break
+            }
+            default { 'The Git installer did not start or did not complete successfully.'; break }
+        }
+        return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status $disposition.Status -Changed $disposition.Changed -Mode Live -ErrorCode $disposition.ErrorCode -MessageSafe $message -Data $data -RestartRequired $disposition.RestartRequired
+    }
 
     Assert-CddsiExecutionContext -ExecutionContext $Context -ExpectedMode $Mode | Out-Null
     if (-not (Test-CddsiSignatureEvidence -Evidence $SignatureEvidence -ExpectedPath $InstallerPath -ExpectedArtifactType GitForWindowsInstaller -Descriptor $ArtifactDescriptor -SourceObservation $SourceObservation -ExpectedRunId $Context.RunId -ExpectedProfile $ArtifactProfile -ValidationTimeUtc $ValidationTimeUtc)) { throw '安装合同要求与目标安装包、source observation、run/profile 及 immutable descriptor 绑定的新鲜 v2 验签证据。' }
@@ -2607,7 +5793,9 @@ function Install-CddsiGitForWindows {
         -not (Test-CddsiSchemaVersionOne -Value $current.SchemaVersion) -or
         $current.FileIdentityToken -isnot [string] -or $current.FileIdentityToken -cne $payload.FileIdentityToken -or
         $current.ArtifactSha256 -isnot [string] -or -not (Test-CddsiArtifactHashBinding -ActualSha256 $current.ArtifactSha256 -ExpectedSha256 $payload.ArtifactSha256) -or
-        ($current.ArtifactSizeBytes -isnot [int] -and $current.ArtifactSizeBytes -isnot [long]) -or [long]$current.ArtifactSizeBytes -ne [long]$payload.ArtifactSizeBytes
+        (($current.ArtifactSizeBytes -isnot [int]) -and
+            ($current.ArtifactSizeBytes -isnot [long])) -or
+        [long]$current.ArtifactSizeBytes -ne [long]$payload.ArtifactSizeBytes
     ) { throw '执行时 Git installer hash/size 复验失败；拒绝安装。' }
     $data = [pscustomobject][ordered]@{ SchemaVersion = 1; ArtifactType = 'GitForWindowsInstaller'; PathBindingToken = $pathBindingToken; FileIdentityToken = $payload.FileIdentityToken; ArtifactSha256 = $payload.ArtifactSha256; MetadataBindingToken = $ArtifactDescriptor.MetadataBindingToken; SourceObservationBindingToken = $SourceObservation.SourceObservationBindingToken; ExecutionHashReverified = $true; AtomicVerifyAndInstallRequiredForLive = $true; LiveInstallImplemented = $false }
     return New-CddsiOperationResult -Operation 'InstallGitForWindows' -Status 'ACTION_REQUIRED' -Mode $Mode -ErrorCode 'P4_PLAN_ONLY' -MessageSafe 'Git installer hash was reverified through the fake provider; installation remains disabled.' -Data $data -PlannedChanges @('<INSTALL:GIT_FOR_WINDOWS>')

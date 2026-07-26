@@ -23,6 +23,7 @@
             'Get-CddsiSupplyChainTextBindingToken'
             'Get-CddsiSourceUriBindingToken'
             'Test-CddsiOfficialArtifactUri'
+            'Test-CddsiOfficialArtifactRedirectUri'
             'Get-CddsiSourceObservationBindingToken'
             'Test-CddsiSourceObservation'
             'Get-CddsiArtifactDescriptorBindingToken'
@@ -160,6 +161,19 @@
         )
         'lib/git-for-windows.ps1' = @(
             'Test-CddsiD027Windows11X64Platform'
+            'Get-CddsiD027SnapshotPlatformObservation'
+            'Get-CddsiD027GitSnapshotWorkloadBindingToken'
+            'Test-CddsiD027CanonicalBase64'
+            'Get-CddsiD027SnapshotAuthorityKeySha256'
+            'Get-CddsiD027SnapshotAuthorityPolicy'
+            'Get-CddsiD027ExternalSnapshotReceiptBindingToken'
+            'Test-CddsiD027ExternalSnapshotReceipt'
+            'Get-CddsiD027SnapshotReceiptHeldFileObservation'
+            'Read-CddsiD027ExternalSnapshotReceipt'
+            'Enable-CddsiD027GitLiveSessionAuthorization'
+            'Clear-CddsiD027GitLiveSessionAuthorization'
+            'Get-CddsiD027GitWinVerifyTrustResult'
+            'Assert-CddsiD027GitLiveBootstrapContext'
             'Assert-CddsiD027GitLiveContext'
             'ConvertFrom-CddsiGitVersionProbeResult'
             'ConvertTo-CddsiGitInstallerReceiptVersion'
@@ -176,10 +190,21 @@
             'Get-CddsiGitForWindowsExecutableObservation'
             'Get-CddsiLiveGitForWindowsObservation'
             'Get-CddsiGitForWindowsStatus'
+            'ConvertTo-CddsiD027NormalizedGitHubReleaseDocument'
+            'Get-CddsiD027GitDownloadReceiptBindingToken'
+            'New-CddsiD027GitDownloadReceipt'
+            'Test-CddsiD027GitDownloadReceipt'
+            'Resolve-CddsiD027GitInstallerDescriptor'
+            'Get-CddsiD027GitInstallerProcessPolicy'
+            'Assert-CddsiD027GitDirectorySecurity'
+            'Test-CddsiD027GitPostInstallReadbackEligible'
+            'ConvertTo-CddsiD027GitInstallerExitResult'
             'ConvertFrom-CddsiGitHubReleaseMetadata'
             'Get-CddsiOfficialGitInstallerMetadata'
             'Save-CddsiOfficialGitInstaller'
+            'Get-CddsiD027GitInstallerObservation'
             'Test-CddsiGitInstallerSignature'
+            'Get-CddsiD027GitPersistentPathObservation'
             'Install-CddsiGitForWindows'
         )
         'lib/live-adapters.ps1' = @(
@@ -395,6 +420,7 @@
         'Get-CddsiSupplyChainTextBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Text'); Mode = $false }
         'Get-CddsiSourceUriBindingToken' = @{ Kind = 'Pure'; Mandatory = @('SourceUri'); Mode = $false }
         'Test-CddsiOfficialArtifactUri' = @{ Kind = 'Pure'; Mandatory = @('SourceUri', 'ExpectedOwner'); Mode = $false }
+        'Test-CddsiOfficialArtifactRedirectUri' = @{ Kind = 'Pure'; Mandatory = @('SourceUri', 'ExpectedOwner'); Mode = $false }
         'Get-CddsiSourceObservationBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Observation'); Mode = $false }
         'Test-CddsiSourceObservation' = @{ Kind = 'Pure'; Mandatory = @('Observation', 'Descriptor', 'ExpectedArtifactType', 'ExpectedRunId', 'ExpectedProfile', 'ValidationTimeUtc'); Mode = $false }
         'Get-CddsiArtifactDescriptorBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Descriptor'); Mode = $false }
@@ -512,6 +538,19 @@
         'Invoke-CddsiFakeProviderOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken'); Mode = $false }
         'Assert-CddsiFakeProviderExpectations' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Test-CddsiD027Windows11X64Platform' = @{ Kind = 'ProcessScoped'; Mandatory = @(); Mode = $false }
+        'Get-CddsiD027SnapshotPlatformObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
+        'Get-CddsiD027GitSnapshotWorkloadBindingToken' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'ExecutionArtifactSha256'); Mode = $false }
+        'Test-CddsiD027CanonicalBase64' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Get-CddsiD027SnapshotAuthorityKeySha256' = @{ Kind = 'Pure'; Mandatory = @('RsaModulusBase64', 'RsaExponentBase64'); Mode = $false }
+        'Get-CddsiD027SnapshotAuthorityPolicy' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
+        'Get-CddsiD027ExternalSnapshotReceiptBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Receipt'); Mode = $false }
+        'Test-CddsiD027ExternalSnapshotReceipt' = @{ Kind = 'Pure'; Mandatory = @('Receipt', 'ExpectedRunId', 'ExpectedExecutionArtifactSha256', 'PlatformObservation', 'ValidationTimeUtc', 'AuthorityPolicy'); Mode = $false }
+        'Get-CddsiD027SnapshotReceiptHeldFileObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Stream'); Mode = $false }
+        'Read-CddsiD027ExternalSnapshotReceipt' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ReceiptPath', 'ExpectedReceiptSha256'); Mode = $false }
+        'Enable-CddsiD027GitLiveSessionAuthorization' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ReceiptPath', 'ExpectedReceiptSha256', 'ExpectedExecutionArtifactSha256'); Mode = $false }
+        'Clear-CddsiD027GitLiveSessionAuthorization' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
+        'Get-CddsiD027GitWinVerifyTrustResult' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'FilePath'); Mode = $false }
+        'Assert-CddsiD027GitLiveBootstrapContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'Assert-CddsiD027GitLiveContext' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $false }
         'ConvertFrom-CddsiGitVersionProbeResult' = @{ Kind = 'Pure'; Mandatory = @('ProbeResult'); Mode = $false }
         'ConvertTo-CddsiGitInstallerReceiptVersion' = @{ Kind = 'Pure'; Mandatory = @('GitVersion'); Mode = $false }
@@ -528,10 +567,21 @@
         'Get-CddsiGitForWindowsExecutableObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ExecutablePath'); Mode = $false }
         'Get-CddsiLiveGitForWindowsObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion'); Mode = $false }
         'Get-CddsiGitForWindowsStatus' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion'); Mode = $false }
+        'ConvertTo-CddsiD027NormalizedGitHubReleaseDocument' = @{ Kind = 'Pure'; Mandatory = @('ReleaseDocument'); Mode = $false }
+        'Get-CddsiD027GitDownloadReceiptBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Receipt'); Mode = $false }
+        'New-CddsiD027GitDownloadReceipt' = @{ Kind = 'Pure'; Mandatory = @('ArtifactDescriptor', 'DestinationPath', 'FileIdentityToken', 'SourceObservation', 'ExpectedRunId', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $false }
+        'Test-CddsiD027GitDownloadReceipt' = @{ Kind = 'Pure'; Mandatory = @('ArtifactDescriptor', 'ExpectedDestinationPath', 'ExpectedFileIdentityToken', 'ExpectedRunId', 'ExpectedProfile', 'ValidationTimeUtc'); Mode = $false }
+        'Resolve-CddsiD027GitInstallerDescriptor' = @{ Kind = 'Pure'; Mandatory = @('ArtifactDescriptor', 'InstallerObservation'); Mode = $false }
+        'Get-CddsiD027GitInstallerProcessPolicy' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Assert-CddsiD027GitDirectorySecurity' = @{ Kind = 'ProcessScoped'; Mandatory = @('Path', 'Purpose'); Mode = $false }
+        'Test-CddsiD027GitPostInstallReadbackEligible' = @{ Kind = 'Pure'; Mandatory = @('Started', 'InstallerStillRunning', 'CompletionObservationFailed'); Mode = $false }
+        'ConvertTo-CddsiD027GitInstallerExitResult' = @{ Kind = 'Pure'; Mandatory = @('Started', 'UacCancelled', 'ReadbackTrusted', 'ChangedObserved', 'RestartObserved'); Mode = $false }
         'ConvertFrom-CddsiGitHubReleaseMetadata' = @{ Kind = 'Pure'; Mandatory = @('ReleaseDocument', 'Architecture'); Mode = $false }
         'Get-CddsiOfficialGitInstallerMetadata' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Architecture'); Mode = $false }
         'Save-CddsiOfficialGitInstaller' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'DestinationPath', 'ArtifactDescriptor'); Mode = $true }
+        'Get-CddsiD027GitInstallerObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'ArtifactDescriptor'); Mode = $false }
         'Test-CddsiGitInstallerSignature' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $false }
+        'Get-CddsiD027GitPersistentPathObservation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'ExpectedArtifactVersion'); Mode = $false }
         'Install-CddsiGitForWindows' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'InstallerPath', 'SignatureEvidence', 'ArtifactDescriptor', 'SourceObservation', 'ArtifactProfile', 'ValidationTimeUtc'); Mode = $true }
         'Invoke-CddsiLiveAdapterOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'StageManifest', 'OperationGrant', 'AuthorizationSession', 'WorkflowSessionState', 'OperationUseState', 'Operation', 'OperationUseId', 'ValidationTimeUtc', 'AdapterSha256'); Mode = $false }
         'Invoke-CddsiLiveReadOnlyProviderOperation' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'Provider', 'Operation', 'ResourceToken', 'Arguments'); Mode = $false }

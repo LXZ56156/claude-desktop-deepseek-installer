@@ -8,18 +8,122 @@
 D026_CHECKPOINT=NON_RELEASE_SUPERSEDED /
 D027_SCOPE_HANDOFF_ACTIVE / WINDOWS_11_X64_ONLY /
 WINDOWS_POWERSHELL_5_1_RUNTIME_ONLY /
-GIT_OFFICIAL_METADATA_CURRENT_SHAPE_FIXED /
+GIT_OFFICIAL_IMMUTABLE_METADATA_AND_DOWNLOAD_POLICY_IMPLEMENTED /
 NATIVE_WIN11_AMD64_WORKSTATION_PREFLIGHT_IMPLEMENTED /
 GIT_UNIQUE_PROTECTED_BUNDLE_OBSERVER_IMPLEMENTED /
 GIT_PRIVATE_DLL_SET_PROTECTED_AND_BOUND /
+GIT_INSTALLER_WINVERIFYTRUST_IDENTITY_TOCTOU_IMPLEMENTED /
+GIT_SILENT_INSTALL_GLOBAL_CONFIG_SAFE_POLICY_EXIT_AND_PATH_READBACK_IMPLEMENTED /
+GIT_VM_ACCEPTANCE_RSA_SNAPSHOT_SESSION_GATE_IMPLEMENTED_CONFIGURED_FALSE /
+GIT_LIVE_INSTALL_BLOCKED_PENDING_CANDIDATE_WORKLOAD_BINDING /
 REAL_READ_ONLY_GIT_2_54_OBSERVED /
 GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
-GIT_LIVE_DOWNLOAD_AND_INSTALL_STILL_DISABLED /
+REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
 
-### D-027 当前实现批次
+### D-027 当前 Git 官方安装实现批次
+
+本批的精确 parent 为 commit
+`f38f6dc8e74b661cef31ba5617bafa7220b25f90`、tree
+`f545d5261780cba1300b2b514d387b19e7137bc8`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均绑定该 parent，index/worktree clean。
+下述实现和验证均相对于该 parent；它们不是候选、clean-snapshot acceptance 或发布
+证据。提交和普通 fast-forward push 前仍须 fetch 并确认 remote/PR head 未离开该
+parent，推送后须把新 commit/tree 作为下一批的唯一 parent。
+
+- Git metadata 只接受官方 `git-for-windows/git` latest release API 的精确响应，
+  严格要求 GitHub `immutable=true`，有界读取 JSON/MIME/长度/时间，只选择唯一
+  x64 installer，并绑定 tag、官方 browser-download URI、asset identity、版本、
+  长度和官方 SHA-256。缺失、false 或错误类型的 `immutable` 均 fail closed。
+  下载实现禁用 cookie、default credentials、自动解压和自动 redirect；redirect 只允许精确
+  `release-assets.githubusercontent.com/github-production-release-asset/<id>/<uuid>`
+  传输目标，签名 query 不写入持久 receipt。下载流、落盘 readback 和最终文件 identity
+  均重新绑定 SHA-256 与长度。
+- 下载失败后，如果 partial/destination 已经创建，则不在释放文件锁后盲删该路径，
+  以免同用户替换竞争导致误删。结果保持 `PARTIAL/RECOVERY_REQUIRED`，只返回安全的
+  recovery path binding/ownership 信息，留给后续 Repair/Restore 在重新证明精确
+  identity 后清理；这不是成功，也不是静默遗留已完成安装。
+- installer observation 以 `FileShare.Read` 锁定文件，区分 x86 Inno bootstrap PE
+  与由官方 metadata digest/文件名声明的 x64 payload；要求 embedded
+  `Authenticode`、Windows `WinVerifyTrust` chain/policy trust、大小和官方
+  SHA-256、精确 Johannes Schindelin signer subject，以及 Git Setup / Git /
+  The Git Development Community / 精确版本 identity。当前 WinVerifyTrust 策略为
+  cache-only，`ChainRevocationMode=NotChecked`；时间戳只声明
+  `TimestampStatus=Present` 和
+  `TimestampChainStatus=NotIndependentlyEvaluated`，不得表述为已在线吊销检查或
+  独立时间戳链验证。signer thumbprint 是在官方 metadata digest、WinVerifyTrust
+  和精确 signer/publisher/identity 均通过后动态观察并用于本次 TOCTOU 冻结的值，
+  不是独立预置 pin 或独立信任根。
+- signature verification bundle 绑定原始 download receipt、resolved descriptor、
+  source observation、artifact identity 和验证时间。执行前保持 installer read lock，
+  再次观察 hash、长度、签名类型、chain policy、signer、publisher、identity、版本和
+  文件 identity；同时重新验证产品 temp 是 fixed NTFS、无 reparse ancestor、有效
+  非 null DACL、受限 owner/writer。任一变化 fail closed。
+- 静默安装只使用固定 Inno 参数：
+  `/VERYSILENT /NORESTART /NOCANCEL /SP- /SUPPRESSMSGBOXES`
+  `/NOCLOSEAPPLICATIONS /NORESTARTAPPLICATIONS /RESTARTEXITCODE=8`
+  `/o:PathOption=Cmd /o:EditorOption=VIM /COMPONENTS=gitlfs`。显式
+  `EditorOption=VIM` 防止升级路径重放既有 editor 选择而调用
+  `git config --global core.editor`；本产品既不读取也不修改全局 Git 配置。
+  非提权 parent 通过可见 UAC 启动，working directory 不再使用用户可写 temp，
+  而是每次执行前验证的 64-bit Windows system directory；该策略也进入 process-policy
+  binding。installer 所在用户可写目录的 application-directory side-loading 残余风险
+  仍须在 clean snapshot 实物验收中评估，不能因 CWD 修复而宣称完全消除。
+  取消、超时、不可确认 completion、异常 exit、要求重启或 readback 不可信均保持
+  CANCELLED/PARTIAL/ACTION_REQUIRED/FAILED，不显示成功。安装后从 HKLM 64-bit 和
+  HKCU 只读 persistent PATH，确认观察期间稳定，再经受保护 Git bundle observer
+  证明精确安装版本和唯一 executable。只有已知 exit 0 才重新验证 snapshot
+  authorization 并执行 PATH/bundle readback；timeout、WaitForExit 异常、exit 8 和
+  其他非零均不 readback。
+- 所有低层 D-027 Git Live host/network/file/registry/process 入口现在都经过
+  `Assert-CddsiD027GitLiveContext`。该门只接受 `VmAcceptance`，从产品 temp 的
+  direct-child 窄名 receipt 以 `FileShare.None` 持锁，验证 held final path、link
+  count=1、held-volume NTFS、严格 schema/canonical Base64，并以 tracked policy
+  中固定的 RSA-SHA256 PKCS#1 v1.5 public key 验签。每次 assert 都重新加载 authority
+  policy、重新观察 Windows 11 x64/PowerShell 5.1 与 native SMBIOS UUID hash，
+  并重新验证最多 90 分钟有效的 receipt；仓库不含私钥。
+- production `config/d027-snapshot-authority.psd1` 明确保持 `Configured=false`、
+  空 public key，故当前所有 destructive Git Live 都硬阻塞。receipt 中的
+  `VmIdentitySha256` 仍只是签名 authority assertion；独立 candidate commit/tree、
+  ZIP SHA-256/长度和 SBOM workload descriptor 尚未完成并绑定。因此不得配置
+  authority、不得宣称 guest 已独立证明 snapshot restore，也不得把当前门用于真实
+  VM acceptance。安装还必须显式回传同一 process-scoped session binding 并单独确认
+  UAC/真实变更。
+
+本批最终 Windows PowerShell 5.1 focused 结果为：
+`PublicFunctions` 4/4、`GitSupplyChain` 8/8、
+`D027GitInstallerLive` 18/18、`D027GitWinVerifyTrust` 4/4、
+`GitForWindowsObserver` 32/32、`D027SnapshotAuthorization` 12/12、
+`Common` 20/20、`Encoding` 4/4；合计 102 passed、0 failed、0 skipped、
+0 inconclusive、0 not-run。全部 PowerShell source parser 为 0 error，
+`git diff --check` 通过。release manifest 为 schema 1、40 package files、
+135 development-only files，duplicate/missing/overlap/unclassified/unknown 均为 0；
+snapshot authority config 只在 package、三个 D-027 focused test 只在
+development-only。tracked 加 intended untracked 共 175 files 和 40 个 package
+files 的独立 secret scan 均为 0 findings；顶层 evidence/artifact/report/log root
+为 0。
+
+`SafetyBoundary.Tests.ps1` 在本批早期结果为 9/10；唯一失败是退役的
+`live-adapters.ps1` hard-coded AST digest 因当前 Git 垂直实现变化而漂移。相关
+公开 `.cmd`、TestSafe/DryRun 零真实进程/网络/注册表/外部写入断言均通过。
+按 D-027 明确范围，不更新该 D-026 静态 digest，也不恢复旧 HostSandbox/Fake
+ledger 门；该历史测试不是当前发布门。
+
+在明确宿主机禁止观察已安装 Git 之后，本批确认曾有一个代理在禁令澄清前误对宿主机
+已安装 Git 做过一次只读 WinVerifyTrust 诊断。该动作没有执行 Git、没有网络、
+注册表、配置或文件写入；它仅为 NON-RELEASE 诊断，不是测试、候选、clean-snapshot
+或发布证据，也不得在后续验收中复用。
+
+本批没有执行真实 Git metadata 网络请求、下载、installer、UAC 或注册表
+mutation。无 Git clean Windows 11 x64 外部 snapshot 上的真实下载、验证、静默安装、
+退出码、persistent PATH/bundle readback 和重复幂等仍全部待验；精确冻结 ZIP、
+commit/tree/SHA-256/长度/SBOM 以及八组候选矩阵也未生成或通过。因此当前仍是
+`REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED` 和
+`D027_RELEASE_READY_NOT_REACHED`，不得 merge、GitHub Release、upload 或 promotion。
+
+### D-027 前序已推送实现批次（历史保留）
 
 D-027 从用户指定的精确起点开始：commit
 `521b4fb7361f4fadd8b987a60996b3d9bf54c276`、tree

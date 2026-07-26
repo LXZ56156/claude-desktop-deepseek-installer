@@ -217,9 +217,10 @@ Describe 'public function contracts' {
             if ($contract.Kind -ceq 'ProcessScoped') {
                 @(
                     'Initialize-CddsiConsoleEncoding',
-                    'Test-CddsiD027Windows11X64Platform',
-                    'Test-CddsiCurrentProcessElevated',
-                    'Initialize-CddsiD027GitProbeRunnerType'
+                     'Test-CddsiD027Windows11X64Platform',
+                     'Test-CddsiCurrentProcessElevated',
+                     'Initialize-CddsiD027GitProbeRunnerType',
+                     'Assert-CddsiD027GitDirectorySecurity'
                 ) | Should -Contain $name
                 $executionContextMandatory | Should -BeFalse
             }

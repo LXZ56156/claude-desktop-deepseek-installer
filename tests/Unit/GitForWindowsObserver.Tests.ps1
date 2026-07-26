@@ -467,6 +467,7 @@ Describe 'D-027 signed Git component identity' {
         Mock Get-AuthenticodeSignature {
             return [pscustomobject]@{
                 Status = 'Valid'
+                SignatureType = 'Authenticode'
                 SignerCertificate = [pscustomobject]@{
                     Subject = 'CN=Johannes Schindelin, O=Johannes Schindelin, L=Bruehl, C=DE'
                     Thumbprint = ('1' * 40)
@@ -474,12 +475,27 @@ Describe 'D-027 signed Git component identity' {
                 TimeStamperCertificate = [pscustomobject]@{ Subject = 'CN=Synthetic Timestamp' }
             }
         } -ParameterFilter { $LiteralPath -eq $script:componentPath }
+        Mock Get-CddsiD027GitWinVerifyTrustResult {
+            return [pscustomobject][ordered]@{
+                SchemaVersion = 1
+                Trusted = $true
+                Status = 'Trusted'
+                NativeStatusHex = '0x00000000'
+                RevocationMode = 'NotChecked'
+            }
+        } -ParameterFilter {
+            $Context -eq $script:componentContext -and
+            $FilePath -eq $script:componentPath
+        }
     }
 
     It 'trusts a calibrated signed x64 component without returning its path' {
-        $context = [pscustomobject]@{ Mode = 'Live'; Paths = [ordered]@{ Temp = $TestDrive } }
+        $script:componentContext = [pscustomobject]@{
+            Mode = 'Live'
+            Paths = [ordered]@{ Temp = $TestDrive }
+        }
         $result = Get-CddsiGitForWindowsSignedComponentObservation `
-            -ExecutionContext $context `
+            -ExecutionContext $script:componentContext `
             -ComponentPath $script:componentPath `
             -ComponentRole PathLauncher
         $result.Status | Should -BeExactly 'SUCCEEDED'
@@ -488,6 +504,8 @@ Describe 'D-027 signed Git component identity' {
         $result.Data.PeMachine | Should -BeExactly 'x64'
         $result.Data.FileVersion | Should -BeExactly '2.55.0.windows.3'
         $result.Data.FileIdentityToken | Should -Match '^[a-f0-9]{64}$'
+        $result.Data.SignatureType | Should -BeExactly 'Authenticode'
+        $result.Data.ChainRevocationMode | Should -BeExactly 'NotChecked'
         ($result | ConvertTo-Json -Depth 10) | Should -Not -Match ([regex]::Escape($script:componentPath))
     }
 
@@ -495,13 +513,17 @@ Describe 'D-027 signed Git component identity' {
         Mock Get-AuthenticodeSignature {
             return [pscustomobject]@{
                 Status = 'Valid'
+                SignatureType = 'Authenticode'
                 SignerCertificate = [pscustomobject]@{ Subject = 'CN=Other Publisher'; Thumbprint = ('2' * 40) }
                 TimeStamperCertificate = [pscustomobject]@{ Subject = 'CN=Synthetic Timestamp' }
             }
         } -ParameterFilter { $LiteralPath -eq $script:componentPath }
-        $context = [pscustomobject]@{ Mode = 'Live'; Paths = [ordered]@{ Temp = $TestDrive } }
+        $script:componentContext = [pscustomobject]@{
+            Mode = 'Live'
+            Paths = [ordered]@{ Temp = $TestDrive }
+        }
         $result = Get-CddsiGitForWindowsSignedComponentObservation `
-            -ExecutionContext $context `
+            -ExecutionContext $script:componentContext `
             -ComponentPath $script:componentPath `
             -ComponentRole PathLauncher
         $result.Data.IdentityStatus | Should -BeExactly 'Untrusted'

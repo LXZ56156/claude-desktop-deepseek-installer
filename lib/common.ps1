@@ -371,6 +371,38 @@ function Test-CddsiOfficialArtifactUri {
     return $false
 }
 
+function Test-CddsiOfficialArtifactRedirectUri {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceUri,
+        [Parameter(Mandatory = $true)][ValidateSet('Anthropic', 'GitForWindows')][string]$ExpectedOwner
+    )
+
+    if ($ExpectedOwner -cne 'GitForWindows') {
+        return (Test-CddsiOfficialArtifactUri -SourceUri $SourceUri -ExpectedOwner $ExpectedOwner)
+    }
+
+    $uri = $null
+    if (
+        $SourceUri.Length -gt 2048 -or
+        -not [Uri]::TryCreate($SourceUri, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -cne 'https' -or
+        -not $uri.IsDefaultPort -or
+        $SourceUri -cne $uri.AbsoluteUri -or
+        -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($uri.Query) -or
+        -not [string]::IsNullOrEmpty($uri.Fragment) -or
+        $uri.DnsSafeHost.ToLowerInvariant() -cne 'release-assets.githubusercontent.com'
+    ) {
+        return $false
+    }
+    return [regex]::IsMatch(
+        $uri.AbsolutePath,
+        '^/github-production-release-asset/[1-9][0-9]*/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+}
+
 function Get-CddsiSourceObservationBindingToken {
     [CmdletBinding()]
     param(
@@ -421,7 +453,19 @@ function Test-CddsiSourceObservation {
         [ValidateRange(1, 86400)][int]$MaximumAgeSeconds = 900
     )
 
-    if (-not (Test-CddsiArtifactDescriptor -Descriptor $Descriptor -ExpectedArtifactType $ExpectedArtifactType -RequireResolved)) { return $false }
+    $descriptorValid = if ($ExpectedArtifactType -ceq 'GitForWindowsInstaller') {
+        Test-CddsiArtifactDescriptor -Descriptor $Descriptor -ExpectedArtifactType $ExpectedArtifactType
+    }
+    else {
+        Test-CddsiArtifactDescriptor -Descriptor $Descriptor -ExpectedArtifactType $ExpectedArtifactType -RequireResolved
+    }
+    if (-not $descriptorValid) { return $false }
+    if (
+        $Descriptor.ExpectedArtifactSha256 -isnot [string] -or
+        $Descriptor.ExpectedArtifactSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
+        ($Descriptor.ExpectedArtifactSizeBytes -isnot [int] -and $Descriptor.ExpectedArtifactSizeBytes -isnot [long]) -or
+        [long]$Descriptor.ExpectedArtifactSizeBytes -lt 1
+    ) { return $false }
     $required = @(
         'SchemaVersion', 'ContractVersion', 'RunId', 'ArtifactProfile', 'DescriptorId',
         'MetadataBindingToken', 'RequestUri', 'FinalUri', 'RedirectUris',
@@ -438,8 +482,16 @@ function Test-CddsiSourceObservation {
     $redirectUris = @($Observation.RedirectUris)
     if ($Observation.RedirectUris -isnot [System.Array] -or ($Observation.RedirectCount -isnot [int] -and $Observation.RedirectCount -isnot [long]) -or [long]$Observation.RedirectCount -ne $redirectUris.Count -or $redirectUris.Count -gt 10) { return $false }
     $seenUris = @{}
+    if (
+        $Observation.RequestUri -isnot [string] -or
+        -not (Test-CddsiOfficialArtifactUri -SourceUri $Observation.RequestUri -ExpectedOwner $owner)
+    ) { return $false }
     foreach ($uri in @($Observation.RequestUri) + $redirectUris) {
-        if ($uri -isnot [string] -or -not (Test-CddsiOfficialArtifactUri -SourceUri $uri -ExpectedOwner $owner) -or $seenUris.ContainsKey($uri)) { return $false }
+        if ($uri -isnot [string] -or $seenUris.ContainsKey($uri)) { return $false }
+        if (
+            $uri -cne $Observation.RequestUri -and
+            -not (Test-CddsiOfficialArtifactRedirectUri -SourceUri $uri -ExpectedOwner $owner)
+        ) { return $false }
         $seenUris[$uri] = $true
     }
     $expectedFinalUri = if ($redirectUris.Count -eq 0) { $Observation.RequestUri } else { $redirectUris[-1] }
