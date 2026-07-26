@@ -189,7 +189,7 @@ Describe 'focused quality gate' {
             Should -BeExactly $expectedHashFile
     }
 
-    It 'contains no test skip or retired gate invocation' {
+    It 'keeps one focused CI path and no retired gate invocation' {
         $check = [IO.File]::ReadAllText(
             (Join-Path $script:ProjectRoot 'scripts\check.ps1')
         )
@@ -197,5 +197,13 @@ Describe 'focused quality gate' {
         $check | Should -Match 'Invoke-Pester'
         $check | Should -Match 'build-release\.ps1'
         $check | Should -Match 'git -C \$projectRoot diff --check'
+
+        $ci = [IO.File]::ReadAllText(
+            (Join-Path $script:ProjectRoot '.github\workflows\ci.yml')
+        )
+        $ci | Should -Match '(?m)^  pull_request:$'
+        $ci | Should -Match '(?m)^  workflow_dispatch:$'
+        $ci | Should -Not -Match '(?m)^  push:$'
+        $ci | Should -Match '(?m)^  cancel-in-progress: true$'
     }
 }

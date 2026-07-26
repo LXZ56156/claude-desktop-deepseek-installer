@@ -2,9 +2,11 @@ name: ci
 
 on:
   pull_request:
-  push:
-    branches:
-      - codex/repair/p10a-0a-fast-lane
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   practical-gate:
