@@ -122,6 +122,15 @@
         )
         'lib/desktop-msix.ps1' = @(
             'New-CddsiD027ClaudeDesktopSourceDescriptor'
+            'Test-CddsiD027ClaudeDesktopSourceDescriptor'
+            'Test-CddsiD027ClaudeSanitizedDownloadUri'
+            'Test-CddsiD027ClaudeDownloadDestinationPath'
+            'Get-CddsiD027ClaudeDownloadReceiptBindingToken'
+            'Get-CddsiD027ClaudeFileIdentityToken'
+            'Get-CddsiD027ClaudeContentBindingToken'
+            'New-CddsiD027ClaudeDownloadReceipt'
+            'Test-CddsiD027ClaudeDownloadReceipt'
+            'Test-CddsiD027ClaudeDownloadedArtifactObservation'
             'ConvertFrom-CddsiD027ClaudeAppxManifestBytes'
             'Read-CddsiD027ClaudeMsixManifest'
             'Get-CddsiClaudeDesktopMsixStatus'
@@ -508,6 +517,15 @@
         'Start-CddsiClaudeDesktop' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'Restart-CddsiClaudeDesktop' = @{ Kind = 'ContextBound'; Mandatory = @('Context'); Mode = $true }
         'New-CddsiD027ClaudeDesktopSourceDescriptor' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Test-CddsiD027ClaudeDesktopSourceDescriptor' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Test-CddsiD027ClaudeSanitizedDownloadUri' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Test-CddsiD027ClaudeDownloadDestinationPath' = @{ Kind = 'Pure'; Mandatory = @(); Mode = $false }
+        'Get-CddsiD027ClaudeDownloadReceiptBindingToken' = @{ Kind = 'Pure'; Mandatory = @('Receipt'); Mode = $false }
+        'Get-CddsiD027ClaudeFileIdentityToken' = @{ Kind = 'Pure'; Mandatory = @('FinalPathBindingToken', 'VolumeSerialNumberHex', 'FileIndexHex', 'ArtifactSha256', 'ArtifactSizeBytes'); Mode = $false }
+        'Get-CddsiD027ClaudeContentBindingToken' = @{ Kind = 'Pure'; Mandatory = @('ArtifactSha256', 'ArtifactSizeBytes'); Mode = $false }
+        'New-CddsiD027ClaudeDownloadReceipt' = @{ Kind = 'Pure'; Mandatory = @('RunId', 'StagingRootPath', 'DestinationPath', 'FileIdentityToken', 'SanitizedRedirectUris', 'ArtifactSha256', 'ArtifactSizeBytes', 'ObservedAtUtc'); Mode = $false }
+        'Test-CddsiD027ClaudeDownloadReceipt' = @{ Kind = 'Pure'; Mandatory = @('ExpectedRunId', 'ExpectedStagingRootPath', 'ExpectedDestinationPath', 'ExpectedFileIdentityToken', 'ExpectedArtifactSha256', 'ExpectedArtifactSizeBytes', 'ValidationTimeUtc'); Mode = $false }
+        'Test-CddsiD027ClaudeDownloadedArtifactObservation' = @{ Kind = 'Pure'; Mandatory = @('ExpectedRunId', 'ExpectedStagingRootPath', 'ExpectedDestinationPath', 'ValidationTimeUtc'); Mode = $false }
         'ConvertFrom-CddsiD027ClaudeAppxManifestBytes' = @{ Kind = 'Pure'; Mandatory = @('ManifestBytes'); Mode = $false }
         'Read-CddsiD027ClaudeMsixManifest' = @{ Kind = 'Pure'; Mandatory = @('PackageStream'); Mode = $false }
         'Get-CddsiClaudeDesktopMsixStatus' = @{ Kind = 'ContextBound'; Mandatory = @('Context', 'MinimumVersion', 'RequiredScope', 'ExpectedArchitecture'); Mode = $false }

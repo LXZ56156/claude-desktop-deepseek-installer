@@ -7,6 +7,46 @@ $script:CddsiD027ClaudeMsixMaximumBytes = [long](1GB)
 $script:CddsiD027ClaudeManifestMaximumBytes = [long](1MB)
 $script:CddsiD027ClaudeManifestNamespace =
     'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
+$script:CddsiD027ClaudeDownloadReceiptFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'ArtifactState',
+    'RunId',
+    'ArtifactProfile',
+    'ArtifactType',
+    'DescriptorId',
+    'SourceDescriptorBindingToken',
+    'RequestUri',
+    'RequestUriBindingToken',
+    'SanitizedFinalUri',
+    'SanitizedRedirectUris',
+    'RedirectChainBindingToken',
+    'RedirectCount',
+    'StagingRootPathBindingToken',
+    'DestinationPathBindingToken',
+    'FileIdentityToken',
+    'ArtifactSha256',
+    'ArtifactSizeBytes',
+    'ContentBindingToken',
+    'ObservedAtUtc',
+    'ReceiptBindingToken'
+)
+$script:CddsiD027ClaudeHeldArtifactObservationFieldNames = @(
+    'SchemaVersion',
+    'ContractVersion',
+    'ObservationMethod',
+    'FinalPathBindingToken',
+    'FileSystemName',
+    'NumberOfLinks',
+    'IsDirectory',
+    'IsReparsePoint',
+    'VolumeSerialNumberHex',
+    'FileIndexHex',
+    'FileIdentityToken',
+    'ArtifactSha256',
+    'ArtifactSizeBytes',
+    'ObservedAtUtc'
+)
 
 function New-CddsiD027ClaudeDesktopSourceDescriptor {
     [CmdletBinding()]
@@ -47,6 +87,723 @@ function New-CddsiD027ClaudeDesktopSourceDescriptor {
         throw 'D-027 Claude Desktop source descriptor failed its exact unresolved contract.'
     }
     return $descriptor
+}
+
+function Test-CddsiD027ClaudeDesktopSourceDescriptor {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$Descriptor
+    )
+
+    try {
+        $expected = New-CddsiD027ClaudeDesktopSourceDescriptor
+        $expectedNames = @(
+            $expected.PSObject.Properties |
+                ForEach-Object { [string]$_.Name }
+        )
+        if (
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Descriptor `
+                -Expected $expectedNames)
+        ) {
+            return $false
+        }
+        foreach ($name in $expectedNames) {
+            $expectedValue = $expected.$name
+            $actualValue = $Descriptor.$name
+            if ($null -eq $expectedValue) {
+                if ($null -ne $actualValue) {
+                    return $false
+                }
+                continue
+            }
+            if (
+                $null -eq $actualValue -or
+                $actualValue.GetType() -ne $expectedValue.GetType()
+            ) {
+                return $false
+            }
+            if ($expectedValue -is [string]) {
+                if ($actualValue -cne $expectedValue) {
+                    return $false
+                }
+            }
+            elseif ($actualValue -ne $expectedValue) {
+                return $false
+            }
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-CddsiD027ClaudeSanitizedDownloadUri {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$SourceUri
+    )
+
+    $uri = $null
+    if (
+        $SourceUri -isnot [string] -or
+        $SourceUri.Length -lt 16 -or
+        $SourceUri.Length -gt 2048 -or
+        -not [Uri]::TryCreate(
+            $SourceUri,
+            [UriKind]::Absolute,
+            [ref]$uri
+        ) -or
+        $uri.Scheme -cne 'https' -or
+        -not $uri.IsDefaultPort -or
+        $SourceUri -cne $uri.AbsoluteUri -or
+        -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($uri.Query) -or
+        -not [string]::IsNullOrEmpty($uri.Fragment) -or
+        $uri.DnsSafeHost.ToLowerInvariant() -cne 'downloads.claude.ai'
+    ) {
+        return $false
+    }
+    $path = $uri.AbsolutePath
+    $contradictorySegmentPattern =
+        '(?i)(?:^|[._~-])(?:arm64|aarch64|x86|ia32|offline)(?:[._~-]|$)'
+    if (
+        $path.Length -lt 7 -or
+        $path.Length -gt 1024 -or
+        $path.Contains('\') -or
+        $path.Contains('//') -or
+        $path.Contains('%') -or
+        @(
+            $path.Split('/') |
+                Where-Object { $_ -in @('.', '..') }
+        ).Count -gt 0 -or
+        @(
+            $path.Split('/') |
+                Where-Object {
+                    $_ -match $contradictorySegmentPattern
+                }
+        ).Count -gt 0
+    ) {
+        return $false
+    }
+    return [regex]::IsMatch(
+        $path,
+        '^/[A-Za-z0-9._~/-]+\.msix$',
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+}
+
+function Test-CddsiD027ClaudeDownloadDestinationPath {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$StagingRootPath,
+        [AllowNull()]$DestinationPath
+    )
+
+    try {
+        if (
+            $StagingRootPath -isnot [string] -or
+            $DestinationPath -isnot [string] -or
+            $StagingRootPath.Length -lt 4 -or
+            $StagingRootPath.Length -gt 32767 -or
+            $DestinationPath.Length -lt 8 -or
+            $DestinationPath.Length -gt 32767 -or
+            $StagingRootPath.IndexOf([char]0) -ge 0 -or
+            $DestinationPath.IndexOf([char]0) -ge 0 -or
+            $StagingRootPath.Contains('/') -or
+            $DestinationPath.Contains('/') -or
+            $StagingRootPath -cnotmatch '^[A-Za-z]:\\' -or
+            $DestinationPath -cnotmatch '^[A-Za-z]:\\'
+        ) {
+            return $false
+        }
+
+        $rootFull = [IO.Path]::GetFullPath($StagingRootPath)
+        $destinationFull = [IO.Path]::GetFullPath($DestinationPath)
+        $rootPath = [IO.Path]::GetPathRoot($rootFull)
+        $destinationRoot = [IO.Path]::GetPathRoot($destinationFull)
+        if (
+            $rootFull -cne $StagingRootPath -or
+            $destinationFull -cne $DestinationPath -or
+            $rootPath -cnotmatch '^[A-Za-z]:\\$' -or
+            $destinationRoot -cnotmatch '^[A-Za-z]:\\$' -or
+            -not [string]::Equals(
+                $rootPath,
+                $destinationRoot,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            [string]::Equals(
+                $rootFull,
+                $rootPath,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            $rootFull.EndsWith('\', [StringComparison]::Ordinal) -or
+            $rootFull.Substring(2).Contains(':') -or
+            $destinationFull.Substring(2).Contains(':') -or
+            -not [string]::Equals(
+                [IO.Path]::GetDirectoryName($destinationFull),
+                $rootFull,
+                [StringComparison]::OrdinalIgnoreCase
+            )
+        ) {
+            return $false
+        }
+
+        foreach ($segment in @($rootFull.Substring(3).Split('\'))) {
+            $deviceBase = @($segment.Split('.'))[0].
+                TrimEnd([char[]]' .')
+            if (
+                [string]::IsNullOrWhiteSpace($segment) -or
+                $segment.IndexOfAny(
+                    [IO.Path]::GetInvalidFileNameChars()
+                ) -ge 0 -or
+                $segment.EndsWith(
+                    '.',
+                    [StringComparison]::Ordinal
+                ) -or
+                $segment.EndsWith(
+                    ' ',
+                    [StringComparison]::Ordinal
+                ) -or
+                $deviceBase -match
+                    '^(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|' +
+                    'COM(?:[1-9]|\u00b9|\u00b2|\u00b3)|' +
+                    'LPT(?:[1-9]|\u00b9|\u00b2|\u00b3))$'
+            ) {
+                return $false
+            }
+        }
+
+        $leafName = [IO.Path]::GetFileName($destinationFull)
+        $leafDeviceBase = @($leafName.Split('.'))[0].
+            TrimEnd([char[]]' .')
+        return (
+            $leafName -cmatch '^[A-Za-z0-9._~-]+\.msix$' -and
+            $leafDeviceBase -notmatch
+                '^(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|' +
+                'COM(?:[1-9]|\u00b9|\u00b2|\u00b3)|' +
+                'LPT(?:[1-9]|\u00b9|\u00b2|\u00b3))$' -and
+            $leafName -cnotmatch
+                '(?i)(?:^|[._~-])(?:arm64|aarch64|x86|ia32|offline)(?:[._~-]|$)'
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-CddsiD027ClaudeDownloadReceiptBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Receipt
+    )
+
+    $withoutBinding = @(
+        $script:CddsiD027ClaudeDownloadReceiptFieldNames |
+            Where-Object { $_ -cne 'ReceiptBindingToken' }
+    )
+    $validNames = (
+        (Test-CddsiExactPropertySet `
+            -InputObject $Receipt `
+            -Expected $withoutBinding) -or
+        (Test-CddsiExactPropertySet `
+            -InputObject $Receipt `
+            -Expected $script:CddsiD027ClaudeDownloadReceiptFieldNames)
+    )
+    if (-not $validNames) {
+        throw 'Claude download receipt did not match the exact binding schema.'
+    }
+
+    $canonical = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $withoutBinding) {
+        if ($name -ceq 'SanitizedRedirectUris') {
+            $redirects = @($Receipt.SanitizedRedirectUris)
+            $canonical.Add(
+                ('{0}:{1}={2}' -f $name.Length, $name, $redirects.Count)
+            )
+            for ($index = 0; $index -lt $redirects.Count; $index++) {
+                if ($redirects[$index] -isnot [string]) {
+                    throw 'Claude download receipt redirect value was invalid.'
+                }
+                $text = [string]$redirects[$index]
+                $canonical.Add(
+                    (
+                        'Redirect[{0}]={1}:{2}' -f
+                            $index,
+                            $text.Length,
+                            $text
+                    )
+                )
+            }
+            continue
+        }
+        $value = $Receipt.$name
+        $text = if ($value -is [string]) {
+            $value
+        }
+        elseif ($value -is [int] -or $value -is [long]) {
+            [Convert]::ToString(
+                [long]$value,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+        else {
+            throw 'Claude download receipt contained an unsupported field type.'
+        }
+        $canonical.Add(
+            ('{0}:{1}={2}:{3}' -f $name.Length, $name, $text.Length, $text)
+        )
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text ($canonical -join "`n")
+}
+
+function Get-CddsiD027ClaudeFileIdentityToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$FinalPathBindingToken,
+        [Parameter(Mandatory = $true)][string]$VolumeSerialNumberHex,
+        [Parameter(Mandatory = $true)][string]$FileIndexHex,
+        [Parameter(Mandatory = $true)][string]$ArtifactSha256,
+        [Parameter(Mandatory = $true)][long]$ArtifactSizeBytes
+    )
+
+    if (
+        $FinalPathBindingToken -cnotmatch '^[a-f0-9]{64}$' -or
+        $FinalPathBindingToken -cmatch '^0{64}$' -or
+        $VolumeSerialNumberHex -cnotmatch '^[0-9A-F]{8}$' -or
+        $VolumeSerialNumberHex -ceq '00000000' -or
+        $FileIndexHex -cnotmatch '^[0-9A-F]{16}$' -or
+        $FileIndexHex -ceq '0000000000000000' -or
+        $ArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $ArtifactSha256 -cmatch '^0{64}$' -or
+        $ArtifactSizeBytes -lt 1 -or
+        $ArtifactSizeBytes -gt $script:CddsiD027ClaudeMsixMaximumBytes
+    ) {
+        throw 'Claude held-file identity fields were invalid.'
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text (@(
+        'cddsi-d027-claude-held-file-identity-v1'
+        ('FinalPathBindingToken={0}' -f $FinalPathBindingToken)
+        ('VolumeSerialNumberHex={0}' -f $VolumeSerialNumberHex)
+        ('FileIndexHex={0}' -f $FileIndexHex)
+        'FileSystemName=NTFS'
+        'NumberOfLinks=1'
+        'IsDirectory=false'
+        'IsReparsePoint=false'
+        ('ArtifactSha256={0}' -f $ArtifactSha256)
+        (
+            'ArtifactSizeBytes={0}' -f
+                [Convert]::ToString(
+                    $ArtifactSizeBytes,
+                    [Globalization.CultureInfo]::InvariantCulture
+                )
+        )
+    ) -join "`n")
+}
+
+function Get-CddsiD027ClaudeContentBindingToken {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$ArtifactSha256,
+        [Parameter(Mandatory = $true)][long]$ArtifactSizeBytes
+    )
+
+    if (
+        $ArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $ArtifactSha256 -cmatch '^0{64}$' -or
+        $ArtifactSizeBytes -lt 1 -or
+        $ArtifactSizeBytes -gt $script:CddsiD027ClaudeMsixMaximumBytes
+    ) {
+        throw 'Claude content binding fields were invalid.'
+    }
+    return Get-CddsiSupplyChainTextBindingToken -Text (@(
+        'cddsi-d027-claude-content-v1'
+        'ArtifactType=ClaudeDesktopMsix'
+        ('ArtifactSha256={0}' -f $ArtifactSha256)
+        (
+            'ArtifactSizeBytes={0}' -f
+                [Convert]::ToString(
+                    $ArtifactSizeBytes,
+                    [Globalization.CultureInfo]::InvariantCulture
+                )
+        )
+    ) -join "`n")
+}
+
+function New-CddsiD027ClaudeDownloadReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][string]$StagingRootPath,
+        [Parameter(Mandatory = $true)][string]$DestinationPath,
+        [Parameter(Mandatory = $true)][string]$FileIdentityToken,
+        [Parameter(Mandatory = $true)][string[]]$SanitizedRedirectUris,
+        [Parameter(Mandatory = $true)][string]$ArtifactSha256,
+        [Parameter(Mandatory = $true)][long]$ArtifactSizeBytes,
+        [Parameter(Mandatory = $true)][string]$ObservedAtUtc
+    )
+
+    $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+    if (
+        -not (Test-CddsiCanonicalUuidValue -Value $RunId) -or
+        -not (Test-CddsiD027ClaudeDownloadDestinationPath `
+            -StagingRootPath $StagingRootPath `
+            -DestinationPath $DestinationPath) -or
+        $FileIdentityToken -cnotmatch '^[a-f0-9]{64}$' -or
+        $FileIdentityToken -cmatch '^0{64}$' -or
+        $ArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $ArtifactSha256 -cmatch '^0{64}$' -or
+        $ArtifactSizeBytes -lt 1 -or
+        $ArtifactSizeBytes -gt [long]$descriptor.MaximumBytes -or
+        $ObservedAtUtc -notmatch
+            '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+        -not (Test-CddsiUtcTimestampValue -Value $ObservedAtUtc) -or
+        $null -eq $SanitizedRedirectUris -or
+        $SanitizedRedirectUris.Count -lt 1 -or
+        $SanitizedRedirectUris.Count -gt 5
+    ) {
+        throw 'Claude download receipt inputs were invalid.'
+    }
+    foreach ($redirectUri in $SanitizedRedirectUris) {
+        if (
+            -not (Test-CddsiD027ClaudeSanitizedDownloadUri `
+                -SourceUri $redirectUri)
+        ) {
+            throw 'Claude download receipt contained an invalid sanitized redirect.'
+        }
+    }
+    if (
+        @($SanitizedRedirectUris | Sort-Object -Unique).Count -ne
+            $SanitizedRedirectUris.Count
+    ) {
+        throw 'Claude download receipt redirect chain contained a loop.'
+    }
+
+    $requestUriBindingToken =
+        Get-CddsiSourceUriBindingToken -SourceUri $descriptor.SourceUri
+    $redirectCanonical = New-Object System.Collections.Generic.List[string]
+    $redirectCanonical.Add('cddsi-d027-claude-redirect-chain-v1')
+    $redirectCanonical.Add(('RequestUri={0}' -f $descriptor.SourceUri))
+    for ($index = 0; $index -lt $SanitizedRedirectUris.Count; $index++) {
+        $redirectCanonical.Add(
+            ('Redirect[{0}]={1}' -f $index, $SanitizedRedirectUris[$index])
+        )
+    }
+    $withoutBinding = [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        ContractVersion = 'cddsi-d027-claude-download-receipt-v1'
+        ArtifactState = 'DOWNLOADED_UNVERIFIED'
+        RunId = $RunId
+        ArtifactProfile = 'VmAcceptance'
+        ArtifactType = 'ClaudeDesktopMsix'
+        DescriptorId = $descriptor.DescriptorId
+        SourceDescriptorBindingToken = $descriptor.MetadataBindingToken
+        RequestUri = $descriptor.SourceUri
+        RequestUriBindingToken = $requestUriBindingToken
+        SanitizedFinalUri =
+            $SanitizedRedirectUris[$SanitizedRedirectUris.Count - 1]
+        SanitizedRedirectUris = [string[]]@($SanitizedRedirectUris)
+        RedirectChainBindingToken =
+            Get-CddsiSupplyChainTextBindingToken `
+                -Text ($redirectCanonical -join "`n")
+        RedirectCount = [long]$SanitizedRedirectUris.Count
+        StagingRootPathBindingToken =
+            Get-CddsiPathBindingToken -Path $StagingRootPath
+        DestinationPathBindingToken =
+            Get-CddsiPathBindingToken -Path $DestinationPath
+        FileIdentityToken = $FileIdentityToken
+        ArtifactSha256 = $ArtifactSha256
+        ArtifactSizeBytes = [long]$ArtifactSizeBytes
+        ContentBindingToken =
+            Get-CddsiD027ClaudeContentBindingToken `
+                -ArtifactSha256 $ArtifactSha256 `
+                -ArtifactSizeBytes $ArtifactSizeBytes
+        ObservedAtUtc = $ObservedAtUtc
+    }
+    $values = [ordered]@{}
+    foreach ($property in $withoutBinding.PSObject.Properties) {
+        $values[$property.Name] = $property.Value
+    }
+    $values['ReceiptBindingToken'] =
+        Get-CddsiD027ClaudeDownloadReceiptBindingToken `
+            -Receipt $withoutBinding
+    return [pscustomobject]$values
+}
+
+function Test-CddsiD027ClaudeDownloadReceipt {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$Receipt,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][string]$ExpectedStagingRootPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedDestinationPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedFileIdentityToken,
+        [Parameter(Mandatory = $true)][string]$ExpectedArtifactSha256,
+        [Parameter(Mandatory = $true)][long]$ExpectedArtifactSizeBytes,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc
+    )
+
+    try {
+        $descriptor = New-CddsiD027ClaudeDesktopSourceDescriptor
+        if (
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Receipt `
+                -Expected $script:CddsiD027ClaudeDownloadReceiptFieldNames) -or
+            -not (Test-CddsiSchemaVersionOne -Value $Receipt.SchemaVersion) -or
+            $Receipt.ContractVersion -isnot [string] -or
+            $Receipt.ContractVersion -cne
+                'cddsi-d027-claude-download-receipt-v1' -or
+            $Receipt.ArtifactState -isnot [string] -or
+            $Receipt.ArtifactState -cne 'DOWNLOADED_UNVERIFIED' -or
+            -not (Test-CddsiCanonicalUuidValue -Value $ExpectedRunId) -or
+            $Receipt.RunId -isnot [string] -or
+            $Receipt.RunId -cne $ExpectedRunId -or
+            $Receipt.ArtifactProfile -isnot [string] -or
+            $Receipt.ArtifactProfile -cne 'VmAcceptance' -or
+            $Receipt.ArtifactType -isnot [string] -or
+            $Receipt.ArtifactType -cne 'ClaudeDesktopMsix' -or
+            $Receipt.DescriptorId -isnot [string] -or
+            $Receipt.DescriptorId -cne $descriptor.DescriptorId -or
+            $Receipt.SourceDescriptorBindingToken -isnot [string] -or
+            $Receipt.SourceDescriptorBindingToken -cne
+                $descriptor.MetadataBindingToken -or
+            $Receipt.RequestUri -isnot [string] -or
+            $Receipt.RequestUri -cne $descriptor.SourceUri -or
+            $Receipt.RequestUriBindingToken -isnot [string] -or
+            $Receipt.RequestUriBindingToken -cne
+                $descriptor.SourceUriBindingToken -or
+            $Receipt.SanitizedRedirectUris -isnot [System.Array] -or
+            -not (Test-CddsiD027ClaudeDownloadDestinationPath `
+                -StagingRootPath $ExpectedStagingRootPath `
+                -DestinationPath $ExpectedDestinationPath) -or
+            $ExpectedFileIdentityToken -cnotmatch '^[a-f0-9]{64}$' -or
+            $ExpectedFileIdentityToken -cmatch '^0{64}$' -or
+            $Receipt.FileIdentityToken -isnot [string] -or
+            $Receipt.FileIdentityToken -cne $ExpectedFileIdentityToken -or
+            $ExpectedArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $ExpectedArtifactSha256 -cmatch '^0{64}$' -or
+            $Receipt.ArtifactSha256 -isnot [string] -or
+            $Receipt.ArtifactSha256 -cne $ExpectedArtifactSha256 -or
+            $ExpectedArtifactSizeBytes -lt 1 -or
+            $ExpectedArtifactSizeBytes -gt [long]$descriptor.MaximumBytes -or
+            (($Receipt.ArtifactSizeBytes -isnot [int]) -and
+                ($Receipt.ArtifactSizeBytes -isnot [long])) -or
+            [long]$Receipt.ArtifactSizeBytes -ne
+                $ExpectedArtifactSizeBytes -or
+            $Receipt.ContentBindingToken -isnot [string] -or
+            $Receipt.ContentBindingToken -cne
+                (Get-CddsiD027ClaudeContentBindingToken `
+                    -ArtifactSha256 $ExpectedArtifactSha256 `
+                    -ArtifactSizeBytes $ExpectedArtifactSizeBytes) -or
+            (($Receipt.RedirectCount -isnot [int]) -and
+                ($Receipt.RedirectCount -isnot [long])) -or
+            [long]$Receipt.RedirectCount -lt 1 -or
+            [long]$Receipt.RedirectCount -gt 5 -or
+            $Receipt.SanitizedFinalUri -isnot [string] -or
+            -not (Test-CddsiD027ClaudeSanitizedDownloadUri `
+                -SourceUri $Receipt.SanitizedFinalUri)
+        ) {
+            return $false
+        }
+
+        $redirects = @($Receipt.SanitizedRedirectUris)
+        if (
+            $redirects.Count -ne [long]$Receipt.RedirectCount -or
+            $Receipt.SanitizedFinalUri -cne
+                $redirects[$redirects.Count - 1]
+        ) {
+            return $false
+        }
+        foreach ($redirectUri in $redirects) {
+            if (
+                $redirectUri -isnot [string] -or
+                -not (Test-CddsiD027ClaudeSanitizedDownloadUri `
+                    -SourceUri $redirectUri)
+            ) {
+                return $false
+            }
+        }
+        if (@($redirects | Sort-Object -Unique).Count -ne $redirects.Count) {
+            return $false
+        }
+        $redirectCanonical = New-Object System.Collections.Generic.List[string]
+        $redirectCanonical.Add('cddsi-d027-claude-redirect-chain-v1')
+        $redirectCanonical.Add(('RequestUri={0}' -f $descriptor.SourceUri))
+        for ($index = 0; $index -lt $redirects.Count; $index++) {
+            $redirectCanonical.Add(
+                ('Redirect[{0}]={1}' -f $index, $redirects[$index])
+            )
+        }
+        if (
+            $Receipt.RedirectChainBindingToken -isnot [string] -or
+            $Receipt.RedirectChainBindingToken -cne
+                (Get-CddsiSupplyChainTextBindingToken `
+                    -Text ($redirectCanonical -join "`n")) -or
+            $Receipt.StagingRootPathBindingToken -isnot [string] -or
+            $Receipt.StagingRootPathBindingToken -cne
+                (Get-CddsiPathBindingToken `
+                    -Path $ExpectedStagingRootPath) -or
+            $Receipt.DestinationPathBindingToken -isnot [string] -or
+            $Receipt.DestinationPathBindingToken -cne
+                (Get-CddsiPathBindingToken -Path $ExpectedDestinationPath) -or
+            $Receipt.ReceiptBindingToken -isnot [string] -or
+            $Receipt.ReceiptBindingToken -cnotmatch '^[a-f0-9]{64}$' -or
+            $Receipt.ReceiptBindingToken -cne
+                (Get-CddsiD027ClaudeDownloadReceiptBindingToken `
+                    -Receipt $Receipt)
+        ) {
+            return $false
+        }
+
+        foreach ($timestamp in @(
+                $Receipt.ObservedAtUtc,
+                $ValidationTimeUtc
+            )) {
+            if (
+                $timestamp -isnot [string] -or
+                $timestamp -notmatch
+                    '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+                -not (Test-CddsiUtcTimestampValue -Value $timestamp)
+            ) {
+                return $false
+            }
+        }
+        $style = [Globalization.DateTimeStyles]::AssumeUniversal -bor
+            [Globalization.DateTimeStyles]::AdjustToUniversal
+        $format = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        $observedTime = [DateTimeOffset]::ParseExact(
+            $Receipt.ObservedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $validationTime = [DateTimeOffset]::ParseExact(
+            $ValidationTimeUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        if (
+            $observedTime -gt $validationTime.AddSeconds(30) -or
+            $validationTime -gt $observedTime.AddMinutes(90)
+        ) {
+            return $false
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-CddsiD027ClaudeDownloadedArtifactObservation {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]$Observation,
+        [AllowNull()]$Receipt,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunId,
+        [Parameter(Mandatory = $true)][string]$ExpectedStagingRootPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedDestinationPath,
+        [Parameter(Mandatory = $true)][string]$ValidationTimeUtc
+    )
+
+    # This function validates a pure evidence schema. Only the later Live
+    # producer can prove HeldFinalFileHandle by constructing the observation
+    # internally while retaining that same handle through downstream use.
+    try {
+        if (
+            -not (Test-CddsiExactPropertySet `
+                -InputObject $Observation `
+                -Expected `
+                    $script:CddsiD027ClaudeHeldArtifactObservationFieldNames) -or
+            -not (Test-CddsiSchemaVersionOne `
+                -Value $Observation.SchemaVersion) -or
+            $Observation.ContractVersion -isnot [string] -or
+            $Observation.ContractVersion -cne
+                'cddsi-d027-claude-held-artifact-observation-v1' -or
+            $Observation.ObservationMethod -isnot [string] -or
+            $Observation.ObservationMethod -cne 'HeldFinalFileHandle' -or
+            $Observation.FinalPathBindingToken -isnot [string] -or
+            $Observation.FinalPathBindingToken -cne
+                (Get-CddsiPathBindingToken -Path $ExpectedDestinationPath) -or
+            $Observation.FileSystemName -isnot [string] -or
+            $Observation.FileSystemName -cne 'NTFS' -or
+            (($Observation.NumberOfLinks -isnot [int]) -and
+                ($Observation.NumberOfLinks -isnot [long])) -or
+            [long]$Observation.NumberOfLinks -ne 1 -or
+            $Observation.IsDirectory -isnot [bool] -or
+            $Observation.IsDirectory -or
+            $Observation.IsReparsePoint -isnot [bool] -or
+            $Observation.IsReparsePoint -or
+            $Observation.VolumeSerialNumberHex -isnot [string] -or
+            $Observation.FileIndexHex -isnot [string] -or
+            $Observation.FileIdentityToken -isnot [string] -or
+            $Observation.FileIdentityToken -cne
+                (Get-CddsiD027ClaudeFileIdentityToken `
+                    -FinalPathBindingToken `
+                        $Observation.FinalPathBindingToken `
+                    -VolumeSerialNumberHex `
+                        $Observation.VolumeSerialNumberHex `
+                    -FileIndexHex $Observation.FileIndexHex `
+                    -ArtifactSha256 $Observation.ArtifactSha256 `
+                    -ArtifactSizeBytes `
+                        ([long]$Observation.ArtifactSizeBytes)) -or
+            $Observation.ArtifactSha256 -isnot [string] -or
+            $Observation.ArtifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $Observation.ArtifactSha256 -cmatch '^0{64}$' -or
+            (($Observation.ArtifactSizeBytes -isnot [int]) -and
+                ($Observation.ArtifactSizeBytes -isnot [long])) -or
+            $Observation.ObservedAtUtc -isnot [string] -or
+            $Observation.ObservedAtUtc -notmatch
+                '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -or
+            -not (Test-CddsiUtcTimestampValue `
+                -Value $Observation.ObservedAtUtc)
+        ) {
+            return $false
+        }
+        if (-not (Test-CddsiD027ClaudeDownloadReceipt `
+            -Receipt $Receipt `
+            -ExpectedRunId $ExpectedRunId `
+            -ExpectedStagingRootPath $ExpectedStagingRootPath `
+            -ExpectedDestinationPath $ExpectedDestinationPath `
+            -ExpectedFileIdentityToken $Observation.FileIdentityToken `
+            -ExpectedArtifactSha256 $Observation.ArtifactSha256 `
+            -ExpectedArtifactSizeBytes `
+                ([long]$Observation.ArtifactSizeBytes) `
+            -ValidationTimeUtc $ValidationTimeUtc)) {
+            return $false
+        }
+        $style = [Globalization.DateTimeStyles]::AssumeUniversal -bor
+            [Globalization.DateTimeStyles]::AdjustToUniversal
+        $format = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        $observationTime = [DateTimeOffset]::ParseExact(
+            $Observation.ObservedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $validationTime = [DateTimeOffset]::ParseExact(
+            $ValidationTimeUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        $receiptTime = [DateTimeOffset]::ParseExact(
+            $Receipt.ObservedAtUtc,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $style
+        )
+        return (
+            $observationTime -ge $receiptTime -and
+            $observationTime -le $validationTime.AddSeconds(30) -and
+            $validationTime -le $observationTime.AddMinutes(5)
+        )
+    }
+    catch {
+        return $false
+    }
 }
 
 function ConvertFrom-CddsiD027ClaudeAppxManifestBytes {

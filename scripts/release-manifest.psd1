@@ -142,6 +142,7 @@
         'tests/Unit/D027GitWinVerifyTrust.Tests.ps1'
         'tests/Unit/D027SnapshotAuthorization.Tests.ps1'
         'tests/Unit/D027ClaudeMsixManifest.Tests.ps1'
+        'tests/Unit/D027ClaudeDownloadReceipt.Tests.ps1'
         'tests/Contract/DevelopmentDependencies.Tests.ps1'
         'tests/Contract/IsolationEvidence.Tests.ps1'
         'tests/Contract/PublicFunctions.Tests.ps1'

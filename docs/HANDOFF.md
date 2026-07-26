@@ -18,6 +18,8 @@ GIT_VM_ACCEPTANCE_RSA_SNAPSHOT_SESSION_GATE_IMPLEMENTED_CONFIGURED_FALSE /
 GIT_LIVE_INSTALL_BLOCKED_PENDING_CANDIDATE_WORKLOAD_BINDING /
 CLAUDE_OFFICIAL_X64_STANDARD_SOURCE_DESCRIPTOR_IMPLEMENTED_UNRESOLVED /
 CLAUDE_BOUNDED_MSIX_MANIFEST_PARSER_IMPLEMENTED_PROVISIONAL_IDENTITY /
+CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
+CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_DOWNLOAD_SIGNATURE_MACHINE_PROVISION_NOT_YET_IMPLEMENTED /
 REAL_READ_ONLY_GIT_2_54_OBSERVED /
 GIT_CURRENT_OFFICIAL_FLOOR_REQUIRES_UPGRADE /
@@ -25,6 +27,65 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 Claude Desktop 纯下载收据与 held-file schema 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`d0cb8ace98ef852839e1c4acb46e02fed0730e98`、tree
+`a53e886525f1738e9ff683bfa029e63460043dfd`。本批开始时 local HEAD、
+upstream、remote branch 和 PR #1 head 均等于该 parent，index/worktree clean。
+本批只建立纯函数的下载收据、内容 identity 和 held-file observation schema；
+没有执行产品网络、下载、文件创建/写入、WinVerifyTrust、AppX/DISM、UAC、注册表、
+Claude 进程或 Live。
+
+- D-027 source descriptor 仍精确固定官方 x64 Standard `latest/redirect` 且保持
+  `UNRESOLVED`。新增 validator 逐字段、逐类型匹配该唯一描述符；version、
+  SHA-256、长度、signer、publisher 和 package identity 仍全部未知。
+- 收据只接受 canonical HTTPS、默认端口、无 userinfo/query/fragment 的
+  `downloads.claude.ai` 小写 `.msix` path projection，并拒绝明显的
+  arm64/aarch64/x86/ia32/offline 路径矛盾、encoded path、重复和循环 redirect。
+  这个 allowlist 仍是无敏感 query 的持久化投影和 provisional 下载合同，不是已经在
+  clean VM 观察确认的最终 Anthropic path，也不能授权网络请求或证明 x64 package
+  identity。真实 transport redirect 中若有签名 query，后续 Live 实现只能在内存中
+  短暂持有，不得进入收据、状态、异常、日志或 evidence。
+- `cddsi-d027-claude-download-receipt-v1` 精确绑定 run、固定
+  `VmAcceptance`/`ClaudeDesktopMsix`、来源描述符、request URI、sanitized
+  redirect chain、受控 staging root、目标路径、物理文件 identity、接收后
+  SHA-256/长度、独立 content binding 和 UTC 时间。artifact state 只能是
+  `DOWNLOADED_UNVERIFIED`；没有 cache key、release version、signature、
+  publisher、manifest 或安装成功声明。可变 `latest` descriptor binding 明确不能
+  作为内容 identity。
+- 目标路径纯合同只接受 canonical 本地 drive path，要求目标是 caller-bound
+  staging root 的一个直接子文件且扩展名精确为 `.msix`；UNC、device namespace、
+  drive root、ADS、dot traversal、nested target、Windows reserved device name、
+  非 MSIX 和明显错误架构/渠道均拒绝。这个合同只绑定预期路径；后续 Live 下载仍必须
+  在任何文件创建前独立证明该 staging root 是产品拥有的固定 NTFS 目录、无 reparse
+  ancestor、ACL/owner/writer 受限。
+- held-file observation 精确绑定 `HeldFinalFileHandle`、最终 path token、NTFS、
+  link count=1、非目录、非 reparse、volume serial、file index、当前 SHA-256/长度
+  和 UTC 时间；file identity 同时绑定 path、物理 ID 和内容。receipt 最长 90 分钟，
+  当前 observation 最长 5 分钟，且 observation 不得早于下载完成时间。当前函数只
+  验证纯 evidence schema 的结构与相互一致性，不能自行证明调用者确实持有句柄；
+  后续 Live producer 必须内部构造 observation，并在同一 held handle 未释放时完成
+  readback、receipt 和下游重新验证，任何 close/reopen 或 path-only 观察都不得提升为
+  TOCTOU/安装信任。
+- Git snapshot receipt/session 仍不能授权 Claude。独立
+  `ProvisionClaudeDesktopMachineWide` snapshot workload/session、真实 downloader、
+  MSIX WinVerifyTrust 同 state signer certificate、manifest Publisher 比对、
+  machine-wide provisioning 和 current-user registration 均尚未实现。
+  production snapshot authority 继续 `Configured=false`。
+
+本批最终 Windows PowerShell 5.1 focused 结果为：
+`D027ClaudeDownloadReceipt` 10/10、`D027ClaudeDesktopInstallerLive` 3/3、
+`D027ClaudeMsixManifest` 5/5、`PublicFunctions` 4/4、`Common` 20/20；
+合计 42 passed、0 failed、0 skipped、0 inconclusive、0 not-run；
+`Encoding` 另为 4/4。tracked 加 intended untracked 共 178 files 中 107 个
+PowerShell source parser 为 0 error，`git diff --check` 通过。release manifest
+为 schema 1、40 package files、138 development-only files，
+duplicate/overlap/missing/unclassified/unknown 均为 0；178 个 inventory 和
+40 个 package files 的独立 secret scan 均为 0 findings，顶层
+evidence/artifact/report/log root 为 0。当前不是候选、真实下载、
+clean-snapshot acceptance 或发布证据。
 
 ### D-027 当前 Claude Desktop 来源与 MSIX manifest 批次
 
