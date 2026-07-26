@@ -6,6 +6,9 @@ $script:CddsiD027ClaudeStandardX64SourceUri =
 $script:CddsiD027ClaudeMsixMaximumBytes = [long](1GB)
 $script:CddsiD027ClaudeManifestMaximumBytes = [long](1MB)
 $script:CddsiD027ClaudeSignerCertificateMaximumBytes = 12288
+$script:CddsiD027ClaudeDownloadBufferBytes = 65536
+$script:CddsiD027ClaudeFileShareReadConstructionCapability =
+    New-Object System.Object
 $script:CddsiD027ClaudeManifestNamespace =
     'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
 $script:CddsiD027ClaudeDownloadReceiptFieldNames = @(
@@ -1745,11 +1748,12 @@ $script:CddsiD027ClaudeMsixSameStateSignerObserver =
         return [pscustomobject]$result
     }
 
-$script:CddsiD027ClaudeMsixHeldHandleCorrelator =
-    [System.Func[System.IO.FileStream, string, object]]{
+$script:CddsiD027ClaudeMsixHeldHandleCorrelationCore =
+    [System.Func[System.IO.FileStream, string, object, object]]{
         param(
             [AllowNull()][System.IO.FileStream]$Stream,
-            [AllowNull()][string]$ExpectedDestinationPath
+            [AllowNull()][string]$ExpectedDestinationPath,
+            [AllowNull()]$FileShareReadCapability
         )
 
         $result = [ordered]@{
@@ -2083,20 +2087,81 @@ $script:CddsiD027ClaudeMsixHeldHandleCorrelator =
                     'MSIX_SIGNATURE_OBSERVATION_INVALID'
                 throw 'MSIX trusted signature observation was invalid.'
             }
-            $result.ErrorCode =
-                'CALLER_FILE_SHARE_POLICY_UNPROVEN'
-            throw 'Caller file share policy was not proven.'
+            if (
+                -not [object]::ReferenceEquals(
+                    $FileShareReadCapability,
+                    $script:CddsiD027ClaudeFileShareReadConstructionCapability
+                )
+            ) {
+                $result.ErrorCode =
+                    'CALLER_FILE_SHARE_POLICY_UNPROVEN'
+                throw 'Caller file share policy was not proven.'
+            }
+
+            $result.ErrorCode = 'CORRELATION_MATERIAL_INVALID'
+            $observedAtUtc = [DateTimeOffset]::UtcNow.ToString(
+                'yyyy-MM-ddTHH:mm:ssZ',
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+            $fileIdentityToken =
+                Get-CddsiD027ClaudeFileIdentityToken `
+                    -FinalPathBindingToken `
+                        $beforeIdentity.FinalPathBindingToken `
+                    -VolumeSerialNumberHex `
+                        $beforeIdentity.VolumeSerialNumberHex `
+                    -FileIndexHex $beforeIdentity.FileIndexHex `
+                    -ArtifactSha256 $preHash `
+                    -ArtifactSizeBytes $preLength
+            $heldObservation = [pscustomobject][ordered]@{
+                SchemaVersion = 1
+                ContractVersion =
+                    'cddsi-d027-claude-held-artifact-observation-v1'
+                ObservationMethod = 'HeldFinalFileHandle'
+                FinalPathBindingToken =
+                    $beforeIdentity.FinalPathBindingToken
+                FileSystemName = $beforeIdentity.FileSystemName
+                NumberOfLinks = [long]$beforeIdentity.NumberOfLinks
+                IsDirectory = [bool]$beforeIdentity.IsDirectory
+                IsReparsePoint = [bool]$beforeIdentity.IsReparsePoint
+                VolumeSerialNumberHex =
+                    $beforeIdentity.VolumeSerialNumberHex
+                FileIndexHex = $beforeIdentity.FileIndexHex
+                FileIdentityToken = $fileIdentityToken
+                ArtifactSha256 = $preHash
+                ArtifactSizeBytes = $preLength
+                ObservedAtUtc = $observedAtUtc
+            }
+            $result.Status = 'CORRELATED'
+            $result.ErrorCode = ''
+            $result.FinalPathBindingToken =
+                $beforeIdentity.FinalPathBindingToken
+            $result.ArtifactSha256 = $preHash
+            $result.ArtifactSizeBytes = $preLength
+            $result.HeldFileIdentityObservation = $heldObservation
+            $result.ManifestIdentity = $manifestIdentity
+            $result.SameStateSignerObservation = $signerObservation
         }
         catch {
             # Raw exception data is intentionally discarded from this
             # path-free private observation.
         }
         finally {
+            $correlationCleanupFailed = $false
             if ($null -ne $postHasher) {
-                $postHasher.Dispose()
+                try {
+                    $postHasher.Dispose()
+                }
+                catch {
+                    $correlationCleanupFailed = $true
+                }
             }
             if ($null -ne $preHasher) {
-                $preHasher.Dispose()
+                try {
+                    $preHasher.Dispose()
+                }
+                catch {
+                    $correlationCleanupFailed = $true
+                }
             }
             if ($initialPositionCaptured) {
                 try {
@@ -2109,12 +2174,346 @@ $script:CddsiD027ClaudeMsixHeldHandleCorrelator =
                     $result.StreamPositionRestored = $false
                 }
             }
+            if ($correlationCleanupFailed) {
+                $result.Status = 'FAILED'
+                $result.ErrorCode =
+                    'CORRELATION_HASH_CLEANUP_FAILED'
+                $result.FinalPathBindingToken = $null
+                $result.ArtifactSha256 = $null
+                $result.ArtifactSizeBytes = $null
+                $result.HeldFileIdentityObservation = $null
+                $result.ManifestIdentity = $null
+                $result.SameStateSignerObservation = $null
+            }
             if (
                 $initialPositionCaptured -and
                 -not $result.StreamPositionRestored
             ) {
+                $result.Status = 'FAILED'
                 $result.ErrorCode =
                     'STREAM_POSITION_NOT_RESTORED'
+                $result.FinalPathBindingToken = $null
+                $result.ArtifactSha256 = $null
+                $result.ArtifactSizeBytes = $null
+                $result.HeldFileIdentityObservation = $null
+                $result.ManifestIdentity = $null
+                $result.SameStateSignerObservation = $null
+            }
+        }
+        return [pscustomobject]$result
+    }
+
+$script:CddsiD027ClaudeMsixHeldHandleCorrelator =
+    [System.Func[System.IO.FileStream, string, object]]{
+        param(
+            [AllowNull()][System.IO.FileStream]$Stream,
+            [AllowNull()][string]$ExpectedDestinationPath
+        )
+
+        return $script:CddsiD027ClaudeMsixHeldHandleCorrelationCore.
+            Invoke(
+                $Stream,
+                $ExpectedDestinationPath,
+                $null
+            )
+    }
+
+$script:CddsiD027ClaudeMsixFileShareReadConstructionSiteCorrelator =
+    [System.Func[string, object]]{
+        param(
+            [AllowNull()][string]$ExpectedDestinationPath
+        )
+
+        $stream = $null
+        $outcome = $null
+        $streamCloseFailed = $false
+        try {
+            if (
+                $ExpectedDestinationPath -isnot [string] -or
+                $ExpectedDestinationPath.Length -lt 8 -or
+                $ExpectedDestinationPath.Length -gt 32767 -or
+                $ExpectedDestinationPath.IndexOf([char]0) -ge 0 -or
+                $ExpectedDestinationPath.Contains('/') -or
+                $ExpectedDestinationPath -cnotmatch '^[A-Za-z]:\\' -or
+                [IO.Path]::GetFullPath($ExpectedDestinationPath) -cne
+                    $ExpectedDestinationPath -or
+                [IO.Path]::GetExtension($ExpectedDestinationPath) -cne
+                    '.msix'
+            ) {
+                throw 'Invalid construction-site final file path.'
+            }
+            $stream = [System.IO.FileStream]::new(
+                $ExpectedDestinationPath,
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::Read,
+                [System.IO.FileShare]::Read,
+                $script:CddsiD027ClaudeDownloadBufferBytes,
+                [System.IO.FileOptions]::SequentialScan
+            )
+            $outcome =
+                $script:CddsiD027ClaudeMsixHeldHandleCorrelationCore.
+                    Invoke(
+                        $stream,
+                        $ExpectedDestinationPath,
+                        $script:CddsiD027ClaudeFileShareReadConstructionCapability
+                    )
+        }
+        catch {
+            $outcome =
+                $script:CddsiD027ClaudeMsixHeldHandleCorrelationCore.
+                    Invoke(
+                        $null,
+                        $ExpectedDestinationPath,
+                        $null
+                    )
+            $outcome.ErrorCode =
+                'CONSTRUCTION_SITE_HELD_FILE_OPEN_FAILED'
+        }
+        finally {
+            if ($null -ne $stream) {
+                try {
+                    $stream.Dispose()
+                }
+                catch {
+                    $streamCloseFailed = $true
+                }
+            }
+            if ($streamCloseFailed) {
+                if ($null -eq $outcome) {
+                    $outcome =
+                        $script:CddsiD027ClaudeMsixHeldHandleCorrelationCore.
+                            Invoke(
+                                $null,
+                                $ExpectedDestinationPath,
+                                $null
+                            )
+                }
+                $outcome.Status = 'FAILED'
+                $outcome.ErrorCode =
+                    'CONSTRUCTION_SITE_HELD_FILE_CLOSE_FAILED'
+                $outcome.FinalPathBindingToken = $null
+                $outcome.ArtifactSha256 = $null
+                $outcome.ArtifactSizeBytes = $null
+                $outcome.HeldFileIdentityObservation = $null
+                $outcome.ManifestIdentity = $null
+                $outcome.SameStateSignerObservation = $null
+            }
+        }
+        return $outcome
+    }
+
+$script:CddsiD027ClaudeDownloadPartialPathValidator =
+    [System.Func[string, string, bool]]{
+        param(
+            [AllowNull()][string]$StagingRootPath,
+            [AllowNull()][string]$PartialPath
+        )
+
+        try {
+            if (
+                $StagingRootPath -isnot [string] -or
+                $PartialPath -isnot [string] -or
+                $StagingRootPath.Length -lt 4 -or
+                $StagingRootPath.Length -gt 240 -or
+                $PartialPath.Length -lt 24 -or
+                $PartialPath.Length -gt 240 -or
+                $StagingRootPath.IndexOf([char]0) -ge 0 -or
+                $PartialPath.IndexOf([char]0) -ge 0 -or
+                $StagingRootPath.Contains('/') -or
+                $PartialPath.Contains('/') -or
+                $StagingRootPath -cnotmatch '^[A-Za-z]:\\' -or
+                $PartialPath -cnotmatch '^[A-Za-z]:\\'
+            ) {
+                return $false
+            }
+            $rootFull = [IO.Path]::GetFullPath($StagingRootPath)
+            $partialFull = [IO.Path]::GetFullPath($PartialPath)
+            if (
+                $rootFull -cne $StagingRootPath -or
+                $partialFull -cne $PartialPath -or
+                [string]::Equals(
+                    $rootFull,
+                    [IO.Path]::GetPathRoot($rootFull),
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -or
+                $rootFull.EndsWith(
+                    '\',
+                    [StringComparison]::Ordinal
+                ) -or
+                -not [string]::Equals(
+                    [IO.Path]::GetDirectoryName($partialFull),
+                    $rootFull,
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -or
+                [IO.Path]::GetFileName($partialFull) -cnotmatch
+                    '^claude-[a-f0-9]{16}\.partial$'
+            ) {
+                return $false
+            }
+            return $true
+        }
+        catch {
+            return $false
+        }
+    }
+
+$script:CddsiD027ClaudeMsixBoundedDownloadBodyWriter =
+    [System.Func[
+        System.IO.Stream,
+        string,
+        string,
+        long,
+        System.Threading.CancellationToken,
+        object
+    ]]{
+        param(
+            [AllowNull()][System.IO.Stream]$SourceStream,
+            [AllowNull()][string]$StagingRootPath,
+            [AllowNull()][string]$PartialPath,
+            [long]$DeclaredLengthBytes,
+            [System.Threading.CancellationToken]$CancellationToken
+        )
+
+        $result = [ordered]@{
+            SchemaVersion = 1
+            ContractVersion =
+                'cddsi-d027-claude-download-body-write-v1'
+            Status = 'FAILED'
+            ErrorCode = 'INVALID_INPUT'
+            PartialCreated = $false
+            DurableFlushCompleted = $false
+            PartialPathBindingToken = $null
+            ArtifactSha256 = $null
+            ArtifactSizeBytes = $null
+        }
+        $partialStream = $null
+        $sha = $null
+        try {
+            if (
+                $null -eq $SourceStream -or
+                -not $SourceStream.CanRead -or
+                -not $script:CddsiD027ClaudeDownloadPartialPathValidator.
+                    Invoke($StagingRootPath, $PartialPath) -or
+                $DeclaredLengthBytes -lt 64 -or
+                $DeclaredLengthBytes -gt
+                    $script:CddsiD027ClaudeMsixMaximumBytes
+            ) {
+                return [pscustomobject]$result
+            }
+            $result.PartialPathBindingToken =
+                Get-CddsiPathBindingToken -Path $PartialPath
+            if (
+                [System.IO.File]::Exists($PartialPath) -or
+                [System.IO.Directory]::Exists($PartialPath)
+            ) {
+                $result.ErrorCode = 'DOWNLOAD_PARTIAL_EXISTS'
+                return [pscustomobject]$result
+            }
+
+            $result.ErrorCode = 'DOWNLOAD_PARTIAL_CREATE_FAILED'
+            $partialStream = [System.IO.FileStream]::new(
+                $PartialPath,
+                [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::None,
+                $script:CddsiD027ClaudeDownloadBufferBytes,
+                [System.IO.FileOptions]::WriteThrough
+            )
+            $result.PartialCreated = $true
+            $result.ErrorCode =
+                'DOWNLOAD_BODY_HASH_INITIALIZATION_FAILED'
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $buffer =
+                New-Object byte[] $script:CddsiD027ClaudeDownloadBufferBytes
+            [long]$total = 0
+            while ($true) {
+                $result.ErrorCode = 'DOWNLOAD_BODY_CANCELLED'
+                $CancellationToken.ThrowIfCancellationRequested()
+                $result.ErrorCode = 'DOWNLOAD_BODY_READ_FAILED'
+                $read = $SourceStream.ReadAsync(
+                    $buffer,
+                    0,
+                    $buffer.Length,
+                    $CancellationToken
+                ).GetAwaiter().GetResult()
+                if ($read -le 0) {
+                    break
+                }
+                if (
+                    $total + [long]$read -gt
+                        $DeclaredLengthBytes
+                ) {
+                    $result.ErrorCode =
+                        'DOWNLOAD_BODY_EXCEEDED_DECLARED_LENGTH'
+                    throw 'Download body exceeded its declared length.'
+                }
+                $result.ErrorCode = 'DOWNLOAD_BODY_WRITE_FAILED'
+                $partialStream.Write($buffer, 0, $read)
+                $result.ErrorCode = 'DOWNLOAD_BODY_HASH_UPDATE_FAILED'
+                [void]$sha.TransformBlock(
+                    $buffer,
+                    0,
+                    $read,
+                    $buffer,
+                    0
+                )
+                $total += [long]$read
+            }
+            if ($total -ne $DeclaredLengthBytes) {
+                $result.ErrorCode = 'DOWNLOAD_BODY_TRUNCATED'
+                throw 'Download body was truncated.'
+            }
+            $result.ErrorCode = 'DOWNLOAD_BODY_HASH_FAILED'
+            [void]$sha.TransformFinalBlock(
+                (New-Object byte[] 0),
+                0,
+                0
+            )
+            $artifactSha256 = [BitConverter]::ToString(
+                $sha.Hash
+            ).Replace('-', '').ToLowerInvariant()
+            if (
+                $artifactSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+                $artifactSha256 -cmatch '^0{64}$'
+            ) {
+                throw 'Download body hash was invalid.'
+            }
+            $result.ErrorCode = 'DOWNLOAD_BODY_DURABLE_FLUSH_FAILED'
+            $partialStream.Flush($true)
+            $result.DurableFlushCompleted = $true
+            $result.ArtifactSha256 = $artifactSha256
+            $result.ArtifactSizeBytes = $total
+            $result.Status = 'COMPLETED'
+            $result.ErrorCode = ''
+        }
+        catch {
+            # Raw exception data and local paths are intentionally discarded.
+        }
+        finally {
+            $cleanupFailed = $false
+            if ($null -ne $sha) {
+                try {
+                    $sha.Dispose()
+                }
+                catch {
+                    $cleanupFailed = $true
+                }
+            }
+            if ($null -ne $partialStream) {
+                try {
+                    $partialStream.Dispose()
+                }
+                catch {
+                    $cleanupFailed = $true
+                }
+            }
+            if ($cleanupFailed) {
+                $result.Status = 'FAILED'
+                $result.ErrorCode =
+                    'DOWNLOAD_BODY_CLEANUP_FAILED'
+                $result.DurableFlushCompleted = $false
+                $result.ArtifactSha256 = $null
+                $result.ArtifactSizeBytes = $null
             }
         }
         return [pscustomobject]$result

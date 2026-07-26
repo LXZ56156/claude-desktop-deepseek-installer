@@ -143,6 +143,7 @@
         'tests/Unit/D027GitWinVerifyTrust.Tests.ps1'
         'tests/Unit/D027SnapshotAuthorization.Tests.ps1'
         'tests/Unit/D027ClaudeMsixManifest.Tests.ps1'
+        'tests/Unit/D027ClaudeMsixDownloadWriter.Tests.ps1'
         'tests/Unit/D027ClaudeMsixHeldHandleCorrelation.Tests.ps1'
         'tests/Unit/D027ClaudeMsixSameStateSigner.Tests.ps1'
         'tests/Unit/D027ClaudeMsixSignatureEvidence.Tests.ps1'

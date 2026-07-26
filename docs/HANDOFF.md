@@ -24,7 +24,10 @@ CLAUDE_MANIFEST_RAW_CONTENT_AND_IDENTITY_BINDING_IMPLEMENTED /
 CLAUDE_PURE_DOWNLOAD_RECEIPT_AND_HELD_FILE_SCHEMA_IMPLEMENTED /
 CLAUDE_SAME_STATE_SIGNER_EVIDENCE_PURE_CONTRACT_IMPLEMENTED /
 CLAUDE_PRIVATE_SAME_STATE_NATIVE_OBSERVATION_IMPLEMENTED_NEGATIVE_ONLY /
-CLAUDE_PRIVATE_HELD_HANDLE_CORRELATION_IMPLEMENTED_NEGATIVE_ONLY /
+CLAUDE_CALLER_HELD_CORRELATION_REMAINS_NEGATIVE_ONLY /
+CLAUDE_PRIVATE_BOUNDED_BODY_WRITER_IMPLEMENTED /
+CLAUDE_PRIVATE_FILESHARE_READ_CONSTRUCTION_SITE_IMPLEMENTED /
+CLAUDE_OUTER_DOWNLOAD_BUNDLE_AND_AUTHORITY_NOT_YET_IMPLEMENTED /
 CLAUDE_LIVE_DOWNLOAD_NOT_YET_IMPLEMENTED /
 CLAUDE_SNAPSHOT_WORKLOAD_DESCRIPTOR_AND_FIXED_RECEIPT_DOMAIN_IMPLEMENTED /
 CLAUDE_SNAPSHOT_SESSION_AND_LIVE_NOT_YET_IMPLEMENTED /
@@ -35,6 +38,72 @@ REAL_GIT_NETWORK_DOWNLOAD_NOT_YET_PASSED /
 REAL_GIT_SILENT_INSTALL_NOT_YET_PASSED /
 REAL_CLAUDE_AND_COMPUTER_USE_NOT_YET_PASSED /
 D027_RELEASE_READY_NOT_REACHED / MANUAL_RELEASE_ONLY。**
+
+### D-027 当前 Claude MSIX bounded body 与 FileShare construction-site 批次
+
+本批的精确 parent 为已普通 fast-forward 推送的 commit
+`fbc3cf94af1926d6101c24541787181ae9d03bc6`、tree
+`31fe0194669baf5c9c6913e6caa3fa35cd49b7ff`。本批开始时 branch 为唯一
+`codex/repair/p10a-0a-fast-lane`，local HEAD、upstream、remote-tracking branch 和
+PR #1 head 均等于该 parent，PR open/draft/unmerged，index/worktree clean。本批没有
+执行产品网络、真实 Claude body 下载、AppX/DISM、进程、注册表、UAC 或安装，没有读取
+任何真实 Claude 配置、凭据或 key，也没有建立 Claude Live/session authority。
+
+- 2026-07-26 的官方只读来源核验确认，Anthropic Windows deployment 页的 x64 MSIX
+  链接仍精确为
+  `https://claude.ai/api/desktop/win32/x64/msix/latest/redirect`，与当前 descriptor
+  一致。该入口当前用不自动跟随的 GET 返回 307/空 body；HEAD 返回 405。当前时点的
+  sanitized Location 为
+  `https://downloads.claude.ai/releases/win32/x64/1.24012.9/Claude-03c61d06f8e01a4db2273b9514e225f21d2ba62e.msix`，
+  终点 HEAD 为 200、`application/octet-stream`、Content-Length `258383876`，无
+  下一跳。本次只观察 header，没有下载 body。这个 `latest` 目标与长度是易变的外部
+  状态，不是 frozen candidate、SHA-256、signer/publisher 或 identity 证据。
+- 新增 script-scoped bounded body-writer，返回精确 9 字段的 path-free 瞬态结果。
+  它只接受 canonical staging root 的直属
+  `claude-<16 lowercase hex>.partial` 新文件，以
+  `CreateNew/Write/FileShare.None/WriteThrough` 创建，使用 64 KiB buffer 和
+  cancellation token，要求 declared length 精确落在 64 bytes–1 GiB，逐块写入并
+  增量 SHA-256，只有完整长度、final hash 和 `Flush(true)` 都成功才返回
+  `COMPLETED`。它不关闭 caller stream、不覆盖/删除/move partial，也不执行 HTTP、
+  redirect、manifest、WVT、receipt 或安装。create/hash/read/write/length/flush/
+  cleanup 都有独立 allowlisted stage code；异常、stack 和原始路径均被丢弃。
+- held-handle correlation 被拆为私有 core 与两个 wrapper。任意 caller-supplied
+  stream 的原 wrapper 始终传 null capability；即使 synthetic trusted WVT shape
+  完整，也仍精确停在 `CALLER_FILE_SHARE_POLICY_UNPROVEN`，六项 material 全为空。
+  唯一 construction-site wrapper 自己用精确
+  `FileMode.Open/FileAccess.Read/FileShare.Read/SequentialScan` 打开目标，并以
+  `ReferenceEquals` 的 script-scope capability 调用 core。core 仍固定
+  identity A → hash A → raw manifest → same-state WVT → hash B → identity B；
+  完整稳定且 trusted shape 的 test-only 路径只产生 `CORRELATED` 瞬态 material，
+  不是 `SUCCEEDED`、Anthropic trust、download ownership 或 installation authority。
+  测试在 signer observation 期间实际尝试竞争写入并确认被 share policy 拒绝。
+- core hasher cleanup、最终 position restore 和 construction-site stream close 任一
+  失败都会回到 `FAILED`，清空 path token、hash、size、held/manifest/signer material。
+  construction-site wrapper 返回前必然关闭自己创建的 handle，所以它只是未绑定
+  ownership 的观察 primitive，不能直接交给公开 `Save` 或安装。
+- 本批刻意没有接入公开 `Save-CddsiOfficialClaudeDesktopMsix`。outer producer 仍须
+  在任何写入前证明 fixed NTFS、所有祖先非 reparse、owner/DACL writer 受限；手动
+  验证 official redirect/header，调用 body-writer 后原子提交；再在同一仍持有的
+  `FileShare.Read` scope 中把 body hash/length 与 final correlation 精确比较，并
+  构造、纯验证 receipt/held observation/30 字段 evidence 后才关闭。当前完整
+  `ProvisionClaudeDesktopMachineWide` snapshot workload 已要求这些事后 artifact
+  token，不能反过来授权首次下载；下一批必须先建立只绑定 candidate/run/platform
+  的 `AcquireClaudeDesktopMsix` pre-download authority，不能绕过这个授权循环。
+  receipt/evidence 当前还固定 `VmAcceptance`，不能夸称 UserLive 通用下载路径。
+
+本批最终在彼此独立的 fresh Windows PowerShell 5.1 进程中运行必要 focused 门：
+download body writer 7/7、held-handle correlation 9/9、same-state signer 8/8、
+manifest 5/5、download receipt 10/10、signature evidence 7/7、公开 Claude plan
+3/3、PublicFunctions 4/4、Config 18/18，以及只筛选默认 bootstrap graph
+disjointness 的 LiveAdapters 1/1，共 72 passed、0 failed/skipped/inconclusive；
+LiveAdapters 其余 5 个非筛选用例为 not run。Encoding 另为 4/4。183 个
+tracked/intended-untracked inventory 由 release manifest 精确分成 41 个 package
+files 与 142 个 development-only files，无 duplicate/overlap/missing/unknown；
+112 个 PowerShell sources 与 112 个 execution-boundary entries 精确相等，PS5.1
+parser 为 0 errors。183 个 inventory、41 个 package files 和 0 个 evidence paths
+的独立 stream secret scan 均为 0 findings；顶层 evidence/artifact/report/log root
+为 0，`git diff --check` 通过。两个独立只读审计在最新 diff 上均无 blocking
+finding。没有运行退役历史测试、ProductReleaseGate 或 PS7 parity。
 
 ### D-027 当前 Claude MSIX 私有 caller-held correlation 批次
 

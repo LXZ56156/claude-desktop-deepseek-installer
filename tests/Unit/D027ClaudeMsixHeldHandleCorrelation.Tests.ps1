@@ -146,13 +146,21 @@ BeforeAll {
                 [StringComparison]::OrdinalIgnoreCase
             ) | Should -Be -1
         }
-        ($Result | ConvertTo-Json -Depth 20 -Compress) |
+        $json = $Result | ConvertTo-Json -Depth 20 -Compress
+        $pathJson = ConvertTo-Json -InputObject $Path -Compress
+        $escapedPathNeedle =
+            $pathJson.Substring(1, $pathJson.Length - 2)
+        $json.IndexOf(
+            $escapedPathNeedle,
+            [StringComparison]::OrdinalIgnoreCase
+        ) | Should -Be -1
+        $json |
             Should -Not -Match '(?i)Exception|Stack|TargetSite'
     }
 }
 
 Describe 'D-027 Claude MSIX held-handle correlation primitive' {
-    It 'keeps the identity observer and correlator private and unconsumed' {
+    It 'keeps the identity, core and construction-site correlators private' {
         $script:CddsiD027ClaudeMsixHeldFileIdentityObserver.GetType().
             FullName |
             Should -BeExactly (
@@ -173,6 +181,12 @@ Describe 'D-027 Claude MSIX held-handle correlation primitive' {
                 '[System.Object, mscorlib, Version=4.0.0.0, ' +
                 'Culture=neutral, PublicKeyToken=b77a5c561934e089]]'
             )
+        $script:CddsiD027ClaudeMsixHeldHandleCorrelationCore.GetType().
+            Name |
+            Should -BeExactly 'Func`4'
+        $script:CddsiD027ClaudeMsixFileShareReadConstructionSiteCorrelator.GetType().
+            Name |
+            Should -BeExactly 'Func`2'
         @(
             $script:DesktopMsixAst.FindAll(
                 {
@@ -233,6 +247,15 @@ Describe 'D-027 Claude MSIX held-handle correlation primitive' {
         Assert-CddsiD027CorrelationHasNoRawPath `
             -Result $result `
             -Path 'C:\CDDsi\staging\Claude.msix'
+        {
+            Assert-CddsiD027CorrelationHasNoRawPath `
+                -Result ([pscustomobject]@{
+                    Nested = [pscustomobject]@{
+                        RawPath = 'C:\CDDsi\staging\Claude.msix'
+                    }
+                }) `
+                -Path 'C:\CDDsi\staging\Claude.msix'
+        } | Should -Throw
     }
 
     It 'derives exact NTFS and file identity facts from the caller handle' {
@@ -516,6 +539,144 @@ Describe 'D-027 Claude MSIX held-handle correlation primitive' {
         }
     }
 
+    It 'releases material only through the product-created FileShare.Read construction site' {
+        $path = Join-Path $TestDrive 'owned-correlation.msix'
+        New-CddsiD027UnsignedMsixFixture -Path $path
+        $originalObserver =
+            $script:CddsiD027ClaudeMsixSameStateSignerObserver
+        try {
+            $pathBindingToken =
+                Get-CddsiPathBindingToken -Path $path
+            $certificateBytes =
+                New-Object byte[] 256
+            for ($index = 0; $index -lt $certificateBytes.Length; $index++) {
+                $certificateBytes[$index] = [byte]$index
+            }
+            $script:CddsiD027ClaudeMsixSameStateSignerObserver =
+                [System.Func[System.IO.FileStream, object]]{
+                    param([System.IO.FileStream]$IgnoredStream)
+                    $competingWrite = $null
+                    try {
+                        $competingWrite = [System.IO.FileStream]::new(
+                            $path,
+                            [System.IO.FileMode]::Open,
+                            [System.IO.FileAccess]::Write,
+                            [System.IO.FileShare]::ReadWrite
+                        )
+                        $script:CddsiD027CompetingWriteOpenedDuringSignerObservation =
+                            $true
+                    }
+                    catch {
+                        $script:CddsiD027CompetingWriteOpenedDuringSignerObservation =
+                            $false
+                    }
+                    finally {
+                        if ($null -ne $competingWrite) {
+                            $competingWrite.Dispose()
+                        }
+                    }
+                    return [pscustomobject][ordered]@{
+                        SchemaVersion = 1
+                        ContractVersion =
+                            'cddsi-d027-claude-msix-' +
+                            'same-state-native-observation-v1'
+                        ObservationMethod =
+                            'CallerHeldFileStreamNativeObservation'
+                        VerificationMethod =
+                            'WinVerifyTrustExGenericVerifyV2'
+                        SignerExtractionMethod =
+                            'WTHelperPrimarySignerCertificateFromSameState'
+                        StateLifecycle =
+                            'VerifyExtractCopyCloseRequired'
+                        FinalPathBindingToken = $pathBindingToken
+                        CallerFileHandleSupplied = $true
+                        FinalPathStableAcrossVerification = $true
+                        FileFactsStableAcrossVerification = $true
+                        ProviderOpenedFile = $false
+                        PrimarySignerCount = [long]1
+                        SecondarySignatureCount = [long]0
+                        WinVerifyTrustTrusted = $true
+                        WinVerifyTrustStatus = 'Trusted'
+                        WinVerifyTrustNativeStatusHex = '0x00000000'
+                        WinVerifyTrustRevocationMode = 'NotChecked'
+                        StateCloseCompleted = $true
+                        StateCloseNativeStatusHex = '0x00000000'
+                        StreamPositionRestored = $true
+                        PrimarySignerCertificateDerBytes =
+                            $certificateBytes
+                        PrimarySignerCertificateDerLengthBytes =
+                            [long]$certificateBytes.Length
+                    }
+                }
+
+            $callerStream = [System.IO.FileStream]::new(
+                $path,
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::Read,
+                [System.IO.FileShare]::Read
+            )
+            try {
+                $callerResult =
+                    $script:CddsiD027ClaudeMsixHeldHandleCorrelator.
+                        Invoke($callerStream, $path)
+                $callerResult.ErrorCode |
+                    Should -BeExactly 'CALLER_FILE_SHARE_POLICY_UNPROVEN'
+                $callerResult.Status | Should -BeExactly 'FAILED'
+                $callerResult.FinalPathBindingToken |
+                    Should -BeNullOrEmpty
+                $callerResult.ArtifactSha256 | Should -BeNullOrEmpty
+                $callerResult.ArtifactSizeBytes | Should -BeNullOrEmpty
+                $callerResult.HeldFileIdentityObservation |
+                    Should -BeNullOrEmpty
+                $callerResult.ManifestIdentity |
+                    Should -BeNullOrEmpty
+                $callerResult.SameStateSignerObservation |
+                    Should -BeNullOrEmpty
+            }
+            finally {
+                $callerStream.Dispose()
+            }
+
+            $ownedResult =
+                $script:CddsiD027ClaudeMsixFileShareReadConstructionSiteCorrelator.
+                    Invoke($path)
+            $ownedResult.Status | Should -BeExactly 'CORRELATED'
+            $ownedResult.ErrorCode | Should -BeExactly ''
+            $ownedResult.ExpectedDestinationMatched | Should -BeTrue
+            $ownedResult.PreAndPostContentHashMatched | Should -BeTrue
+            $ownedResult.PreAndPostFileFactsMatched | Should -BeTrue
+            $ownedResult.WinVerifyTrustStatus |
+                Should -BeExactly 'Trusted'
+            $ownedResult.FinalPathBindingToken |
+                Should -BeExactly $pathBindingToken
+            $ownedResult.ArtifactSha256 |
+                Should -Match '^[a-f0-9]{64}$'
+            $ownedResult.ArtifactSizeBytes |
+                Should -Be ([System.IO.FileInfo]::new($path).Length)
+            $ownedResult.HeldFileIdentityObservation |
+                Should -Not -BeNullOrEmpty
+            $ownedResult.HeldFileIdentityObservation.ObservationMethod |
+                Should -BeExactly 'HeldFinalFileHandle'
+            $ownedResult.ManifestIdentity.PackageName |
+                Should -BeExactly 'Claude'
+            $ownedResult.SameStateSignerObservation.WinVerifyTrustTrusted |
+                Should -BeTrue
+            $script:CddsiD027CompetingWriteOpenedDuringSignerObservation |
+                Should -BeFalse
+            Assert-CddsiD027CorrelationHasNoRawPath `
+                -Result $ownedResult `
+                -Path $path
+        }
+        finally {
+            $script:CddsiD027ClaudeMsixSameStateSignerObserver =
+                $originalObserver
+            Remove-Variable `
+                -Name CddsiD027CompetingWriteOpenedDuringSignerObservation `
+                -Scope Script `
+                -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'fixes one same-stream order and forbids path reopen or authority calls' {
         $assignments = @(
             $script:DesktopMsixAst.FindAll(
@@ -524,7 +685,7 @@ Describe 'D-027 Claude MSIX held-handle correlation primitive' {
                     $node -is
                         [System.Management.Automation.Language.AssignmentStatementAst] -and
                     $node.Left.Extent.Text -ceq
-                        '$script:CddsiD027ClaudeMsixHeldHandleCorrelator'
+                        '$script:CddsiD027ClaudeMsixHeldHandleCorrelationCore'
                 },
                 $true
             )
@@ -579,6 +740,10 @@ Describe 'D-027 Claude MSIX held-handle correlation primitive' {
         $extent |
             Should -Match 'CALLER_FILE_SHARE_POLICY_UNPROVEN'
         $extent |
+            Should -Match 'CddsiD027ClaudeFileShareReadConstructionCapability'
+        $extent |
+            Should -Match '\[object\]::ReferenceEquals'
+        $extent |
             Should -Match 'Test-CddsiExactPropertySet'
         foreach (
             $trustedInvariant in @(
@@ -596,10 +761,47 @@ Describe 'D-027 Claude MSIX held-handle correlation primitive' {
             $extent | Should -Match $trustedInvariant
         }
         $extent |
-            Should -Not -Match (
-                '\$result\.Status\s*=\s*' +
-                "'(?:CORRELATED|SUCCEEDED|OBSERVATIONS_MATCHED)'"
+            Should -Match '\$result\.Status\s*=\s*''CORRELATED'''
+        $callerAssignment = @(
+            $script:DesktopMsixAst.FindAll(
+                {
+                    param($node)
+                    $node -is
+                        [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left.Extent.Text -ceq
+                        '$script:CddsiD027ClaudeMsixHeldHandleCorrelator'
+                },
+                $true
             )
+        )
+        $callerAssignment.Count | Should -Be 1
+        $callerAssignment[0].Right.Extent.Text |
+            Should -Match (
+                'CddsiD027ClaudeMsixHeldHandleCorrelationCore' +
+                '[\s\S]*\$null'
+            )
+        $ownedAssignment = @(
+            $script:DesktopMsixAst.FindAll(
+                {
+                    param($node)
+                    $node -is
+                        [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left.Extent.Text -ceq
+                        '$script:CddsiD027ClaudeMsixFileShareReadConstructionSiteCorrelator'
+                },
+                $true
+            )
+        )
+        $ownedAssignment.Count | Should -Be 1
+        $ownedExtent = $ownedAssignment[0].Right.Extent.Text
+        foreach ($required in @(
+                'FileMode]::Open',
+                'FileAccess]::Read',
+                'FileShare]::Read',
+                'CddsiD027ClaudeFileShareReadConstructionCapability'
+            )) {
+            $ownedExtent | Should -Match ([regex]::Escape($required))
+        }
         $script:DesktopMsixSource |
             Should -Match 'GetVolumeInformationByHandleW'
         $script:DesktopMsixSource |

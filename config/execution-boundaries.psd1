@@ -32,6 +32,7 @@
         Tests = @(
             'tests/Unit/Common.Tests.ps1'
             'tests/Unit/D027ClaudeDownloadReceipt.Tests.ps1'
+            'tests/Unit/D027ClaudeMsixDownloadWriter.Tests.ps1'
             'tests/Unit/D027ClaudeMsixHeldHandleCorrelation.Tests.ps1'
             'tests/Unit/D027ClaudeMsixManifest.Tests.ps1'
             'tests/Unit/D027ClaudeMsixSameStateSigner.Tests.ps1'

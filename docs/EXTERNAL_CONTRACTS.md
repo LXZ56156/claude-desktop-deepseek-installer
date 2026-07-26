@@ -248,6 +248,14 @@ Anthropic 提供 credential helper 机制。helper 输出的 token 在内存中�
 - [Claude Desktop Windows deployment](https://support.claude.com/en/articles/12622703-deploy-claude-desktop-for-windows)
 - [Third-party installation](https://claude.com/docs/third-party/claude-desktop/installation)
 
+2026-07-26 的只读来源核验确认：官方 Windows deployment 页的 x64 MSIX 链接精确为
+`https://claude.ai/api/desktop/win32/x64/msix/latest/redirect`。该入口当前必须用不自动
+跟随的 GET 观察，返回 307 和空 body；HEAD 返回 405。当前 Location 是
+`downloads.claude.ai/releases/win32/x64/.../*.msix`，终点返回 200、
+`application/octet-stream`、无下一跳并声明 Content-Length。这些是时点性的 transport
+形状，不是 frozen artifact metadata；实现仍须逐次手动验证 redirect、终点 header、
+实际接收长度和内容。
+
 每个实际 MSIX 的 URL、架构、SHA-256、Authenticode signer、证书链、Publisher、
 package identity 和最低 Desktop 版本仍属于**实物待验**，不能只靠固定字符串。
 

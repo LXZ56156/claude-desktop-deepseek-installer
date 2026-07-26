@@ -203,28 +203,44 @@ unsigned 负路径与 ABI/static lifecycle 已验证，真实官方 MSIX 的 pos
 provider-reopen、secondary/primary signer、DER/publisher 行为仍是 disposable VM
 clean-snapshot calibration gate。
 
-在该 native observation 之上新增的仍只是私有、未消费的
-`CallerHeldReadOnlyFileStreamCorrelation`。同一 native type 通过 handle 额外取得
-NTFS、volume serial、file index、attributes、creation/write time、size、link count
-与 final-path binding；`GetVolumeInformationByHandleW` 的 serial 必须与
-`GetFileInformationByHandle` 精确相等，全部不透明 facts 再进入私有 binding token。
-correlator 固定在同一个 caller-held stream 上执行
+在该 native observation 之上的私有 correlation core 固定在同一个 stream 上执行
 identity A → SHA-256 A → raw manifest → same-state WVT → SHA-256 B → identity B，
-不按路径重开。hash/length/path/full-facts/WVT readback 的前后采样即使全部相等，
-也只到达最终 share-policy gate；本批无正向/material-return branch，固定以
-`CALLER_FILE_SHARE_POLICY_UNPROVEN` 停止。所有失败都清空 token/hash/size 与三个
-嵌套 claim，只保留 path-free 阶段状态，并恢复但不关闭 caller stream。
+不按路径重开。同一 native type 通过 handle 额外取得 NTFS、volume serial、file
+index、attributes、creation/write time、size、link count 与 final-path binding；
+`GetVolumeInformationByHandleW` 的 serial 必须与 `GetFileInformationByHandle`
+精确相等，全部不透明 facts 再进入私有 binding token。
 
-这个 seam 没有 RunId、redirect trace、download completion time、receipt、30 字段
-evidence、policy、session 或 installer consumer。`FileStream.CanWrite=false` 也不能
-反推出原始 share flags；前后采样相等也无法排除中间被改写后恢复，所以架构只称其为
-negative-only caller-held correlation，不称为 downloader-owned 或 authoritative。
-未来真实 downloader 必须在自身 lexical scope
-内以精确 `FileMode.Open/FileAccess.Read/FileShare.Read` 创建并保持最终句柄，再把
-真实 redirect/time 与 correlation material 一起组合、验证现有 receipt/held/evidence
-合同；source descriptor 的 Anthropic SHA/signer/publisher/identity 仍未冻结，且
-verify-to-install 的句柄连续性尚未实现，因此当前没有可传给安装或发布门的正向
-correlation 结果。
+任意 caller-supplied `FileStream` 仍只能调用
+`CallerHeldReadOnlyFileStreamCorrelation` wrapper。即使
+hash/length/path/full-facts/WVT readback 全部相等，它也固定以
+`CALLER_FILE_SHARE_POLICY_UNPROVEN` 停止且 material 为空，因为
+`FileStream.CanWrite=false` 不能反推出原始 share flags。新增的唯一 construction-site
+wrapper 自己用精确 `FileMode.Open/FileAccess.Read/FileShare.Read` 打开最终文件，并
+向 core 传入同一 script scope 的 reference capability；只有该路径能得到
+`CORRELATED` material。material 只是 held identity/content、manifest 与 same-state
+signer observation 的瞬态关联，不是 Anthropic identity 或安装 authority。任一失败，
+包括最终 stream position restore 失败，都把状态改回 `FAILED` 并清空全部 material；
+wrapper 返回前关闭自己创建的 stream。
+
+同一文件新增的 bounded body-writer 也是 script-scoped delegate。它只接受直属于
+canonical staging root、名称为 `claude-<16 lowercase hex>.partial` 的新路径，以
+`CreateNew/Write/FileShare.None/WriteThrough` 创建文件，从调用方 stream 以 64 KiB
+buffer 读取，强制 64 bytes–1 GiB 的精确 declared length，增量计算 SHA-256，并在
+成功前执行 `Flush(true)`。它不关闭 caller stream，不删除或移动 partial，也不执行
+HTTP、redirect、manifest、WVT、receipt 或安装；失败只返回 path binding 和 allowlisted
+阶段码，不返回异常或原始路径。
+
+这两个 primitive 仍没有把真实 transport 组合成 downloader。最终 outer producer
+必须先验证 fixed NTFS、全祖先非 reparse、owner-only writer ACL，手动验证官方
+redirect/header 后调用 body-writer，原子提交，再在一个仍保持打开的
+`FileShare.Read` scope 内调用 core、把 body hash/length 与 final correlation 精确
+比较，构造并纯验证 download receipt、held observation 与 30 字段 evidence，最后
+才关闭句柄。当前 construction-site wrapper 只是未绑定 ownership 的观察 primitive，
+因其返回前已
+关闭句柄，不能直接作为公开 `Save` handoff；也没有网络/header validator、原子提交、
+receipt/evidence bundle、policy、session 或 installer consumer。source descriptor
+的 Anthropic SHA/signer/publisher/identity 仍未冻结，verify-to-install 的重新锁定与
+执行前重验也未实现，因此当前没有可传给安装或发布门的 authoritative 正向结果。
 
 领域模块之间不形成循环依赖，也不能直接调用系统 cmdlet/.NET I/O。跨域协调只在
 orchestrator。acceptance 消费结果，不成为安装实现的依赖。
