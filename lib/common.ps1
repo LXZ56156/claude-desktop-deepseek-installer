@@ -127,9 +127,19 @@ function Get-CddsiSettings {
         $settings.provider.kind -cne 'gateway' -or
         $settings.provider.baseUrl -cne 'https://api.deepseek.com/anthropic' -or
         $settings.provider.authScheme -cne 'x-api-key' -or
-        $models.Count -ne 2 -or
-        $models[0].name -cne 'deepseek-v4-pro' -or
-        $models[1].name -cne 'deepseek-v4-flash') {
+        $models.Count -ne 3 -or
+        $models[0].name -cne 'claude-sonnet-4-6' -or
+        $models[0].labelOverride -cne 'DeepSeek V4 Flash (Sonnet)' -or
+        $models[0].anthropicFamilyTier -cne 'sonnet' -or
+        $models[0].isFamilyDefault -ne $true -or
+        $models[1].name -cne 'claude-opus-4-6' -or
+        $models[1].labelOverride -cne 'DeepSeek V4 Pro (Opus)' -or
+        $models[1].anthropicFamilyTier -cne 'opus' -or
+        $models[1].isFamilyDefault -ne $true -or
+        $models[2].name -cne 'claude-haiku-4-5' -or
+        $models[2].labelOverride -cne 'DeepSeek V4 Flash (Haiku)' -or
+        $models[2].anthropicFamilyTier -cne 'haiku' -or
+        $models[2].isFamilyDefault -ne $true) {
         Throw-CddsiError -Code 'PRODUCT_CONFIG_INVALID' -Message '产品配置不符合 D-027 practical 合同。'
     }
     return $settings
@@ -212,7 +222,7 @@ function New-CddsiPrivateDirectory {
         return
     }
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    $acl = [IO.Directory]::GetAccessControl($Path)
     $acl.SetAccessRuleProtection($true, $false)
     foreach ($rule in @($acl.Access)) {
         [void]$acl.RemoveAccessRuleSpecific($rule)
@@ -245,7 +255,7 @@ function Set-CddsiPrivateFileAcl {
     )
 
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    $acl = [IO.File]::GetAccessControl($Path)
     $acl.SetAccessRuleProtection($true, $false)
     foreach ($rule in @($acl.Access)) {
         [void]$acl.RemoveAccessRuleSpecific($rule)
@@ -304,7 +314,22 @@ function Get-CddsiFileSha256 {
         [string]$Path
     )
 
-    (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::Read
+    )
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $algorithm.ComputeHash($stream)
+        return [BitConverter]::ToString($digest).Replace('-', '').
+            ToLowerInvariant()
+    }
+    finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
 }
 
 function Read-CddsiConfirmation {

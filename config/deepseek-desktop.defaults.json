@@ -12,12 +12,22 @@
   },
   "models": [
     {
-      "name": "deepseek-v4-pro",
-      "labelOverride": "DeepSeek V4 Pro"
+      "name": "claude-sonnet-4-6",
+      "labelOverride": "DeepSeek V4 Flash (Sonnet)",
+      "anthropicFamilyTier": "sonnet",
+      "isFamilyDefault": true
     },
     {
-      "name": "deepseek-v4-flash",
-      "labelOverride": "DeepSeek V4 Flash"
+      "name": "claude-opus-4-6",
+      "labelOverride": "DeepSeek V4 Pro (Opus)",
+      "anthropicFamilyTier": "opus",
+      "isFamilyDefault": true
+    },
+    {
+      "name": "claude-haiku-4-5",
+      "labelOverride": "DeepSeek V4 Flash (Haiku)",
+      "anthropicFamilyTier": "haiku",
+      "isFamilyDefault": true
     }
   ],
   "claude": {

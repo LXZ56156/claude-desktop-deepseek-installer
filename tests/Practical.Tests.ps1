@@ -5,6 +5,21 @@
 }
 
 Describe 'D-027 practical entry' {
+    It 'hashes files without relying on module autoload' {
+        $path = Join-Path $TestDrive 'abc.txt'
+        [IO.File]::WriteAllBytes($path, [Text.Encoding]::ASCII.GetBytes('abc'))
+        Get-CddsiFileSha256 -Path $path |
+            Should -BeExactly (
+                'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+            )
+        [IO.File]::ReadAllText(
+            (Join-Path $script:ProjectRoot 'lib\common.ps1')
+        ) | Should -Not -Match 'Get-FileHash'
+        [IO.File]::ReadAllText(
+            (Join-Path $script:ProjectRoot 'lib\common.ps1')
+        ) | Should -Not -Match 'Get-Acl'
+    }
+
     It 'keeps all three DryRun actions side-effect free' {
         foreach ($action in @('Install', 'Diagnose', 'Restore')) {
             $result = & (Join-Path $script:ProjectRoot 'Start-Here.ps1') `
@@ -52,18 +67,53 @@ Describe 'official configuration projection' {
         $values.inferenceGatewayAuthScheme | Should -BeExactly 'x-api-key'
         $values.inferenceGatewayBaseUrl | Should -BeExactly 'https://api.deepseek.com/anthropic'
         $values.modelDiscoveryEnabled | Should -BeExactly 'false'
+        $values.inferenceModels | Should -BeOfType [string]
+        (@($values.Keys) -contains 'inferenceGatewayApiKey') | Should -BeFalse
     }
 
-    It 'uses only the current fixed DeepSeek V4 model IDs' {
+    It 'projects the exact ordered Claude family routes for DeepSeek V4' {
         $settings = Get-CddsiSettings -ProjectRoot $script:ProjectRoot
         (@($settings.models.name) -join ',') |
-            Should -BeExactly 'deepseek-v4-pro,deepseek-v4-flash'
+            Should -BeExactly (
+                'claude-sonnet-4-6,claude-opus-4-6,claude-haiku-4-5'
+            )
         $models = (Get-CddsiPolicyValueSet -Settings $settings `
             -HelperPath 'C:\probe.exe').inferenceModels | ConvertFrom-Json
         (@($models.name) -join ',') |
-            Should -BeExactly 'deepseek-v4-pro,deepseek-v4-flash'
-        @($models | Where-Object { $_.PSObject.Properties.Name -contains 'supports1m' }).Count |
+            Should -BeExactly (
+                'claude-sonnet-4-6,claude-opus-4-6,claude-haiku-4-5'
+            )
+        (@($models.labelOverride) -join ',') |
+            Should -BeExactly (
+                'DeepSeek V4 Flash (Sonnet),DeepSeek V4 Pro (Opus),' +
+                'DeepSeek V4 Flash (Haiku)'
+            )
+        (@($models.anthropicFamilyTier) -join ',') |
+            Should -BeExactly 'sonnet,opus,haiku'
+        @($models | Where-Object { $_.isFamilyDefault -ne $true }).Count |
             Should -Be 0
+        foreach ($field in @('supports1m', 'prefer1m')) {
+            @($models | Where-Object {
+                $_.PSObject.Properties.Name -contains $field
+            }).Count | Should -Be 0
+        }
+    }
+
+    It 'limits policy UAC writes to the same user and eight owned HKCU values' {
+        $source = [IO.File]::ReadAllText(
+            (Join-Path $script:ProjectRoot 'lib\configuration.ps1')
+        )
+        $source | Should -Match "'SOFTWARE\\Policies'"
+        $source | Should -Match '\[Microsoft\.Win32\.Registry\]::CurrentUser'
+        $source | Should -Match 'RegistryValueKind\]::String'
+        $source | Should -Match (
+            '\[Security\.Principal\.WindowsIdentity\]::GetCurrent\(\)\.User\.Value'
+        )
+        $source | Should -Match '-Verb RunAs -WindowStyle Hidden'
+        $source | Should -Match (
+            '\[AllowEmptyCollection\(\)\]\s*\r?\n\s*\[string\[\]\]\$RemoveNames'
+        )
+        $source | Should -Not -Match 'Registry\]::LocalMachine|HKEY_LOCAL_MACHINE'
     }
 }
 
@@ -87,6 +137,42 @@ Describe 'Git acquisition contract' {
         }
     }
 
+    It 'isolates PS5 Authenticode verification from a contaminated module path' {
+        $originalModulePath = $env:PSModulePath
+        $script:ObservedAuthenticodeModulePath = $null
+        try {
+            $env:PSModulePath = 'C:\contaminated-module-root'
+            Mock Import-Module {
+                $script:ObservedAuthenticodeModulePath = $env:PSModulePath
+            }
+            Mock Get-AuthenticodeSignature {
+                [pscustomobject]@{
+                    Status = [System.Management.Automation.SignatureStatus]::Valid
+                }
+            }
+
+            $signature = Get-CddsiAuthenticodeSignature -Path 'C:\probe.exe'
+
+            $signature.Status |
+                Should -Be ([System.Management.Automation.SignatureStatus]::Valid)
+            $script:ObservedAuthenticodeModulePath |
+                Should -BeExactly (Join-Path $PSHOME 'Modules')
+            $env:PSModulePath | Should -BeExactly 'C:\contaminated-module-root'
+            Should -Invoke Import-Module -Times 1 -Exactly -ParameterFilter {
+                $Name -eq 'Microsoft.PowerShell.Security' -and
+                $Force -and
+                $ErrorAction -eq 'Stop'
+            }
+            Should -Invoke Get-AuthenticodeSignature -Times 1 -Exactly -ParameterFilter {
+                $LiteralPath -eq 'C:\probe.exe' -and
+                $ErrorAction -eq 'Stop'
+            }
+        }
+        finally {
+            $env:PSModulePath = $originalModulePath
+        }
+    }
+
     It 'accepts a current-shaped immutable official release' {
         $asset = Resolve-CddsiGitReleaseAsset -Release $script:ValidGitRelease
         $asset.Version.ToString() | Should -BeExactly '2.55.0.3'
@@ -105,7 +191,7 @@ Describe 'Git acquisition contract' {
     }
 
     It 'pins trusted signer organizations instead of accepting any valid signature' {
-        Mock Get-AuthenticodeSignature {
+        Mock Get-CddsiAuthenticodeSignature {
             [pscustomobject]@{
                 Status            = [Management.Automation.SignatureStatus]::Valid
                 SignerCertificate = [pscustomobject]@{
@@ -120,7 +206,7 @@ Describe 'Git acquisition contract' {
     }
 
     It 'accepts the expected Git and Anthropic signer subject shapes' {
-        Mock Get-AuthenticodeSignature {
+        Mock Get-CddsiAuthenticodeSignature {
             [pscustomobject]@{
                 Status            = [Management.Automation.SignatureStatus]::Valid
                 SignerCertificate = [pscustomobject]@{
@@ -131,7 +217,7 @@ Describe 'Git acquisition contract' {
         { Get-CddsiTrustedSignature -Path 'C:\probe.exe' -Artifact Git } |
             Should -Not -Throw
 
-        Mock Get-AuthenticodeSignature {
+        Mock Get-CddsiAuthenticodeSignature {
             [pscustomobject]@{
                 Status            = [Management.Automation.SignatureStatus]::Valid
                 SignerCertificate = [pscustomobject]@{
@@ -166,6 +252,15 @@ Describe 'Git acquisition contract' {
 }
 
 Describe 'Claude MSIX contract' {
+    It 'keeps the downloader return value to one metadata object' {
+        $source = [IO.File]::ReadAllText(
+            (Join-Path $script:ProjectRoot 'lib\installer.ps1')
+        )
+        $source | Should -Match (
+            '\[void\]\$response\.EnsureSuccessStatusCode\(\)'
+        )
+    }
+
     It 'reads only the expected Claude x64 manifest identity' {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $sourceDirectory = Join-Path $TestDrive 'valid-msix'
@@ -200,14 +295,109 @@ Describe 'Claude MSIX contract' {
         $rehash = $source.IndexOf(
             '$preExecutionHash = Get-CddsiFileSha256 -Path $path'
         )
-        $install = $source.IndexOf('Add-AppxPackage -Path $path')
+        $install = $source.IndexOf(
+            'Invoke-CddsiClaudePerUserAppxInstall -Path $path'
+        )
         $signature | Should -BeGreaterThan -1
         $rehash | Should -BeGreaterThan $signature
         $install | Should -BeGreaterThan $rehash
     }
+
+    It 'uses a same-user rehashed UAC fallback only for packaged-service error 0x80073D28' {
+        $source = [IO.File]::ReadAllText(
+            (Join-Path $script:ProjectRoot 'lib\installer.ps1')
+        )
+        $source | Should -Match '0x80073D28'
+        $source | Should -Match (
+            '\[System\.Security\.Principal\.WindowsIdentity\]::GetCurrent\(\)\.User\.Value'
+        )
+        $source | Should -Match (
+            '\[Security\.Cryptography\.SHA256\]::Create\(\)'
+        )
+        $source | Should -Not -Match 'Get-FileHash'
+        $source | Should -Match 'Start-Process -FilePath \$powershell'
+        $source | Should -Match '-Verb RunAs -WindowStyle Hidden'
+        $source | Should -Match '-Wait -PassThru'
+        $source | Should -Match 'CLAUDE_CURRENT_USER_ELEVATION_REQUIRED'
+        $source | Should -Not -Match 'Add-AppxProvisionedPackage'
+    }
+
+    It 'renders the elevated AppX command before requesting UAC' {
+        Mock Add-AppxPackage {
+            throw [InvalidOperationException]::new(
+                '0x80073D28: administrator approval is required'
+            )
+        }
+        Mock Start-Process {
+            [pscustomobject]@{ ExitCode = 0 }
+        }
+
+        {
+            Invoke-CddsiClaudePerUserAppxInstall `
+                -Path 'C:\probe.msix' `
+                -ExpectedSha256 ('a' * 64)
+        } | Should -Not -Throw
+
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+            $Verb -eq 'RunAs' -and
+            $WindowStyle -eq 'Hidden' -and
+            $Wait -and
+            $PassThru
+        }
+    }
+
+    It 'classifies a wrapped UAC cancellation without exposing the exception' {
+        Mock Add-AppxPackage {
+            throw [InvalidOperationException]::new(
+                '0x80073D28: administrator approval is required'
+            )
+        }
+        Mock Start-Process {
+            throw [InvalidOperationException]::new(
+                'outer wrapper',
+                [ComponentModel.Win32Exception]::new(1223)
+            )
+        }
+
+        {
+            Invoke-CddsiClaudePerUserAppxInstall `
+                -Path 'C:\probe.msix' `
+                -ExpectedSha256 ('a' * 64)
+        } | Should -Throw '*USER_CANCELLED*'
+    }
 }
 
 Describe 'credential boundary' {
+    It 'requires a first key noninteractively before any configuration write' {
+        $root = Join-Path $TestDrive 'private product root'
+        $paths = [pscustomobject]@{
+            Root            = $root
+            Credential      = Join-Path $root 'credential.bin'
+            Helper          = Join-Path $root 'DeepSeekCredentialHelper.exe'
+            State           = Join-Path $root 'state.json'
+            OwnershipMarker = Join-Path $root '.cddsi-owner'
+        }
+        Mock Get-CddsiProductPaths { $paths }
+        Mock Assert-CddsiConfigurationPreflight {}
+        Mock Test-CddsiOwnedInstallation { $false }
+        Mock New-CddsiPrivateDirectory {}
+        Mock Install-CddsiCredentialHelper {}
+        Mock Invoke-CddsiClaudePolicyMutation {}
+        $settings = Get-CddsiSettings -ProjectRoot $script:ProjectRoot
+
+        {
+            Set-CddsiClaudeConfiguration `
+                -ProjectRoot $script:ProjectRoot `
+                -Settings $settings `
+                -NonInteractive
+        } | Should -Throw '*API_KEY_INPUT_REQUIRED*'
+
+        Should -Invoke New-CddsiPrivateDirectory -Times 0 -Exactly
+        Should -Invoke Install-CddsiCredentialHelper -Times 0 -Exactly
+        Should -Invoke Invoke-CddsiClaudePolicyMutation -Times 0 -Exactly
+        Test-Path -LiteralPath $root | Should -BeFalse
+    }
+
     It 'compiles the helper with the Windows 11 in-box compiler' {
         $compiler = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
         Test-Path -LiteralPath $compiler -PathType Leaf | Should -BeTrue
@@ -300,13 +490,20 @@ Describe 'owned restore contract' {
         Mock Get-CddsiRegistryValueNames { @() }
         Mock Remove-ItemProperty {}
         Mock Remove-Item {}
+        Mock Invoke-CddsiClaudePolicyMutation {}
     }
 
     It 'removes only the fixed eight policy values' {
         $result = Restore-CddsiClaudeConfiguration
         $result.Changed | Should -BeTrue
         $result.RestoredToAbsent | Should -BeTrue
-        Should -Invoke Remove-ItemProperty -Times 8 -Exactly
+        Should -Invoke Invoke-CddsiClaudePolicyMutation -Times 1 -Exactly `
+            -ParameterFilter {
+                @($RemoveNames).Count -eq 8 -and
+                @($RemoveNames | Where-Object {
+                    $_ -cnotin $script:CddsiManagedPolicyNames
+                }).Count -eq 0
+            }
     }
 
     It 'rejects a state-injected policy name before any deletion' {
@@ -317,7 +514,7 @@ Describe 'owned restore contract' {
             -LiteralPath $script:OwnedPaths.State -Encoding UTF8
         { Restore-CddsiClaudeConfiguration } |
             Should -Throw '*OWNERSHIP_STATE_INVALID*'
-        Should -Invoke Remove-ItemProperty -Times 0 -Exactly
+        Should -Invoke Invoke-CddsiClaudePolicyMutation -Times 0 -Exactly
         Should -Invoke Remove-Item -Times 0 -Exactly
     }
 }

@@ -129,6 +129,24 @@ function Get-CddsiGitStatus {
     }
 }
 
+function Get-CddsiAuthenticodeSignature {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $originalModulePath = $env:PSModulePath
+    try {
+        $env:PSModulePath = Join-Path $PSHOME 'Modules'
+        Import-Module -Name Microsoft.PowerShell.Security -Force -ErrorAction Stop
+        return Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop
+    }
+    finally {
+        $env:PSModulePath = $originalModulePath
+    }
+}
+
 function Get-CddsiTrustedSignature {
     [CmdletBinding()]
     param(
@@ -140,7 +158,13 @@ function Get-CddsiTrustedSignature {
         [string]$Artifact
     )
 
-    $signature = Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop
+    try {
+        $signature = Get-CddsiAuthenticodeSignature -Path $Path
+    }
+    catch {
+        Throw-CddsiError -Code ('{0}_SIGNATURE_UNAVAILABLE' -f $Artifact.ToUpperInvariant()) `
+            -Message ('无法执行 {0} 安装包的 Authenticode 签名检查。' -f $Artifact)
+    }
     if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
         $null -eq $signature.SignerCertificate -or
         [string]::IsNullOrWhiteSpace($signature.SignerCertificate.Subject)) {
@@ -207,7 +231,7 @@ function Save-CddsiWebFile {
             $Uri,
             [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
         ).GetAwaiter().GetResult()
-        $response.EnsureSuccessStatusCode()
+        [void]$response.EnsureSuccessStatusCode()
         if ($null -ne $response.Content.Headers.ContentLength -and
             [long]$response.Content.Headers.ContentLength -gt $MaximumBytes) {
             Throw-CddsiError -Code 'DOWNLOAD_TOO_LARGE' `
@@ -478,6 +502,119 @@ function Stop-CddsiClaudeProcesses {
     }
 }
 
+function Invoke-CddsiClaudePerUserAppxInstall {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[a-f0-9]{64}$')]
+        [string]$ExpectedSha256
+    )
+
+    try {
+        Add-AppxPackage -Path $Path -ForceApplicationShutdown -ErrorAction Stop
+        return
+    }
+    catch {
+        if ($_.Exception.Message -notmatch '(?i)0x80073D28') {
+            Throw-CddsiError -Code 'CLAUDE_INSTALL_FAILED' `
+                -Message 'Windows 无法安装官方 Claude MSIX。'
+        }
+    }
+
+    $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    if ($currentSid -notmatch '^S-\d(?:-\d+)+$') {
+        Throw-CddsiError -Code 'CLAUDE_INSTALL_FAILED' `
+            -Message '无法绑定 Claude UAC 安装的当前 Windows 用户。'
+    }
+    $escapedPath = $Path.Replace("'", "''")
+    $elevatedTemplate = @'
+$ErrorActionPreference = 'Stop'
+$path = '{0}'
+$expectedHash = '{1}'
+$expectedSid = '{2}'
+$currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+if ($currentSid -cne $expectedSid) {{ exit 43 }}
+$stream = [IO.File]::Open(
+    $path,
+    [IO.FileMode]::Open,
+    [IO.FileAccess]::Read,
+    [IO.FileShare]::Read
+)
+$algorithm = [Security.Cryptography.SHA256]::Create()
+try {{
+    $digest = $algorithm.ComputeHash($stream)
+    $actualHash = [BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant()
+}}
+finally {{
+    $algorithm.Dispose()
+    $stream.Dispose()
+}}
+if ($actualHash -cne $expectedHash) {{ exit 42 }}
+Add-AppxPackage -Path $path -ForceApplicationShutdown -ErrorAction Stop
+exit 0
+'@
+    $elevatedSource = $elevatedTemplate -f `
+        $escapedPath, $ExpectedSha256, $currentSid
+    $encodedCommand = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes($elevatedSource)
+    )
+    $powershell = Join-Path $env:SystemRoot `
+        'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $arguments = @(
+        '-NoLogo'
+        '-NoProfile'
+        '-NonInteractive'
+        '-ExecutionPolicy'
+        'Bypass'
+        '-EncodedCommand'
+        $encodedCommand
+    )
+    try {
+        $process = Start-Process -FilePath $powershell `
+            -ArgumentList $arguments `
+            -WorkingDirectory (Join-Path $env:SystemRoot 'System32') `
+            -Verb RunAs -WindowStyle Hidden `
+            -Wait -PassThru -ErrorAction Stop
+    }
+    catch {
+        $nativeCode = 0
+        $cursor = $_.Exception
+        while ($null -ne $cursor) {
+            if ($cursor -is [ComponentModel.Win32Exception]) {
+                $nativeCode = $cursor.NativeErrorCode
+                break
+            }
+            $cursor = $cursor.InnerException
+        }
+        if ($nativeCode -eq 1223 -or
+            $_.Exception.Message -match '(?i)cancel|canceled|cancelled|1223|取消') {
+            Throw-CddsiError -Code 'USER_CANCELLED' `
+                -Message '用户取消了 Claude 安装所需的 UAC。'
+        }
+        Throw-CddsiError -Code 'CLAUDE_INSTALL_FAILED' `
+            -Message '无法启动 Claude per-user UAC 安装。'
+    }
+    switch ($process.ExitCode) {
+        0 { return }
+        42 {
+            Throw-CddsiError -Code 'CLAUDE_TOCTOU_MISMATCH' `
+                -Message 'Claude MSIX 在 UAC 安装前发生变化。'
+        }
+        43 {
+            Throw-CddsiError -Code 'CLAUDE_CURRENT_USER_ELEVATION_REQUIRED' `
+                -Message 'UAC 必须使用当前 Windows 用户批准，不能切换到其他管理员账户。'
+        }
+        default {
+            Throw-CddsiError -Code 'CLAUDE_INSTALL_FAILED' `
+                -Message ('Claude per-user UAC 安装返回非零退出码 {0}。' -f `
+                    $process.ExitCode)
+        }
+    }
+}
+
 function Install-CddsiClaudeDesktop {
     [CmdletBinding()]
     param(
@@ -526,13 +663,8 @@ function Install-CddsiClaudeDesktop {
             -Message 'Claude MSIX 在安装前发生变化。'
     }
     [void](Stop-CddsiClaudeProcesses)
-    try {
-        Add-AppxPackage -Path $path -ForceApplicationShutdown -ErrorAction Stop
-    }
-    catch {
-        Throw-CddsiError -Code 'CLAUDE_INSTALL_FAILED' `
-            -Message 'Windows 无法安装官方 Claude MSIX。'
-    }
+    Invoke-CddsiClaudePerUserAppxInstall -Path $path `
+        -ExpectedSha256 $downloadHash
 
     $after = Get-CddsiClaudeStatus -ExpectedPublisher $identity.Publisher
     if (-not $after.Installed -or $after.Version -lt $identity.Version) {

@@ -48,6 +48,251 @@ function Get-CddsiRegistryValueNames {
     return @($key.GetValueNames())
 }
 
+function Invoke-CddsiClaudePolicyMutationDirect {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $SetValues,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$RemoveNames
+    )
+
+    $parent = $null
+    $key = $null
+    try {
+        $parent = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+            'SOFTWARE\Policies',
+            $true
+        )
+        if ($null -eq $parent) {
+            throw (New-Object UnauthorizedAccessException -ArgumentList (
+                'HKCU Policies is not writable.'
+            ))
+        }
+        if (@($SetValues.Keys).Count -gt 0) {
+            $key = $parent.CreateSubKey('Claude')
+        }
+        else {
+            $key = $parent.OpenSubKey('Claude', $true)
+        }
+        if ($null -eq $key) {
+            return
+        }
+        foreach ($entry in $SetValues.GetEnumerator()) {
+            $key.SetValue(
+                [string]$entry.Key,
+                [string]$entry.Value,
+                [Microsoft.Win32.RegistryValueKind]::String
+            )
+        }
+        foreach ($name in $RemoveNames) {
+            $key.DeleteValue($name, $false)
+        }
+        $deleteEmpty = $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
+        $key.Dispose()
+        $key = $null
+        if ($deleteEmpty) {
+            $parent.DeleteSubKey('Claude', $false)
+        }
+    }
+    finally {
+        if ($null -ne $key) { $key.Dispose() }
+        if ($null -ne $parent) { $parent.Dispose() }
+    }
+}
+
+function Invoke-CddsiClaudePolicyMutation {
+    [CmdletBinding()]
+    param(
+        $SetValues = @{},
+        [string[]]$RemoveNames = @()
+    )
+
+    $setEntries = @($SetValues.GetEnumerator())
+    $setNames = @($setEntries | ForEach-Object { [string]$_.Key })
+    $remove = @($RemoveNames)
+    $allNames = @($setNames + $remove)
+    if (@($allNames | Where-Object {
+        $_ -cnotin $script:CddsiManagedPolicyNames
+    }).Count -ne 0 -or
+        @($allNames | Sort-Object -Unique).Count -ne $allNames.Count) {
+        Throw-CddsiError -Code 'CLAUDE_POLICY_MUTATION_INVALID' `
+            -Message 'Claude policy mutation 包含非项目拥有或重复的值名。'
+    }
+
+    try {
+        Invoke-CddsiClaudePolicyMutationDirect `
+            -SetValues $SetValues -RemoveNames $remove
+        return
+    }
+    catch {
+        $accessDenied = $false
+        $cursor = $_.Exception
+        while ($null -ne $cursor) {
+            if ($cursor -is [UnauthorizedAccessException] -or
+                $cursor -is [Security.SecurityException]) {
+                $accessDenied = $true
+                break
+            }
+            $cursor = $cursor.InnerException
+        }
+        if (-not $accessDenied) {
+            Throw-CddsiError -Code 'CLAUDE_POLICY_WRITE_FAILED' `
+                -Message '无法写入当前用户 Claude managed policy。'
+        }
+    }
+
+    $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $encode = {
+        param([string]$Value)
+        [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value))
+    }
+    $setRows = @($setEntries | Sort-Object Key | ForEach-Object {
+        '{0}:{1}' -f (& $encode ([string]$_.Key)),
+            (& $encode ([string]$_.Value))
+    })
+    $removeRows = @($remove | Sort-Object | ForEach-Object {
+        & $encode $_
+    })
+    $allowedRows = @($script:CddsiManagedPolicyNames | Sort-Object |
+        ForEach-Object { & $encode $_ })
+    $literal = {
+        param([string[]]$Rows)
+        if ($Rows.Count -eq 0) { return '' }
+        return ($Rows | ForEach-Object { "    '$_'" }) -join ",`r`n"
+    }
+    $elevatedSource = @'
+$ErrorActionPreference = 'Stop'
+$expectedSid = '__SID__'
+if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -cne $expectedSid) {
+    exit 43
+}
+$setRows = @(
+__SET_ROWS__
+)
+$removeRows = @(
+__REMOVE_ROWS__
+)
+$allowedRows = @(
+__ALLOWED_ROWS__
+)
+$decode = {
+    param([string]$Value)
+    [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value))
+}
+$allowed = @($allowedRows | ForEach-Object { & $decode $_ })
+$setValues = [ordered]@{}
+foreach ($row in $setRows) {
+    $parts = @($row.Split(':'))
+    if ($parts.Count -ne 2) { exit 44 }
+    $name = & $decode $parts[0]
+    if ($name -cnotin $allowed -or $setValues.Contains($name)) { exit 44 }
+    $setValues[$name] = & $decode $parts[1]
+}
+$removeNames = @($removeRows | ForEach-Object { & $decode $_ })
+if (@($removeNames | Where-Object { $_ -cnotin $allowed }).Count -ne 0 -or
+    @($removeNames | Sort-Object -Unique).Count -ne $removeNames.Count) {
+    exit 44
+}
+$parent = $null
+$key = $null
+try {
+    $parent = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+        'SOFTWARE\Policies',
+        $true
+    )
+    if ($null -eq $parent) { exit 44 }
+    if ($setValues.Count -gt 0) {
+        $key = $parent.CreateSubKey('Claude')
+    }
+    else {
+        $key = $parent.OpenSubKey('Claude', $true)
+    }
+    if ($null -eq $key) { exit 0 }
+    foreach ($entry in $setValues.GetEnumerator()) {
+        $key.SetValue(
+            [string]$entry.Key,
+            [string]$entry.Value,
+            [Microsoft.Win32.RegistryValueKind]::String
+        )
+    }
+    foreach ($name in $removeNames) {
+        $key.DeleteValue($name, $false)
+    }
+    $deleteEmpty = $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
+    $key.Dispose()
+    $key = $null
+    if ($deleteEmpty) {
+        $parent.DeleteSubKey('Claude', $false)
+    }
+}
+catch {
+    exit 44
+}
+finally {
+    if ($null -ne $key) { $key.Dispose() }
+    if ($null -ne $parent) { $parent.Dispose() }
+}
+exit 0
+'@
+    $elevatedSource = $elevatedSource.
+        Replace('__SID__', $currentSid).
+        Replace('__SET_ROWS__', (& $literal $setRows)).
+        Replace('__REMOVE_ROWS__', (& $literal $removeRows)).
+        Replace('__ALLOWED_ROWS__', (& $literal $allowedRows))
+    $encodedCommand = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes($elevatedSource)
+    )
+    $powershell = Join-Path $env:SystemRoot `
+        'System32\WindowsPowerShell\v1.0\powershell.exe'
+    try {
+        $process = Start-Process -FilePath $powershell `
+            -ArgumentList @(
+                '-NoLogo',
+                '-NoProfile',
+                '-NonInteractive',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-EncodedCommand',
+                $encodedCommand
+            ) `
+            -WorkingDirectory (Join-Path $env:SystemRoot 'System32') `
+            -Verb RunAs -WindowStyle Hidden `
+            -Wait -PassThru -ErrorAction Stop
+    }
+    catch {
+        $nativeCode = 0
+        $cursor = $_.Exception
+        while ($null -ne $cursor) {
+            if ($cursor -is [ComponentModel.Win32Exception]) {
+                $nativeCode = $cursor.NativeErrorCode
+                break
+            }
+            $cursor = $cursor.InnerException
+        }
+        if ($nativeCode -eq 1223 -or
+            $_.Exception.Message -match '(?i)cancel|canceled|cancelled|1223|取消') {
+            Throw-CddsiError -Code 'USER_CANCELLED' `
+                -Message '用户取消了 Claude HKCU policy 写入所需的 UAC。'
+        }
+        Throw-CddsiError -Code 'CLAUDE_POLICY_WRITE_FAILED' `
+            -Message '无法启动 Claude HKCU policy 的同用户 UAC 写入。'
+    }
+    switch ($process.ExitCode) {
+        0 { return }
+        43 {
+            Throw-CddsiError -Code 'CLAUDE_CURRENT_USER_ELEVATION_REQUIRED' `
+                -Message 'UAC 必须使用当前 Windows 用户批准，不能切换到其他管理员账户。'
+        }
+        default {
+            Throw-CddsiError -Code 'CLAUDE_POLICY_WRITE_FAILED' `
+                -Message 'Claude HKCU policy 的同用户 UAC 写入失败。'
+        }
+    }
+}
+
 function Test-CddsiOwnedInstallation {
     [CmdletBinding()]
     param(
@@ -359,6 +604,12 @@ function Set-CddsiClaudeConfiguration {
         }
     }
 
+    if ($NonInteractive -and
+        -not (Test-Path -LiteralPath $paths.Credential -PathType Leaf)) {
+        Throw-CddsiError -Code 'API_KEY_INPUT_REQUIRED' `
+            -Message '首次配置需要在本机遮罩提示中输入 DeepSeek API Key。'
+    }
+
     New-CddsiPrivateDirectory -Path $paths.Root
     if (-not $alreadyOwned) {
         [IO.File]::WriteAllText(
@@ -386,10 +637,6 @@ function Set-CddsiClaudeConfiguration {
         }
 
         if (-not (Test-Path -LiteralPath $paths.Credential -PathType Leaf)) {
-            if ($NonInteractive) {
-                Throw-CddsiError -Code 'API_KEY_INPUT_REQUIRED' `
-                    -Message '首次配置需要在本机遮罩提示中输入 DeepSeek API Key。'
-            }
             $secureKey = Read-Host '请输入 DeepSeek API Key（输入内容不会显示）' `
                 -AsSecureString
             try {
@@ -454,19 +701,19 @@ function Set-CddsiClaudeConfiguration {
                     Kind   = $null
                 }
             }
-            New-Item -Path $script:CddsiPolicyPath -Force -ErrorAction Stop |
-                Out-Null
         }
+        $pendingValues = [ordered]@{}
         foreach ($entry in $values.GetEnumerator()) {
             $prior = $policySnapshot[$entry.Key]
             if (-not $prior.Exists -or
                 $prior.Kind -ne [Microsoft.Win32.RegistryValueKind]::String -or
                 [string]$prior.Value -cne [string]$entry.Value) {
-                New-ItemProperty -LiteralPath $script:CddsiPolicyPath `
-                    -Name $entry.Key -Value ([string]$entry.Value) `
-                    -PropertyType String -Force -ErrorAction Stop | Out-Null
+                $pendingValues[$entry.Key] = [string]$entry.Value
                 $changed = $true
             }
+        }
+        if ($pendingValues.Count -gt 0) {
+            Invoke-CddsiClaudePolicyMutation -SetValues $pendingValues
         }
 
         $readback = Get-ItemProperty -LiteralPath $script:CddsiPolicyPath `
@@ -498,23 +745,32 @@ function Set-CddsiClaudeConfiguration {
     catch {
         $failure = $_.Exception
         if ($alreadyOwned -and $null -ne $policySnapshot) {
+            $restoreValues = [ordered]@{}
+            $removeNames = @()
             foreach ($entry in $policySnapshot.GetEnumerator()) {
                 if ($entry.Value.Exists) {
-                    New-ItemProperty -LiteralPath $script:CddsiPolicyPath `
-                        -Name $entry.Key -Value $entry.Value.Value `
-                        -PropertyType ([string]$entry.Value.Kind) -Force `
-                        -ErrorAction SilentlyContinue | Out-Null
+                    $restoreValues[$entry.Key] = [string]$entry.Value.Value
                 }
                 else {
-                    Remove-ItemProperty -LiteralPath $script:CddsiPolicyPath `
-                        -Name $entry.Key -ErrorAction SilentlyContinue
+                    $removeNames += [string]$entry.Key
                 }
+            }
+            try {
+                Invoke-CddsiClaudePolicyMutation `
+                    -SetValues $restoreValues -RemoveNames $removeNames
+            }
+            catch {
+                # Preserve the primary failure, matching the original rollback
+                # behavior while limiting attempted cleanup to owned values.
             }
         }
         elseif (-not $alreadyOwned) {
-            foreach ($name in $script:CddsiManagedPolicyNames) {
-                Remove-ItemProperty -LiteralPath $script:CddsiPolicyPath `
-                    -Name $name -ErrorAction SilentlyContinue
+            try {
+                Invoke-CddsiClaudePolicyMutation `
+                    -RemoveNames $script:CddsiManagedPolicyNames
+            }
+            catch {
+                # Preserve the primary failure.
             }
             Remove-Item -LiteralPath $script:CddsiOwnershipPath -Force `
                 -ErrorAction SilentlyContinue
@@ -643,14 +899,7 @@ function Restore-CddsiClaudeConfiguration {
             Remove-Item -LiteralPath $file -Force -ErrorAction Stop
         }
     }
-    foreach ($name in $names) {
-        Remove-ItemProperty -LiteralPath $script:CddsiPolicyPath `
-            -Name $name -ErrorAction SilentlyContinue
-    }
-    if (@(Get-CddsiRegistryValueNames -Path $script:CddsiPolicyPath).Count -eq 0) {
-        Remove-Item -LiteralPath $script:CddsiPolicyPath -Force `
-            -ErrorAction SilentlyContinue
-    }
+    Invoke-CddsiClaudePolicyMutation -RemoveNames $names
     foreach ($file in @($paths.State, $paths.OwnershipMarker)) {
         if (Test-Path -LiteralPath $file -PathType Leaf) {
             Remove-Item -LiteralPath $file -Force -ErrorAction Stop

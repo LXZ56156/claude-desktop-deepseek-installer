@@ -8,10 +8,13 @@
 4. `inferenceGatewayBaseUrl=https://api.deepseek.com/anthropic`
 5. `inferenceGatewayAuthScheme=x-api-key`
 6. `modelDiscoveryEnabled=false`
-7. `inferenceModels=<JSON string for deepseek-v4-pro and deepseek-v4-flash>`
+7. `inferenceModels=<JSON string for Sonnet 4.6, Opus 4.6 and Haiku 4.5 routes>`
 8. `chatTabEnabled=true`
 
 Code/Cowork 使用 Claude 自身默认值，本项目不把标签显示等同于环境已就绪。
+Claude Desktop 的 gateway 校验要求 Anthropic family 路由名。模型顺序固定为 Sonnet、
+Opus、Haiku；DeepSeek Anthropic 兼容端点将 `claude-opus-*` 映射到 V4 Pro，将
+`claude-sonnet-*` 和 `claude-haiku-*` 映射到 V4 Flash。
 
 Key 保存在 `%LOCALAPPDATA%\ClaudeDeepSeekInstaller\credential.bin`，由 DPAPI
 CurrentUser 和私有 ACL 保护。helper 在目标机用 Windows 11 自带 .NET Framework C#
