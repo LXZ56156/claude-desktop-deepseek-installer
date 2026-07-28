@@ -1,49 +1,31 @@
-# 安全设计
+# Security
 
-## 默认拒绝
+## Key
 
-执行模式为 `TestSafe`、`DryRun`、`Live`。默认是 TestSafe；Live 需要独立确认，
-而 `Scaffold` 阶段无条件拒绝 Live。环境变量不能单独授权真实操作。
+- 只从 `Read-Host -AsSecureString` 取得。
+- 只接受 8–4096 个可打印非空白 ASCII 字符。
+- 转换缓冲区使用后清零；持久副本仅为 DPAPI CurrentUser 密文。
+- 私有目录/文件 ACL 只授予当前用户、SYSTEM 和 Administrators。
+- helper 不接受参数或环境中的 Key，不写 stderr，不写文件，stdout 只有 token。
+- 安装器不做会把 Key 放入 HTTP 调试/错误的远程预检。
 
-## 供应链
+## Supply chain
 
-- Claude Desktop MSIX 只接受 Anthropic 官方来源。
-- Git for Windows 只接受官方来源。
-- 下载、安装、升级必须分阶段；安装函数必须消费有效的签名证据。
-- 签名证据未来同时覆盖 artifact type、路径绑定 token、当前文件 SHA-256、
-  Authenticode 状态、可信证书链、预期 Publisher、包身份和来源元数据。安装前
-  必须重新计算并匹配 SHA-256；没有跳过验签参数。
-- 官方 URL、Publisher 和包身份尚未确认，因此 defaults 中保持 `null`，不得在
-  未核验前启用下载。
+- Git 有官方 immutable metadata SHA-256；下载长度有上限，执行前重新哈希。
+- Claude endpoint 当前不发布独立 digest，因此使用官方 HTTPS host、bounded download、
+  有效且预期的 Anthropic Authenticode、manifest identity/publisher 和安装前重哈希。
+- 任意有效签名、任意 PATH `git.exe` 或同名 AppX 都不被当作可信。
 
-## API Key
+## Configuration ownership
 
-- 不接受明文命令行参数，不静默 Trim。
-- 拒绝空白、多行、控制字符和不符合固定格式的输入。
-- 未来返回 SecureString 或不可序列化 credential handle；明文只允许出现在最短
-  的 API/配置适配器边界，并立即清理可清理的非托管内存。
-- 日志 sink、异常、状态、报告和 Release 扫描采用完整脱敏，不保留末尾字符。
-- TestSafe/DryRun 文件日志只能显式写入 OS 临时目录下本次运行唯一、尚不存在且
-  祖先无重解析点的 `cddsi-<GUID>` 目录；脚手架阶段拒绝 Live 文件日志。
-- 测试中的 Key 只能在运行时用片段构造；Fixtures 不得包含看似真实的 token。
+- 不访问 `.claude\settings.json`。
+- HKLM、其他 HKCU 或 configLibrary 冲突时不覆盖。
+- 新建目录拒绝 reparse point；已有非 ownership 产品目录拒绝接管。
+- policy 写入后检查值与 REG_SZ 类型；更新失败恢复目标值快照。
+- Restore 的 state 名称必须精确属于固定 allow-list，ownership 最后删除。
 
-## 配置与备份
+## Remaining limitations
 
-- 写入目标只能是 configLibrary，拒绝任何 `.claude/settings.json` 目标。
-- 原子写合同：同目录唯一临时文件、严格序列化、重读 schema、flush、原子
-  Replace/Move、写后哈希、失败回滚。
-- 可恢复备份含敏感材料时必须加密并限制 ACL；状态只记录 ID/hash。
-- 脱敏快照不含凭据且不可作为恢复源。
-
-## 报告与隐私
-
-默认只生成中文脱敏报告。不得记录原始配置、用户名、完整本机路径、代理口令、
-Authorization header、API 响应正文中的敏感字段或 Claude Code 配置内容。
-
-## 当前未决风险
-
-- configLibrary 的官方 schema 与 Claude Desktop 版本兼容性。
-- Anthropic MSIX 和 Git 安装包的官方固定身份。
-- Cowork 服务名和 Windows 功能依赖。
-- DPAPI 恢复包的生命周期与跨重启清理。
-- settings.json 零读取政策与前后哈希要求的冲突。
+- 安装器可控制自己的持久 Key 副本，不能承诺 Claude 运行时永不创建临时凭据文件。
+- per-user MSIX 不等同于 machine-wide Cowork 支持。
+- 首个 practical 版本依赖 disposable VM 发现代理、AppLocker、企业 policy 等真实差异。

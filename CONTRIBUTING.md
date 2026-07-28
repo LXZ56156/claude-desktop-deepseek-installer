@@ -1,24 +1,19 @@
-# 贡献指南
+# Contributing
 
-提交变更前请先阅读 `AGENTS.md`、`docs/ARCHITECTURE.md` 和
-`docs/SECURITY.md`。
+先复现一个真实 Windows 11 VM 故障，再增加对应的最小实现和回归。不要为假设中的未来
+场景新增 provider framework、receipt schema、snapshot authorization、worker/shard
+或第二套质量门。
 
-## 本地验证
+提交前在 64 位 Windows PowerShell 5.1 运行：
 
 ```powershell
-pwsh -NoProfile -File .\scripts\bootstrap-dev.ps1
-pwsh -NoProfile -File .\scripts\check.ps1
-pwsh -NoProfile -File .\scripts\build-release.ps1 -DryRun
+.\scripts\check.ps1
+.\scripts\build-release.ps1 -DryRun
+git diff --check
 ```
 
-开发依赖只保存到仓库内被忽略的 `.dev/modules`，不得修改全局
-`PSModulePath`、PowerShellGet 仓库信任或用户级模块配置。
+不得在 issue、fixture、测试、日志或提交中放入真实 API Key。Live 安装只在 disposable
+VM 中执行，用户只在本地遮罩提示输入 Key。
 
-## 变更规则
-
-1. 新增或删除文件时同步更新 `scripts/release-manifest.psd1`。
-2. 修改公开函数时同步更新合同测试和架构文档。
-3. 系统修改代码必须先有 TestSafe/DryRun 测试，并且只能在明确的 Live
-   模式与独立确认后执行。
-4. 不得提交真实 API Key、用户日志、备份、状态或验收产物。
-5. 不得读取、写入或迁移 Claude Code CLI 的配置。
+新增、删除或重命名文件时同步更新 `scripts/release-manifest.psd1`。用户包只能包含
+`PackageFiles`。

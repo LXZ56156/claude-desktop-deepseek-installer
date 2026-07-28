@@ -1,9 +1,11 @@
-# 变更日志
+# Changelog
 
-本项目遵循语义化版本。当前仍处于开发前脚手架阶段。
+## 0.1.0-dev — D-027 practical simplification
 
-## 0.1.0-dev - 2026-07-12
-
-- 建立 Claude Desktop + DeepSeek 独立安装器的模块边界与安全合同。
-- 建立 Pester、静态检查、Release 精确白名单和 CI 基线。
-- 所有系统修改、网络请求、配置写入与进程控制均保持未实现并默认阻断。
+- 将 22 模块、snapshot/evidence/operator 运行时改为 5 个小模块和一条真实垂直路径。
+- 双击入口现可检查/安装可信 Git for Windows 和官方 Claude x64 MSIX。
+- 新增本地编译的无参数 credential helper 与 DPAPI CurrentUser Key 存储。
+- 新增最小 HKCU policy、readback、ownership、聚焦诊断和恢复。
+- 将 53 个碎片 Pester 文件收敛为 2 个 focused 文件和一个 PS5.1 阻塞门。
+- Release 精确白名单收敛为 22 个用户文件。
+- 明确 Cowork provisioning/VMP 不属于首个 practical MVP 完成门。

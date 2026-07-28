@@ -1,45 +1,25 @@
-# 测试与质量门
+# Testing
 
-## 本地依赖
-
-```powershell
-pwsh -NoProfile -File .\scripts\bootstrap-dev.ps1
-```
-
-脚本固定 Pester 5.6.1，并只保存到被 Git 忽略的 `.dev/modules`。它不执行
-`Install-Module`，不修改全局或 CurrentUser 模块配置，也不持久修改
-`PSModulePath`。
-
-## 完整检查
+唯一阻塞命令：
 
 ```powershell
-pwsh -NoProfile -File .\scripts\check.ps1
-pwsh -NoProfile -File .\scripts\build-release.ps1 -DryRun
-git diff --check
-git status --short --branch
+.\scripts\check.ps1
 ```
 
-检查内容：
+它在一个 64 位 Windows PowerShell 5.1 进程内完成：
 
-- PowerShell AST 语法；
-- PowerShell 7 和 Windows PowerShell 5.1 无副作用模块加载；
-- 公开函数合同；
-- `config/public-functions.psd1` 对每个库文件的精确函数集合、Mandatory 参数和
-  `Mode=TestSafe|DryRun|Live` 合同；
-- Pester Unit/Contract；
-- 默认 JSON 配置结构；
-- `.cmd` ASCII/no-BOM 与 `.ps1/.psd1` UTF-8 BOM；
-- 敏感信息扫描；
-- 当前脚手架禁止命令 AST；
-- Release manifest 对全部仓库文件的精确分类；
-- Release DryRun 的源扫描和白名单验证。
-- 交接文档已纳入 DevelopmentOnly Release 分类，且 README 保持可发现入口。
+1. 验证固定 Pester 5.6.1 tree。
+2. 用 PS5.1 parser 检查产品与质量脚本。
+3. 一次 `Invoke-Pester` 运行两个 focused 文件，包括一次 TestDrive 实际 ZIP 构建。
+4. `scripts/build-release.ps1 -DryRun`。
+5. `git diff --check`。
 
-## 未来测试原则
+`tests/Practical.Tests.ps1` 守住入口 DryRun、官方 metadata/parser、签名发布者、hash
+顺序、bounded download、MSIX identity、8 个 policy 值、helper 编译和 Key 边界。
 
-- 真实系统能力通过 provider 注入，Unit 不访问真实系统。
-- 文件写入只使用 `TestDrive:` 或唯一临时目录。
-- 故障注入覆盖下载中断、签名错误、原子替换失败、备份失败、API 超时、重启
-  checkpoint 损坏和验收失败。
-- ZIP 用户仿真必须解压到包含中文、空格和 `&` 的路径，并只运行 TestSafe。
-- 任何 Live 路径都需要独立确认和外部环境验收，不能由 CI 自动触发。
+`tests/Release.Tests.ps1` 守住 22 文件精确白名单、实际 ZIP/哈希、完整分类、编码、
+已退役路径不存在和单一质量门。CI 只在 PR 更新时自动运行一次，另保留手动触发；
+新提交会取消同一 PR 的过期运行。
+
+测试不模拟数百种未来故障。Git/Claude/Chat 的成功标准由 disposable VM 真实运行，
+失败后才加入窄回归。

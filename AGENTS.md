@@ -1,84 +1,66 @@
 # AGENTS.md
 
-本文件是仓库内所有人工与自动化开发代理的强制约束。
+本仓库执行 D-027 practical：先打通普通 Windows 11 用户的真实安装路径，再只针对
+VM 中出现的失败补实现。禁止重新引入 D-026、P10A/P10B/P11、snapshot RSA、
+relay/outbox、Automation、通用 evidence framework 或重复质量门。
 
-## 模块依赖规则
+## 产品范围
 
-1. `lib/bootstrap.ps1` 只负责定位根目录、按固定顺序加载库和初始化日志；顶层
-   加载不得触发网络、系统探测、文件写入、提权或进程控制。
-2. `lib/logger.ps1` 无项目依赖，所有日志 sink 必须先统一脱敏。
-3. `lib/common.ps1` 只放纯数据、序列化、安全策略和通用结果结构，不得加载
-   领域模块。
-4. `lib/state.ps1` 只依赖 common；状态中禁止凭据、Authorization header、
-   原始配置正文和可逆密钥材料。
-5. `desktop-env-check.ps1`、`desktop-msix.ps1`、`git-for-windows.ps1`、
-   `cowork-readiness.ps1`、`deepseek-api.ps1`、`desktop-config.ps1`、
-   `desktop-lifecycle.ps1` 之间不得形成循环依赖；跨领域协调只能放在入口或未来
-   orchestrator。
-6. `desktop-acceptance.ps1` 可以消费领域结果，但不得成为安装实现的依赖。
-7. `scripts/check.ps1` 是薄质量门；行为验证放在 Pester，Release 文件分类只以
-   `scripts/release-manifest.psd1` 为事实来源。
+- 支持 Windows 11 x64 与 64 位 Windows PowerShell 5.1。
+- 双击入口检查并复用可信 Git for Windows；缺失或损坏时安装官方最新版。
+- 下载、验证并为当前用户安装官方最新版 Claude Desktop x64 MSIX。
+- 在遮罩提示中读取一次 DeepSeek API Key，以 DPAPI CurrentUser 持久化。
+- 写入项目拥有的最小 `HKCU\SOFTWARE\Policies\Claude` 第三方推理配置。
+- 提供只读诊断和仅删除项目拥有配置的恢复入口。
+- 首个 practical MVP 不负责 machine-wide Claude provisioning、VMP、重启恢复或
+  Cowork 可用性；不得把这些描述成已验证。
 
-## 安全边界
+## 强制安全边界
 
-- 当前 `Scaffold` 阶段禁止任何真实 MSIX/Git 安装、Windows 功能修改、重启、
-  DeepSeek API 请求、Claude 配置写入以及 Claude 进程关闭或启动。
-- 所有潜在系统修改函数必须有显式 `Mode=TestSafe|DryRun|Live`，默认 TestSafe。
-  非 Live 只能返回计划且 `Changed=false`；Live 还必须要求独立确认。脚手架阶段
-  即使有确认也必须 fail closed。
-- 禁止绕过、跳过、降级或伪造 MSIX/EXE 签名验证。安装必须消费结构化且有效、
-  并通过路径绑定 token、SHA-256、artifact type 与目标文件绑定的验签证据；Live
-  实现还必须在执行安装前重新计算文件 SHA-256。
-- 禁止修改全局 Git 配置、全局/CurrentUser PowerShell 模块配置、用户 PATH、
-  Windows 功能或任务计划，除非未来任务明确授权并已有 Live 合同与测试。
-- 禁止读取、解析、备份、写入或删除 `%USERPROFILE%\.claude\settings.json`。
-  在哈希策略确认前，也不得自行读取该文件计算哈希。
-- 禁止在日志、异常、状态、报告、测试夹具、发布包、提交或 CI 输出中出现真实
-  API Key。日志 sink 与报告生成器必须默认完整脱敏，不保留末尾字符。
-- 可恢复备份与可分享脱敏快照是两个不同合同。脱敏快照永远不得作为恢复源；
-  未来跨重启恢复材料必须使用 DPAPI CurrentUser 或经评审的等效保护。
+- 宿主机和 CI 不执行 Live 安装、AppX、注册表、凭据、真实进程关闭或产品网络路径。
+  真实 Live 只在 disposable Windows VM 中由用户确认后运行。
+- 永不定位、读取、枚举、哈希、备份或修改 `.claude\settings.json`。
+- API Key 不得进入参数、环境变量、日志、异常、状态、报告、测试、截图或 Git。
+- 安装器持久化的 Key 只能是 DPAPI CurrentUser 密文；helper 无参数、stdout 仅 token。
+- Git 只接受 Git for Windows 官方 GitHub immutable release metadata、官方 SHA-256、
+  受信任的预期 signer，并在执行前重新哈希。
+- Claude 只接受官方 endpoint、`downloads.claude.ai`、预期 Anthropic signer、
+  x64 `Claude` MSIX identity、manifest publisher 一致性，并在安装前重新哈希。
+- 不修改全局 Git 配置、用户/系统 PATH、Windows Feature、服务或计划任务。
+- 配置只写项目固定 allow-list 的 HKCU REG_SZ；冲突时 fail closed。
+- Restore 必须先验证 ownership state 的固定 allow-list，且 ownership 最后删除。
+- 用户取消、UAC 取消、下载/签名/readback 失败不得报告成功。
 
-## 禁止引入的旧项目逻辑
+## 模块与入口
 
-不得加入 Claude Code Native/npm/npmmirror 安装、Node.js、npm、WSL、VS Code、
-`install_wsl.sh`、Claude Code CLI 卸载/诊断、`~/.claude/settings.json` env 合并、
-CLI PATH/fresh-shell 检查，或旧项目的日志、备份、报告、状态和凭据。
+- `lib/bootstrap.ps1` 只按顺序加载 `common.ps1`、`installer.ps1`、
+  `configuration.ps1`、`workflow.ps1`；顶层不得执行 Live 行为。
+- `Start-Here.ps1` 默认 DryRun；只有六个 `.cmd` 用户入口显式传入 `-Live`。
+- 不新增通用 provider、ledger、stage、receipt、snapshot 或 orchestrator 抽象。
+  只有 VM 复现出的具体失败才允许增加窄实现与回归。
+- 公开函数仅以 `config/public-functions.psd1` 为准；变更时同步聚焦测试。
 
-## 测试要求
+## 测试与 Release
 
-- 使用仓库本地 Pester 5；依赖由 `scripts/bootstrap-dev.ps1` 初始化。
-- 每个公开函数变更必须同步更新 `config/public-functions.psd1` 和 Unit/Contract
-  测试；公开函数文件集合、Mandatory 参数和 Mode ValidateSet 必须精确匹配。
-- 每个真实操作的未来实现必须先覆盖 TestSafe、DryRun、Live 许可门、失败注入、
-  回滚和脱敏证据。
-- MSIX/Git 安装测试必须证明“验签成功证据先于安装”，且没有 bypass 参数。
-- configLibrary 测试必须覆盖目标路径限制、同目录临时写、写后重读、flush、原子
-  替换、备份、失败恢复和 secret 扫描。
-- Cowork 测试必须覆盖 readiness、重启确认、checkpoint schema 和续跑清理。
-- 验收测试必须分别覆盖 Chat、Code、Cowork、API Key 泄露与 Claude Code 配置
-  完整性策略。
-- 测试只允许写 `TestDrive:`、仓库内被忽略的 `.dev`，或唯一 OS 临时目录。
+- 使用仓库锁定的 Pester 5.6.1；不得联网安装测试依赖。
+- 唯一阻塞门是 64 位 Windows PowerShell 5.1 下的 `scripts/check.ps1`：
+  一次 Pester、PS5.1 parser、Release DryRun、`git diff --check`。
+- 测试不得触发真实网络、进程、注册表、AppX、凭据或系统修改。
+- `scripts/release-manifest.psd1` 必须精确分类每个当前文件；ZIP 只包含
+  `PackageFiles`，不得包含 tests、scripts、docs、`.dev` 或临时证据。
+- 新增、删除或重命名文件时同步更新 manifest、测试和必要文档，并运行：
+  `scripts/check.ps1`、`scripts/build-release.ps1 -DryRun`、`git diff --check`。
 
-## 编码规则
+## 编码
 
-- `.cmd` 必须是纯 ASCII、无 BOM、CRLF；文件名可以是中文，内容不可含中文。
-- 需要在 Windows PowerShell 5.1 执行且包含中文的 `.ps1/.psd1` 必须 UTF-8
-  BOM、CRLF。
-- 不得在 `.cmd` 中调用 `chcp 65001`。控制台编码只能由 logger 的单一入口按
-  PowerShell 版本处理，且不得修改系统代码页。
-- JSON/YAML/Markdown 使用 UTF-8；所有文本必须有末尾换行且无尾随空格。
+- `.cmd` 必须 ASCII、无 BOM、CRLF；不得使用 `chcp 65001`。
+- 面向 Windows PowerShell 5.1 的 `.ps1/.psd1` 使用 UTF-8 BOM、CRLF。
+- Markdown/JSON/YAML/C# 使用 UTF-8、LF；所有文本有末尾换行、无尾随空格。
 
-## 文件与 Release 规则
+## Git 与 VM
 
-每次新增、删除或重命名文件，都必须同时：
-
-1. 更新 `scripts/release-manifest.psd1`，明确标为 `PackageFiles` 或
-   `DevelopmentOnlyFiles`；
-2. 更新或新增相应 Pester/静态检查；
-3. 必要时更新 README、架构和安全文档；
-4. 运行 `scripts/check.ps1`、`scripts/build-release.ps1 -DryRun` 和
-   `git diff --check`。
-
-Release 必须采用精确白名单：复制前扫描源文件，staging 后再次扫描，ZIP 条目与
-白名单精确比较；不得打包 `.git`、`.dev`、tests、CI、日志、备份、状态、报告、
-临时文件或任何凭据。
+- 唯一分支：`codex/repair/p10a-0a-fast-lane`；唯一 PR：#1。
+- 不 force push、不改写历史、不创建重复 PR、不自动 merge/release/promotion。
+- 推送前重新 fetch；remote 或 PR head 出现未知漂移时停止。
+- VM 首先测试无 Git、无 Claude 的 happy path、真实 Chat、重复运行和 Restore；
+  之后只对可复现失败补丁。Key 仅由用户在 VM 遮罩输入框本地输入。

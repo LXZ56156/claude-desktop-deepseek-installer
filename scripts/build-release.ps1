@@ -1,177 +1,173 @@
 ﻿[CmdletBinding()]
 param(
     [switch]$DryRun,
-    [string]$OutputDirectory,
-    [switch]$SkipQualityGate
+    [string]$OutputDirectory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $manifestPath = Join-Path $PSScriptRoot 'release-manifest.psd1'
+$manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
+$package = @($manifest.PackageFiles | ForEach-Object { $_.Replace('\', '/') })
+$development = @($manifest.DevelopmentOnlyFiles | ForEach-Object { $_.Replace('\', '/') })
 
-function Get-ReleaseSourceFiles {
-    $paths = @(& git -c core.quotepath=false -C $root ls-files --cached --others --exclude-standard)
-    if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
-    return @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
-        $relative = ([string]$_).Replace('\', '/')
-        $fullPath = Join-Path $root $relative
-        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { throw "Repository file is missing: $relative" }
-        [pscustomobject]@{ File = Get-Item -LiteralPath $fullPath -Force; RelativePath = $relative }
-    } | Sort-Object RelativePath)
+if ($manifest.SchemaVersion -ne 3 -or
+    $package.Count -eq 0 -or
+    @($package | Sort-Object -Unique).Count -ne $package.Count -or
+    @($development | Sort-Object -Unique).Count -ne $development.Count -or
+    @($package | Where-Object { $_ -in $development }).Count -ne 0) {
+    throw 'Release manifest classification is invalid.'
 }
 
-function Test-ReleaseTextFile {
-    param([Parameter(Mandatory = $true)]$Item)
-    $binaryExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.ico', '.zip', '.msix', '.exe', '.dll', '.pdb', '.pdf')
-    return ($binaryExtensions -notcontains $Item.File.Extension.ToLowerInvariant())
+$listed = @($package + $development | Sort-Object -Unique)
+$sourceFiles = @(
+    git -C $projectRoot -c core.quotePath=false ls-files --cached --others --exclude-standard |
+        ForEach-Object { $_.Replace('\', '/') } |
+        Where-Object { Test-Path -LiteralPath (Join-Path $projectRoot $_) } |
+        Sort-Object -Unique
+)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to enumerate the source tree with Git.'
+}
+$missingClassification = @($sourceFiles | Where-Object { $_ -notin $listed })
+$staleClassification = @($listed | Where-Object { $_ -notin $sourceFiles })
+if ($missingClassification.Count -ne 0 -or $staleClassification.Count -ne 0) {
+    throw ('Release classification mismatch. Unclassified=[{0}] Stale=[{1}]' -f
+        ($missingClassification -join ', '),
+        ($staleClassification -join ', '))
 }
 
-function Read-ReleaseTextStrict {
-    param([Parameter(Mandatory = $true)]$Item)
-    $bytes = [System.IO.File]::ReadAllBytes($Item.File.FullName)
-    if ($bytes.Count -ge 2 -and (($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) -or ($bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF))) { throw "UTF-16 text is forbidden: $($Item.RelativePath)" }
-    if (@($bytes | Where-Object { $_ -eq 0 }).Count -gt 0) { throw "NUL byte in text file: $($Item.RelativePath)" }
-    $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
-    try { return $strictUtf8.GetString($bytes) } catch { throw "Invalid UTF-8 text: $($Item.RelativePath)" }
-}
-
-function Invoke-ReleaseSecretScan {
-    param([Parameter(Mandatory = $true)][object[]]$Items)
-    $findings = New-Object System.Collections.Generic.List[object]
-    foreach ($item in @($Items)) {
-        if (Test-ReleaseTextFile -Item $item) {
-            $content = Read-ReleaseTextStrict -Item $item
-            foreach ($finding in @(Find-CddsiPotentialSecrets -Content $content -Source $item.RelativePath)) {
-                $findings.Add($finding)
+$textExtensions = @('.ps1', '.psd1', '.cmd', '.md', '.json', '.yml', '.yaml', '.txt', '.cs')
+$secretPatterns = @(
+    '(?i)\bsk-[A-Za-z0-9_-]{20,}\b'
+    '(?i)\bapi[_-]?key\s*[:=]\s*["''][A-Za-z0-9_-]{8,}["'']'
+    '(?i)\bauthorization\s*[:=]\s*["'']?bearer\s+[A-Za-z0-9._-]{16,}'
+)
+foreach ($relative in $sourceFiles) {
+    $full = Join-Path $projectRoot $relative
+    $item = Get-Item -LiteralPath $full -Force
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Reparse points are not allowed in the classified source tree: $relative"
+    }
+    if ($textExtensions -contains $item.Extension.ToLowerInvariant()) {
+        $content = [IO.File]::ReadAllText($full)
+        foreach ($pattern in $secretPatterns) {
+            if ($content -match $pattern) {
+                throw "Potential secret found in classified source: $relative"
             }
         }
     }
-    if ($findings.Count -gt 0) {
-        $safe = @($findings | ForEach-Object { '{0}:{1}:{2}' -f $_.Source, $_.Line, $_.Type }) -join ', '
-        throw "Release secret scan failed: $safe"
+}
+
+foreach ($relative in $package) {
+    if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $relative) -PathType Leaf)) {
+        throw "Package file is missing: $relative"
     }
 }
 
-if (-not $SkipQualityGate) {
-    & (Join-Path $PSScriptRoot 'check.ps1') -SkipPester
+$validation = [pscustomobject]@{
+    Status               = 'SUCCEEDED'
+    DryRun               = [bool]$DryRun
+    PackageFileCount     = $package.Count
+    DevelopmentFileCount = $development.Count
+    ClassifiedFileCount  = $listed.Count
 }
-
-. (Join-Path $root 'lib\logger.ps1')
-. (Join-Path $root 'lib\common.ps1')
-
-$manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
-if ($manifest.SchemaVersion -ne 1) { throw 'Unsupported release manifest schema.' }
-$packageFiles = @($manifest.PackageFiles)
-$developmentFiles = @($manifest.DevelopmentOnlyFiles)
-$classified = @($packageFiles + $developmentFiles)
-$duplicates = @($classified | Group-Object | Where-Object Count -gt 1)
-if ($duplicates.Count -gt 0) { throw "Duplicate release manifest entries: $($duplicates.Name -join ', ')" }
-
-$sourceItems = @(Get-ReleaseSourceFiles)
-$sourcePaths = @($sourceItems.RelativePath)
-$inventoryDiff = @(Compare-Object -ReferenceObject @($sourcePaths | Sort-Object) -DifferenceObject @($classified | Sort-Object))
-if ($inventoryDiff.Count -gt 0) {
-    $details = @($inventoryDiff | ForEach-Object { '{0}:{1}' -f $_.SideIndicator, $_.InputObject }) -join ', '
-    throw "Release manifest does not classify the repository exactly: $details"
-}
-
-$version = [System.IO.File]::ReadAllText((Join-Path $root 'VERSION'), [System.Text.Encoding]::UTF8).Trim()
-if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "VERSION is not valid SemVer: $version" }
-
-foreach ($relative in $packageFiles) {
-    $path = Join-Path $root $relative
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Package allow-list entry is missing: $relative" }
-}
-
-Write-Host '[release] Scanning every classified source text file for credentials...'
-Invoke-ReleaseSecretScan -Items $sourceItems
-
-Write-Host ("[release] Exact package allow-list: {0} files; development-only: {1} files." -f $packageFiles.Count, $developmentFiles.Count)
 if ($DryRun) {
-    Write-Host '[release] DryRun passed. No staging directory, ZIP, checksum, upload or publication was created.' -ForegroundColor Green
+    $validation
     return
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $root 'release'
+    $OutputDirectory = Join-Path $projectRoot 'release'
 }
-$outputFullPath = [System.IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\')
-$rootFullPath = [System.IO.Path]::GetFullPath($root).TrimEnd('\')
-if ([string]::Equals($outputFullPath, $rootFullPath, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'OutputDirectory cannot be the repository root.'
+$version = ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION'))).Trim()
+if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?$') {
+    throw 'VERSION is not a safe release identifier.'
 }
-
-$packageName = "claude-desktop-deepseek-installer-$version"
-$zipPath = Join-Path $outputFullPath ($packageName + '.zip')
-$checksumPath = $zipPath + '.sha256'
-if (Test-Path -LiteralPath $zipPath) { throw "Refusing to overwrite existing ZIP: $zipPath" }
-if (Test-Path -LiteralPath $checksumPath) { throw "Refusing to overwrite existing checksum: $checksumPath" }
-
-$tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
-$ownedRoot = Join-Path $tempBase ("cddsi-release-{0}" -f [guid]::NewGuid().ToString('N'))
-$staging = Join-Path $ownedRoot $packageName
-$ownedPrefix = $tempBase + '\cddsi-release-'
-if (-not ([System.IO.Path]::GetFullPath($ownedRoot).StartsWith($ownedPrefix, [StringComparison]::OrdinalIgnoreCase))) {
-    throw 'Internal staging ownership check failed.'
+$archiveName = '{0}-{1}.zip' -f $manifest.ProductName, $version
+$archivePath = Join-Path $OutputDirectory $archiveName
+$hashPath = '{0}.sha256' -f $archivePath
+if ((Test-Path -LiteralPath $archivePath) -or (Test-Path -LiteralPath $hashPath)) {
+    throw 'Release output already exists; move it aside before rebuilding.'
 }
 
+$staging = Join-Path ([IO.Path]::GetTempPath()) (
+    'cddsi-release-{0}' -f ([guid]::NewGuid().ToString('N'))
+)
+$staging = [IO.Path]::GetFullPath($staging)
+$tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+if (-not $staging.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    (Split-Path -Leaf $staging) -notmatch '^cddsi-release-[a-f0-9]{32}$') {
+    throw 'Unsafe release staging path.'
+}
+
+New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
 try {
-    [void][System.IO.Directory]::CreateDirectory($staging)
-    foreach ($relative in $packageFiles) {
-        $source = Join-Path $root $relative
-        $destination = Join-Path $staging ($relative.Replace('/', '\'))
-        [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
-        [System.IO.File]::Copy($source, $destination, $false)
+    [IO.File]::WriteAllText(
+        (Join-Path $staging '.cddsi-release-owner'),
+        'claude-desktop-deepseek-installer',
+        (New-Object Text.UTF8Encoding($false))
+    )
+    foreach ($relative in $package) {
+        $source = Join-Path $projectRoot $relative
+        $destination = Join-Path $staging $relative
+        $parent = Split-Path -Parent $destination
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+            New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop |
+                Out-Null
+        }
+        Copy-Item -LiteralPath $source -Destination $destination -ErrorAction Stop
+    }
+    Remove-Item -LiteralPath (Join-Path $staging '.cddsi-release-owner') -Force
+
+    $stagedFiles = @(Get-ChildItem -LiteralPath $staging -File -Recurse |
+        ForEach-Object {
+            $_.FullName.Substring($staging.Length + 1).Replace('\', '/')
+        } | Sort-Object)
+    if (($stagedFiles -join "`n") -cne (($package | Sort-Object) -join "`n")) {
+        throw 'Staging inventory does not exactly match PackageFiles.'
     }
 
-    $stagedItems = @(Get-ChildItem -LiteralPath $staging -File -Recurse | ForEach-Object {
-        [pscustomobject]@{
-            File = $_
-            RelativePath = $_.FullName.Substring($staging.Length).TrimStart([char[]]'\/').Replace('\', '/')
-        }
-    } | Sort-Object RelativePath)
-    $stageDiff = @(Compare-Object -ReferenceObject @($packageFiles | Sort-Object) -DifferenceObject @($stagedItems.RelativePath | Sort-Object))
-    if ($stageDiff.Count -gt 0) { throw 'Staging inventory differs from the exact package allow-list.' }
-    Invoke-ReleaseSecretScan -Items $stagedItems
+    New-Item -ItemType Directory -Path $OutputDirectory -Force -ErrorAction Stop |
+        Out-Null
+    Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archivePath `
+        -CompressionLevel Optimal -ErrorAction Stop
 
-    [void][System.IO.Directory]::CreateDirectory($outputFullPath)
-    Compress-Archive -LiteralPath $staging -DestinationPath $zipPath -CompressionLevel Optimal -ErrorAction Stop
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+    $zip = [IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
-        $prefix = $packageName + '/'
-        $zipFiles = @($archive.Entries | Where-Object { -not [string]::IsNullOrEmpty($_.Name) } | ForEach-Object {
-            $name = $_.FullName.Replace('\', '/')
-            if (-not $name.StartsWith($prefix, [StringComparison]::Ordinal)) { throw "Unexpected ZIP root: $name" }
-            $name.Substring($prefix.Length)
-        } | Sort-Object)
+        $zipFiles = @($zip.Entries |
+            Where-Object { -not $_.FullName.EndsWith('/') } |
+            ForEach-Object { $_.FullName.Replace('\', '/') } |
+            Sort-Object)
     }
     finally {
-        $archive.Dispose()
+        $zip.Dispose()
     }
-    $zipDiff = @(Compare-Object -ReferenceObject @($packageFiles | Sort-Object) -DifferenceObject $zipFiles)
-    if ($zipDiff.Count -gt 0) { throw 'ZIP entries differ from the exact package allow-list.' }
+    if (($zipFiles -join "`n") -cne (($package | Sort-Object) -join "`n")) {
+        throw 'ZIP inventory does not exactly match PackageFiles.'
+    }
 
-    $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    [System.IO.File]::WriteAllText($checksumPath, ("{0}  {1}" -f $hash, (Split-Path -Leaf $zipPath)) + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "[release] Created: $zipPath" -ForegroundColor Green
-    Write-Host "[release] SHA256: $hash" -ForegroundColor Green
-}
-catch {
-    foreach ($target in @($zipPath, $checksumPath)) {
-        if (Test-Path -LiteralPath $target -PathType Leaf) {
-            [System.IO.File]::Delete($target)
-        }
+    $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText(
+        $hashPath,
+        ('{0}  {1}{2}' -f $hash, $archiveName, "`n"),
+        (New-Object Text.UTF8Encoding($false))
+    )
+    [pscustomobject]@{
+        Status           = 'SUCCEEDED'
+        DryRun           = $false
+        ArchivePath      = $archivePath
+        ArchiveSha256    = $hash
+        PackageFileCount = $package.Count
     }
-    throw
 }
 finally {
-    if (Test-Path -LiteralPath $ownedRoot -PathType Container) {
-        $resolvedOwned = [System.IO.Path]::GetFullPath($ownedRoot)
-        if ($resolvedOwned.StartsWith($ownedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-            [System.IO.Directory]::Delete($resolvedOwned, $true)
-        }
+    if ((Test-Path -LiteralPath $staging -PathType Container) -and
+        $staging.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -and
+        (Split-Path -Leaf $staging) -match '^cddsi-release-[a-f0-9]{32}$') {
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction Stop
     }
 }

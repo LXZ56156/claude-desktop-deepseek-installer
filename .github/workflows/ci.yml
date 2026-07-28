@@ -1,32 +1,19 @@
-name: CI
+name: ci
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  quality:
-    runs-on: windows-latest
+  practical-gate:
+    runs-on: windows-2022
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Bootstrap repository-local Pester
-        shell: pwsh
-        run: ./scripts/bootstrap-dev.ps1
-      - name: Run syntax, contract, encoding, secret and Pester checks
-        shell: pwsh
-        run: ./scripts/check.ps1
-      - name: Run Pester contracts on Windows PowerShell 5.1
+      - name: Run focused Windows PowerShell 5.1 gate
         shell: powershell
-        run: |
-          Set-StrictMode -Version Latest
-          Import-Module .\.dev\modules\Pester\5.6.1\Pester.psd1 -Force
-          $result = Invoke-Pester -Path .\tests -Output Detailed -PassThru
-          if ($result.Result -ne 'Passed' -or $result.FailedCount -ne 0 -or $result.SkippedCount -ne 0 -or $result.NotRunCount -ne 0) { throw 'Windows PowerShell 5.1 Pester contracts failed.' }
-      - name: Validate release allow-list without packaging
-        shell: pwsh
-        run: ./scripts/build-release.ps1 -DryRun -SkipQualityGate
+        run: .\scripts\check.ps1

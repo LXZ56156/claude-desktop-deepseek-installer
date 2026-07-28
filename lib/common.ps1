@@ -1,349 +1,352 @@
-﻿# common.ps1 - Pure data, safety-policy and serialization helpers.
-# Dependency rule: no domain module may be loaded from this file.
+﻿# Shared result, validation and temporary-directory helpers.
 
-$script:CddsiProjectStage = 'Scaffold'
+$script:CddsiOwnerId = 'claude-desktop-deepseek-installer'
+$script:CddsiStateSchemaVersion = 1
+$script:CddsiPolicyPath = 'HKCU:\SOFTWARE\Policies\Claude'
+$script:CddsiMachinePolicyPath = 'HKLM:\SOFTWARE\Policies\Claude'
+$script:CddsiOwnershipPath = 'HKCU:\SOFTWARE\ClaudeDeepSeekInstaller'
+$script:CddsiCredentialEntropy = [System.Text.Encoding]::UTF8.GetBytes(
+    'claude-desktop-deepseek-installer:deepseek:v1'
+)
 
-function Get-CddsiProjectStage {
+function New-CddsiResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('SUCCEEDED', 'PARTIAL', 'ACTION_REQUIRED', 'CANCELLED', 'FAILED')]
+        [string]$Status,
+
+        [string]$ErrorCode = '',
+        [string]$Message = '',
+        [string]$NextStep = '',
+        [bool]$Changed = $false,
+        [AllowNull()]$Data = $null
+    )
+
+    [pscustomobject][ordered]@{
+        Status    = $Status
+        ErrorCode = $ErrorCode
+        Changed   = $Changed
+        Message   = $Message
+        NextStep  = $NextStep
+        Data      = $Data
+    }
+}
+
+function Get-CddsiExitCode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Status
+    )
+
+    switch ($Status) {
+        'SUCCEEDED' { return 0 }
+        'ACTION_REQUIRED' { return 2 }
+        'PARTIAL' { return 2 }
+        'CANCELLED' { return 3 }
+        default { return 1 }
+    }
+}
+
+function Write-CddsiResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Result
+    )
+
+    Write-Host ('Status={0}' -f $Result.Status)
+    Write-Host ('ErrorCode={0}' -f $Result.ErrorCode)
+    Write-Host ('Changed={0}' -f $Result.Changed.ToString().ToLowerInvariant())
+    Write-Host ('Message={0}' -f $Result.Message)
+    Write-Host ('NextStep={0}' -f $Result.NextStep)
+}
+
+function Throw-CddsiError {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[A-Z0-9_]{3,80}$')]
+        [string]$Code,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    throw [System.InvalidOperationException]::new(('{0}|{1}' -f $Code, $Message))
+}
+
+function ConvertFrom-CddsiSafeException {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Exception]$Exception,
+
+        [bool]$Changed = $false
+    )
+
+    $code = 'UNEXPECTED_FAILURE'
+    $message = '操作未完成。详细异常已隐藏，以避免泄露本机信息。'
+    if ($Exception.Message -match '^(?<Code>[A-Z0-9_]{3,80})\|(?<Safe>[^\r\n]{1,500})$') {
+        $code = $Matches.Code
+        $message = $Matches.Safe
+    }
+
+    $status = switch -Regex ($code) {
+        '^USER_CANCELLED$' { 'CANCELLED'; break }
+        '(_CONFLICT|_REQUIRED|_UNAVAILABLE|_NOT_FOUND)$' { 'ACTION_REQUIRED'; break }
+        default { if ($Changed) { 'PARTIAL' } else { 'FAILED' } }
+    }
+
+    New-CddsiResult -Status $status -ErrorCode $code -Changed $Changed `
+        -Message $message -NextStep '按提示处理后重新双击安装入口。'
+}
+
+function Get-CddsiSettings {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot
+    )
+
+    $path = Join-Path $ProjectRoot 'config\deepseek-desktop.defaults.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Throw-CddsiError -Code 'PRODUCT_CONFIG_NOT_FOUND' -Message '产品配置文件缺失。'
+    }
+
+    try {
+        $settings = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        Throw-CddsiError -Code 'PRODUCT_CONFIG_INVALID' -Message '产品配置文件无法解析。'
+    }
+
+    $models = @($settings.models)
+    if ($settings.schemaVersion -ne 3 -or
+        $settings.provider.kind -cne 'gateway' -or
+        $settings.provider.baseUrl -cne 'https://api.deepseek.com/anthropic' -or
+        $settings.provider.authScheme -cne 'x-api-key' -or
+        $models.Count -ne 3 -or
+        $models[0].name -cne 'claude-sonnet-4-6' -or
+        $models[0].labelOverride -cne 'DeepSeek V4 Flash (Sonnet)' -or
+        $models[0].anthropicFamilyTier -cne 'sonnet' -or
+        $models[0].isFamilyDefault -ne $true -or
+        $models[1].name -cne 'claude-opus-4-6' -or
+        $models[1].labelOverride -cne 'DeepSeek V4 Pro (Opus)' -or
+        $models[1].anthropicFamilyTier -cne 'opus' -or
+        $models[1].isFamilyDefault -ne $true -or
+        $models[2].name -cne 'claude-haiku-4-5' -or
+        $models[2].labelOverride -cne 'DeepSeek V4 Flash (Haiku)' -or
+        $models[2].anthropicFamilyTier -cne 'haiku' -or
+        $models[2].isFamilyDefault -ne $true) {
+        Throw-CddsiError -Code 'PRODUCT_CONFIG_INVALID' -Message '产品配置不符合 D-027 practical 合同。'
+    }
+    return $settings
+}
+
+function Assert-CddsiSupportedRuntime {
     [CmdletBinding()]
     param()
 
-    return $script:CddsiProjectStage
-}
-
-function New-CddsiOperationResult {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Operation,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Status,
-
-        [bool]$Success = $false,
-        [bool]$Changed = $false,
-
-        [ValidateSet('TestSafe', 'DryRun', 'Live')]
-        [string]$Mode = 'TestSafe',
-
-        [string]$ErrorCode = '',
-        [string]$MessageSafe = '',
-        [AllowNull()]$Data = $null,
-        [bool]$RestartRequired = $false,
-        [string[]]$PlannedChanges = @(),
-        [string[]]$Warnings = @()
-    )
-
-    return [pscustomobject][ordered]@{
-        Operation       = $Operation
-        Status          = $Status
-        Success         = $Success
-        Changed         = $Changed
-        Mode            = $Mode
-        ErrorCode       = $ErrorCode
-        MessageSafe     = Protect-CddsiReportText -Text $MessageSafe
-        Data            = $Data
-        RestartRequired = $RestartRequired
-        PlannedChanges  = @($PlannedChanges | ForEach-Object { Protect-CddsiReportText -Text $_ })
-        Warnings        = @($Warnings | ForEach-Object { Protect-CddsiReportText -Text $_ })
-    }
-}
-
-function Resolve-CddsiExecutionMode {
-    [CmdletBinding()]
-    param(
-        [switch]$TestSafe,
-        [switch]$DryRun,
-        [switch]$Live
-    )
-
-    $selected = @($TestSafe.IsPresent, $DryRun.IsPresent, $Live.IsPresent | Where-Object { $_ }).Count
-    if ($selected -gt 1) {
-        throw 'TestSafe、DryRun 和 Live 只能选择一个。'
-    }
-    if ($Live) { return 'Live' }
-    if ($DryRun) { return 'DryRun' }
-    return 'TestSafe'
-}
-
-function Test-CddsiRealMutationAllowed {
-    [CmdletBinding()]
-    param(
-        [ValidateSet('TestSafe', 'DryRun', 'Live')]
-        [string]$Mode = 'TestSafe',
-        [switch]$AcknowledgeRealChanges
-    )
-
-    return ($Mode -eq 'Live' -and $AcknowledgeRealChanges.IsPresent -and (Get-CddsiProjectStage) -eq 'Implemented')
-}
-
-function Assert-CddsiMutationAllowed {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Operation,
-
-        [ValidateSet('TestSafe', 'DryRun', 'Live')]
-        [string]$Mode = 'TestSafe',
-
-        [switch]$AcknowledgeRealChanges
-    )
-
-    if (-not (Test-CddsiRealMutationAllowed -Mode $Mode -AcknowledgeRealChanges:$AcknowledgeRealChanges)) {
-        throw ("操作 '{0}' 被安全边界阻断。当前阶段={1}，模式={2}。" -f $Operation, (Get-CddsiProjectStage), $Mode)
-    }
-}
-
-function Get-CddsiConfigLibraryPath {
-    [CmdletBinding()]
-    param(
-        [string]$LocalAppDataPath = [Environment]::GetFolderPath('LocalApplicationData')
-    )
-
-    if ([string]::IsNullOrWhiteSpace($LocalAppDataPath)) {
-        throw '无法解析 LOCALAPPDATA。'
-    }
-    return Join-Path $LocalAppDataPath 'Claude-3p\configLibrary'
-}
-
-function Protect-CddsiSecret {
-    [CmdletBinding()]
-    param(
-        [AllowNull()]
-        [string]$Text
-    )
-
-    if ($null -eq $Text) {
-        return ''
+    if ($PSVersionTable.PSEdition -cne 'Desktop' -or
+        $PSVersionTable.PSVersion.Major -ne 5 -or
+        -not [Environment]::Is64BitProcess -or
+        -not [Environment]::Is64BitOperatingSystem) {
+        Throw-CddsiError -Code 'RUNTIME_UNSUPPORTED' `
+            -Message '只支持 64 位 Windows PowerShell 5.1。'
     }
 
-    $safe = $Text
-    $safe = [regex]::Replace($safe, '(?i)(?<![a-z0-9_-])sk-[a-z0-9_-]{20,}(?![a-z0-9_-])', '[REDACTED]')
-    $safe = [regex]::Replace($safe, '(?i)(?<![a-z0-9._~-])Bearer\s+[a-z0-9._~-]{20,}(?![a-z0-9._~-])', 'Bearer [REDACTED]')
-    $credentialPattern = '(?i)(?<prefix>"?(?:api[ _-]?key|auth[ _-]?token|authorization)"?\s*[:=]\s*["'']?)(?!<|null\b|placeholder\b|redacted\b)[a-z0-9._~-]{20,}'
-    $safe = [regex]::Replace($safe, $credentialPattern, '${prefix}[REDACTED]')
-    $privateKeyLabel = 'PRIVATE' + ' KEY'
-    $privateKeyPattern = '(?is)-----BEGIN [^-\r\n]*' + $privateKeyLabel + '-----.*?-----END [^-\r\n]*' + $privateKeyLabel + '-----'
-    $safe = [regex]::Replace($safe, $privateKeyPattern, '[REDACTED PRIVATE KEY]')
-    return $safe
-}
-
-function Protect-CddsiReportText {
-    [CmdletBinding()]
-    param(
-        [AllowNull()][string]$Text
-    )
-
-    $safe = Protect-CddsiSecret -Text $Text
-    $pathTokens = [ordered]@{
-        '%LOCALAPPDATA%' = [Environment]::GetFolderPath('LocalApplicationData')
-        '%USERPROFILE%'  = [Environment]::GetFolderPath('UserProfile')
-        '%USERNAME%'     = [Environment]::UserName
-        '%TEMP%'         = [System.IO.Path]::GetTempPath().TrimEnd('\')
-    }
-    foreach ($token in $pathTokens.Keys) {
-        $value = $pathTokens[$token]
-        if (-not [string]::IsNullOrWhiteSpace($value)) {
-            $escapedValue = $value.Replace('\', '\\')
-            $safe = [regex]::Replace($safe, [regex]::Escape($escapedValue), $token, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            $safe = [regex]::Replace($safe, [regex]::Escape($value), $token, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        }
-    }
-    return $safe
-}
-
-function Find-CddsiPotentialSecrets {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [AllowEmptyString()]
-        [string]$Content,
-
-        [string]$Source = '<memory>'
-    )
-
-    $findings = New-Object System.Collections.Generic.List[object]
-    $patterns = @(
-        [pscustomobject]@{ Type = 'DeepSeekLikeKey'; Regex = '(?i)(?<![a-z0-9_-])sk-[a-z0-9_-]{20,}(?![a-z0-9_-])' },
-        [pscustomobject]@{ Type = 'BearerToken'; Regex = '(?i)(?<![a-z0-9._~-])Bearer\s+[a-z0-9._~-]{20,}(?![a-z0-9._~-])' },
-        [pscustomobject]@{ Type = 'CredentialAssignment'; Regex = '(?i)"?(api[ _-]?key|auth[ _-]?token|authorization)"?\s*[:=]\s*["'']?(?!<|null\b|placeholder\b|redacted\b)[a-z0-9._~-]{20,}' },
-        [pscustomobject]@{ Type = 'PrivateKey'; Regex = ('(?i)-----BEGIN [^-\r\n]*' + ('PRIVATE' + ' KEY') + '-----') }
-    )
-    $lines = @($Content -split "`r?`n", 0)
-    for ($index = 0; $index -lt $lines.Count; $index++) {
-        foreach ($pattern in $patterns) {
-            if ([regex]::IsMatch($lines[$index], $pattern.Regex)) {
-                $findings.Add([pscustomobject][ordered]@{
-                    Source   = $Source
-                    Line     = $index + 1
-                    Type     = $pattern.Type
-                    Redacted = '[REDACTED]'
-                })
-            }
-        }
-    }
-    return @($findings | ForEach-Object { $_ })
-}
-
-function Test-CddsiDeepSeekApiKeyFormat {
-    [CmdletBinding()]
-    param(
-        [AllowNull()]
-        [string]$ApiKey
-    )
-
-    if ([string]::IsNullOrEmpty($ApiKey)) { return $false }
-    if ($ApiKey -match '[\s\x00-\x1F\x7F]') { return $false }
-    return [regex]::IsMatch($ApiKey, '^sk-[A-Za-z0-9_-]{20,}$')
-}
-
-function Test-CddsiSignatureEvidence {
-    [CmdletBinding()]
-    param(
-        [AllowNull()]$Evidence,
-        [Parameter(Mandatory = $true)][string]$ExpectedPath,
-        [Parameter(Mandatory = $true)]
-        [ValidateSet('ClaudeDesktopMsix', 'GitForWindowsInstaller')]
-        [string]$ExpectedArtifactType
-    )
-
-    if ($null -eq $Evidence) { return $false }
-    $payload = Get-CddsiSignatureEvidencePayload -Evidence $Evidence
-
-    $names = @($payload.PSObject.Properties.Name)
-    $required = @('SchemaVersion', 'ArtifactType', 'PathBindingToken', 'ArtifactSha256', 'Valid', 'AuthenticodeStatus', 'ChainTrusted', 'PublisherMatch', 'IdentityMatch', 'SourcePolicy')
-    foreach ($name in $required) {
-        if ($names -notcontains $name) { return $false }
-    }
-    if (-not (Test-CddsiSchemaVersionOne -Value $payload.SchemaVersion)) { return $false }
-    if ($payload.ArtifactType -isnot [string] -or $payload.ArtifactType -cne $ExpectedArtifactType) { return $false }
-    if ($payload.PathBindingToken -isnot [string] -or $payload.PathBindingToken -cne (Get-CddsiPathBindingToken -Path $ExpectedPath)) { return $false }
-    if ($payload.ArtifactSha256 -isnot [string] -or $payload.ArtifactSha256 -notmatch '^[a-fA-F0-9]{64}$') { return $false }
-    foreach ($name in @('Valid', 'ChainTrusted', 'PublisherMatch', 'IdentityMatch')) {
-        if ($payload.$name -isnot [bool] -or -not $payload.$name) { return $false }
-    }
-    if ($payload.AuthenticodeStatus -isnot [string] -or $payload.AuthenticodeStatus -cne 'Valid') { return $false }
-    $expectedSource = if ($ExpectedArtifactType -eq 'ClaudeDesktopMsix') { 'anthropic_official_only' } else { 'git_for_windows_official_only' }
-    return ($payload.SourcePolicy -is [string] -and $payload.SourcePolicy -ceq $expectedSource)
-}
-
-function Test-CddsiSchemaVersionOne {
-    [CmdletBinding()]
-    param(
-        [AllowNull()]$Value
-    )
-
-    return (($Value -is [int] -or $Value -is [long]) -and [long]$Value -eq 1)
-}
-
-function Test-CddsiUtcTimestampValue {
-    [CmdletBinding()]
-    param(
-        [AllowNull()]$Value
-    )
-
-    if ($Value -is [DateTime]) { return ($Value.Kind -eq [DateTimeKind]::Utc) }
-    if ($Value -is [DateTimeOffset]) { return ($Value.Offset -eq [TimeSpan]::Zero) }
-    if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) { return $false }
-    $parsed = [DateTimeOffset]::MinValue
-    return ([DateTimeOffset]::TryParse($Value, [ref]$parsed) -and $parsed.Offset -eq [TimeSpan]::Zero)
-}
-
-function Test-CddsiSafeIdentifierValue {
-    [CmdletBinding()]
-    param(
-        [AllowNull()]$Value,
-        [switch]$AllowNull,
-        [ValidateRange(1, 256)][int]$MaxLength = 128
-    )
-
-    if ($null -eq $Value) { return $AllowNull.IsPresent }
-    if ($Value -isnot [string] -or $Value.Length -lt 1 -or $Value.Length -gt $MaxLength) { return $false }
-    return [regex]::IsMatch($Value, '^[A-Za-z0-9][A-Za-z0-9._-]*$')
-}
-
-function Get-CddsiPathBindingToken {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Path
-    )
-
-    $canonical = [System.IO.Path]::GetFullPath($Path).TrimEnd('\').ToUpperInvariant()
-    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $build = 0
     try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonical)
-        return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+        $windows = Get-ItemProperty -LiteralPath `
+            'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' `
+            -Name CurrentBuildNumber, InstallationType `
+            -ErrorAction Stop
+        $build = [int]$windows.CurrentBuildNumber
     }
-    finally {
-        $sha.Dispose()
+    catch {
+        Throw-CddsiError -Code 'WINDOWS_VERSION_UNAVAILABLE' `
+            -Message '无法确认 Windows 版本。'
     }
+    if ($build -lt 22000 -or
+        $windows.InstallationType -cne 'Client' -or
+        $env:PROCESSOR_ARCHITECTURE -cne 'AMD64' -or
+        $env:PROCESSOR_ARCHITEW6432 -ceq 'ARM64') {
+        Throw-CddsiError -Code 'WINDOWS_VERSION_UNSUPPORTED' `
+            -Message '当前首版只支持 Windows 11 x64。'
+    }
+    return $build
 }
 
-function Test-CddsiArtifactHashBinding {
+function Get-CddsiProductPaths {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$ExpectedSha256
-    )
+    param()
 
-    if ($ExpectedSha256 -notmatch '^[a-fA-F0-9]{64}$') { return $false }
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
-    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
-    return [string]::Equals($actual, $ExpectedSha256, [StringComparison]::OrdinalIgnoreCase)
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        Throw-CddsiError -Code 'LOCAL_APPDATA_UNAVAILABLE' `
+            -Message '无法定位当前用户的 LocalAppData。'
+    }
+    $root = Join-Path $env:LOCALAPPDATA 'ClaudeDeepSeekInstaller'
+    [pscustomobject][ordered]@{
+        Root           = $root
+        Credential     = Join-Path $root 'credential.bin'
+        Helper         = Join-Path $root 'DeepSeekCredentialHelper.exe'
+        State          = Join-Path $root 'state.json'
+        OwnershipMarker = Join-Path $root '.cddsi-owner'
+    }
 }
 
-function Read-CddsiJsonFile {
+function New-CddsiPrivateDirectory {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
     )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "JSON 文件不存在: $Path"
+    $created = $false
+    if (Test-Path -LiteralPath $Path) {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        if (-not $item.PSIsContainer -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Throw-CddsiError -Code 'PRODUCT_DIRECTORY_UNSAFE' `
+                -Message '产品私有目录不是普通目录，拒绝继续。'
+        }
     }
-    $content = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
-    try {
-        return $content | ConvertFrom-Json -ErrorAction Stop
+    else {
+        New-Item -ItemType Directory -Path $Path -ErrorAction Stop | Out-Null
+        $created = $true
     }
-    catch {
-        throw "JSON 文件无效: $Path。$($_.Exception.Message)"
+
+    if (-not $created) {
+        return
     }
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = [IO.Directory]::GetAccessControl($Path)
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($rule in @($acl.Access)) {
+        [void]$acl.RemoveAccessRuleSpecific($rule)
+    }
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+    foreach ($sid in @(
+        $identity,
+        (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')),
+        (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544'))
+    )) {
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $sid,
+            [System.Security.AccessControl.FileSystemRights]::FullControl,
+            $inheritance,
+            $propagation,
+            $allow
+        )
+        [void]$acl.AddAccessRule($rule)
+    }
+    [System.IO.Directory]::SetAccessControl($Path, $acl)
 }
 
-function ConvertTo-CddsiJson {
+function Set-CddsiPrivateFileAcl {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        $InputObject,
-        [ValidateRange(2, 100)]
-        [int]$Depth = 20
+        [string]$Path
     )
 
-    return $InputObject | ConvertTo-Json -Depth $Depth
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = [IO.File]::GetAccessControl($Path)
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($rule in @($acl.Access)) {
+        [void]$acl.RemoveAccessRuleSpecific($rule)
+    }
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+    foreach ($sid in @(
+        $identity,
+        (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')),
+        (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544'))
+    )) {
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $sid,
+            [System.Security.AccessControl.FileSystemRights]::FullControl,
+            $allow
+        )
+        [void]$acl.AddAccessRule($rule)
+    }
+    [System.IO.File]::SetAccessControl($Path, $acl)
 }
 
-function Test-CddsiExactPropertySet {
+function New-CddsiTempDirectory {
     [CmdletBinding()]
-    param(
-        [AllowNull()]$InputObject,
-        [Parameter(Mandatory = $true)][string[]]$Expected
-    )
+    param()
 
-    if ($null -eq $InputObject) { return $false }
-    $actualNames = @($InputObject.PSObject.Properties.Name | Sort-Object)
-    $expectedNames = @($Expected | Sort-Object)
-    if ($actualNames.Count -ne $expectedNames.Count) { return $false }
-    return (($actualNames -join "`n") -ceq ($expectedNames -join "`n"))
+    $root = [System.IO.Path]::GetTempPath()
+    $leaf = 'cddsi-{0}' -f ([guid]::NewGuid().ToString('N'))
+    $path = Join-Path $root $leaf
+    New-Item -ItemType Directory -Path $path -ErrorAction Stop | Out-Null
+    return $path
 }
 
-function Get-CddsiSignatureEvidencePayload {
+function Remove-CddsiTempDirectory {
     [CmdletBinding()]
     param(
-        [AllowNull()]$Evidence
+        [Parameter(Mandatory = $true)]
+        [string]$Path
     )
 
-    if ($null -eq $Evidence) { return $null }
-    $properties = @($Evidence.PSObject.Properties.Name)
-    if ($properties -contains 'Data' -and $null -ne $Evidence.Data) { return $Evidence.Data }
-    return $Evidence
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $temp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $leaf = Split-Path -Leaf $full
+    if (-not $full.StartsWith($temp, [StringComparison]::OrdinalIgnoreCase) -or
+        $leaf -notmatch '^cddsi-[a-f0-9]{32}$') {
+        Throw-CddsiError -Code 'TEMP_CLEANUP_REFUSED' `
+            -Message '临时目录不属于本次运行，拒绝清理。'
+    }
+    if (Test-Path -LiteralPath $full) {
+        Remove-Item -LiteralPath $full -Recurse -Force -ErrorAction Stop
+    }
+}
+
+function Get-CddsiFileSha256 {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::Read
+    )
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $algorithm.ComputeHash($stream)
+        return [BitConverter]::ToString($digest).Replace('-', '').
+            ToLowerInvariant()
+    }
+    finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
+
+function Read-CddsiConfirmation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt,
+        [switch]$AcceptChanges,
+        [switch]$NonInteractive
+    )
+
+    if ($AcceptChanges) {
+        return $true
+    }
+    if ($NonInteractive) {
+        return $false
+    }
+    $answer = Read-Host ('{0} [y/N]' -f $Prompt)
+    return $answer -match '^(?i:y|yes)$'
 }

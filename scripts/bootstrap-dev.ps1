@@ -1,37 +1,80 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$PesterVersion = '5.6.1',
-    [switch]$Force
+    [switch]$PassThru
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
-$moduleRoot = Join-Path $root '.dev\modules'
-$pesterManifest = Join-Path $moduleRoot ("Pester\{0}\Pester.psd1" -f $PesterVersion)
 
-if ((Test-Path -LiteralPath $pesterManifest -PathType Leaf) -and -not $Force) {
-    Remove-Module Pester -Force -ErrorAction SilentlyContinue
-    $loaded = Import-Module $pesterManifest -Force -PassThru -ErrorAction Stop
-    if ($loaded.Version.ToString() -ne $PesterVersion) { throw '仓库本地 Pester 版本不匹配。' }
-    Write-Host "[bootstrap-dev] Pester $PesterVersion 已位于仓库本地目录。"
-    return
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$lock = Import-PowerShellDataFile -LiteralPath (
+    Join-Path $projectRoot 'config\dev-dependencies.psd1'
+)
+$pesterRoot = Join-Path $projectRoot $lock.Pester.RootRelativePath
+$manifest = Join-Path $pesterRoot $lock.Pester.ManifestRelativePath
+$license = Join-Path $projectRoot $lock.Pester.LicenseRelativePath
+
+foreach ($path in @($pesterRoot, $manifest, $license)) {
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Locked development dependency is missing: $path"
+    }
 }
 
-if (-not (Test-Path -LiteralPath $moduleRoot -PathType Container)) {
-    New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+$files = @(Get-ChildItem -LiteralPath $pesterRoot -File -Recurse)
+$totalBytes = [long](($files | Measure-Object -Property Length -Sum).Sum)
+if ($files.Count -ne $lock.Pester.ExpectedFileCount -or
+    $totalBytes -ne $lock.Pester.ExpectedTotalBytes) {
+    throw 'Vendored Pester tree count or byte length does not match the lock.'
 }
 
-Write-Host "[bootstrap-dev] 正在把 Pester $PesterVersion 保存到 .dev/modules（不会安装到全局或 CurrentUser）。"
-Save-Module -Name Pester -RequiredVersion $PesterVersion -Repository PSGallery -Path $moduleRoot -Force -ErrorAction Stop
-
-if (-not (Test-Path -LiteralPath $pesterManifest -PathType Leaf)) {
-    throw "Pester 本地依赖初始化失败: $pesterManifest"
+$manifestHash = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+$licenseHash = (Get-FileHash -LiteralPath $license -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($manifestHash -cne $lock.Pester.ExpectedManifestSha256 -or
+    (Get-Item -LiteralPath $license).Length -ne $lock.Pester.ExpectedLicenseBytes -or
+    $licenseHash -cne $lock.Pester.ExpectedLicenseSha256) {
+    throw 'Vendored Pester manifest or license does not match the lock.'
 }
 
-Remove-Module Pester -Force -ErrorAction SilentlyContinue
-$loaded = Import-Module $pesterManifest -Force -PassThru -ErrorAction Stop
-if ($loaded.Version.ToString() -ne $PesterVersion) {
-    throw '加载到的 Pester 版本与固定版本不一致。'
+$byRelativePath = @{}
+foreach ($file in $files) {
+    $relative = $file.FullName.Substring($pesterRoot.Length + 1).Replace('\', '/')
+    if ($byRelativePath.ContainsKey($relative)) {
+        throw 'Vendored Pester tree contains duplicate relative paths.'
+    }
+    $byRelativePath[$relative] = $file
 }
-Write-Host "[bootstrap-dev] 完成：Pester $PesterVersion，仅仓库本地可用。"
+$relativePaths = [string[]]@($byRelativePath.Keys)
+[Array]::Sort($relativePaths, [StringComparer]::Ordinal)
+$records = foreach ($relative in $relativePaths) {
+    $file = $byRelativePath[$relative]
+    $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    '{0}|{1}|{2}' -f $relative, $hash, $file.Length
+}
+$bytes = (New-Object Text.UTF8Encoding($false)).GetBytes(($records -join "`n"))
+$sha = [Security.Cryptography.SHA256]::Create()
+try {
+    $treeHash = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+}
+finally {
+    $sha.Dispose()
+}
+if ($treeHash -cne $lock.Pester.ExpectedTreeSha256) {
+    throw 'Vendored Pester tree hash does not match the lock.'
+}
+
+Import-Module -Name $manifest -Global -Force -ErrorAction Stop
+$loaded = Get-Module Pester | Sort-Object Version -Descending | Select-Object -First 1
+if ($null -eq $loaded -or $loaded.Version.ToString() -cne $lock.Pester.Version) {
+    throw 'The locked Pester version was not loaded.'
+}
+
+$result = [pscustomobject]@{
+    PesterVersion = $loaded.Version.ToString()
+    FileCount     = $files.Count
+    TotalBytes    = $totalBytes
+    TreeSha256    = $treeHash
+}
+if ($PassThru) {
+    return $result
+}
+$result | Format-List

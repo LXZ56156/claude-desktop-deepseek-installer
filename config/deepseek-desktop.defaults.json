@@ -1,52 +1,39 @@
 {
-  "schemaVersion": 1,
-  "projectStage": "scaffold",
-  "execution": {
-    "defaultMode": "TestSafe",
-    "liveEnabled": false,
-    "requireExplicitLiveAcknowledgement": true,
-    "automaticRestartAllowed": false
+  "schemaVersion": 3,
+  "support": {
+    "operatingSystem": "Windows 11",
+    "architecture": "x64",
+    "runtime": "Windows PowerShell 5.1"
   },
-  "desktop": {
-    "configLibraryPath": "%LOCALAPPDATA%\\Claude-3p\\configLibrary",
-    "claudeCodeSettingsPolicy": "do_not_read_or_modify",
-    "modelDiscovery": false,
-    "models": [
-      "deepseek-chat",
-      "deepseek-reasoner"
-    ],
-    "capabilities": {
-      "chat": true,
-      "code": true,
-      "cowork": true
+  "provider": {
+    "kind": "gateway",
+    "baseUrl": "https://api.deepseek.com/anthropic",
+    "authScheme": "x-api-key"
+  },
+  "models": [
+    {
+      "name": "claude-sonnet-4-6",
+      "labelOverride": "DeepSeek V4 Flash (Sonnet)",
+      "anthropicFamilyTier": "sonnet",
+      "isFamilyDefault": true
+    },
+    {
+      "name": "claude-opus-4-6",
+      "labelOverride": "DeepSeek V4 Pro (Opus)",
+      "anthropicFamilyTier": "opus",
+      "isFamilyDefault": true
+    },
+    {
+      "name": "claude-haiku-4-5",
+      "labelOverride": "DeepSeek V4 Flash (Haiku)",
+      "anthropicFamilyTier": "haiku",
+      "isFamilyDefault": true
     }
+  ],
+  "claude": {
+    "x64MsixUri": "https://claude.ai/api/desktop/win32/x64/msix/latest/redirect"
   },
-  "deepseek": {
-    "baseUrl": "https://api.deepseek.com",
-    "credentialInput": "secure_runtime_handle",
-    "persistCredentialInState": false,
-    "validationRequestEnabled": false
-  },
-  "claudeDesktopMsix": {
-    "sourcePolicy": "anthropic_official_only",
-    "downloadUri": null,
-    "expectedPublisher": null,
-    "packageIdentity": null,
-    "requireAuthenticodeSignature": true,
-    "requireTrustedChain": true
-  },
-  "gitForWindows": {
-    "sourcePolicy": "git_for_windows_official_only",
-    "downloadUri": null,
-    "expectedPublisher": null,
-    "silentInstallEnabled": false,
-    "modifyGlobalGitConfig": false
-  },
-  "cowork": {
-    "checkVirtualMachinePlatform": true,
-    "checkHardwareVirtualization": true,
-    "checkService": true,
-    "enableWindowsFeature": false,
-    "restartEnabled": false
+  "git": {
+    "latestReleaseApi": "https://api.github.com/repos/git-for-windows/git/releases/latest"
   }
 }
